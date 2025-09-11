@@ -33,7 +33,7 @@ public class MainDriveOpmode extends OpMode {
         localizer.setTelemetryEnabled(true);
         follower = Constants.createFollower(hardwareMap);
         localizer.init();
-    } //test
+    }
 
     @Override
     public void loop() {
