@@ -31,6 +31,8 @@ def calculate_elevation(cannon, target, speed, gravity):
     part = v**4 - g * (g * dx**2 + 2 * dy * v**2)
     if part < 0:
         return None  # No solution
+    if dx <= 0:
+        return None  # Vertical shot, undefined angle
     angle1 = math.atan((v**2 + math.sqrt(part)) / (g * dx))
     angle2 = math.atan((v**2 - math.sqrt(part)) / (g * dx))
     return math.degrees(angle1), math.degrees(angle2)
