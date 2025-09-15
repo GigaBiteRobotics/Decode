@@ -1,7 +1,5 @@
 package org.firstinspires.ftc.teamcode.drive;
 
-import android.annotation.SuppressLint;
-
 import com.pedropathing.follower.Follower;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.hardware.HardwareMap;
@@ -21,23 +19,27 @@ public class RobotCoreCustom {
 		imuEX = hardwareMap.get(IMU.class, "imuEX");
 		imuEX.initialize(parameters);
 	}
-	public static double getExternalHeading() {
+	public static Double getExternalHeading() {
 		YawPitchRollAngles robotOrientation = imuEX.getRobotYawPitchRollAngles();
 
 		// Extract the yaw angle and convert to degrees
 		return robotOrientation.getYaw(AngleUnit.DEGREES);
 	}
-	public static Double[] localizer2Angles(Follower follower, Double[] target) {
+	public static Double[] localizerLauncherCalc(Follower follower, Double[] target) {
 		if (follower == null || target == null || target.length < 3) {
 			return null;
 		}
-		double[] pose = {follower.getPose().getX(), follower.getPose().getY(), follower.getPose().getHeading()};
-		Double targetCannonHeading = Math.atan2(target[1] - pose[1], target[0] - pose[0]);
-		Double targetCannonElevation = LocalizationAutoAim.calculateLaunchAngle(
-				pose[0], pose[1], 10,
-				target[0], target[1], target[2],
-				40, 32.2);
-		return new Double[]{targetCannonHeading, targetCannonElevation};
+		Double[] pose = {follower.getPose().getX(), follower.getPose().getY(), follower.getPose().getHeading()};
+		// launch position (x, y, z)
+		// target position (x, y, z)
+		// launch velocity (in/s)
+		// gravity (in/s^2)
+		return LocalizationAutoAim.calculateLaunchAngle(
+				new Double[]{pose[0], pose[1], 10.0}, // launch position (x, y, z)
+				new Double[]{target[0], target[1], target[2]}, // target position (x, y, z)
+				40.0, // launch velocity (in/s)
+				386.09 // gravity (in/s^2)
+		);
 	}
 
 }
