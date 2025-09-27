@@ -17,7 +17,7 @@ public class RobotCoreCustom {
 
 	public RobotCoreCustom(HardwareMap hardwareMap) {
 		imuEX = hardwareMap.get(IMU.class, "imuEX");
-		imuEX.initialize(parameters);
+		//imuEX.initialize(parameters);
 	}
 	public static Double getExternalHeading() {
 		YawPitchRollAngles robotOrientation = imuEX.getRobotYawPitchRollAngles();

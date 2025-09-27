@@ -17,8 +17,8 @@ public class LocalizationAutoAim {
 			Double[] targetXYZ,
 			Double v, Double g) {
 		Double vertDist = targetXYZ[2] - launchXYZ[2];
-		Double horizDist = Math.hypot(targetXYZ[0] - launchXYZ[0], targetXYZ[1] - launchXYZ[1]);
-		Double elevation = calculateLaunchElevation(horizDist, vertDist, v, g);
+		Double horizontalDist = Math.hypot(targetXYZ[0] - launchXYZ[0], targetXYZ[1] - launchXYZ[1]);
+		Double elevation = calculateLaunchElevation(horizontalDist, vertDist, v, g);
 		if (elevation == null) {
 			return null; // Target unreachable
 		}
@@ -32,7 +32,7 @@ public class LocalizationAutoAim {
 		double discriminant = v2 * v2 - g * (gx2 + twoYv2);
 
 		if (discriminant < 0) {
-			return null; // Target unreachable
+			return null; // Target unreachable`
 		}
 
 		Double sqrtDisc = Math.sqrt(discriminant);

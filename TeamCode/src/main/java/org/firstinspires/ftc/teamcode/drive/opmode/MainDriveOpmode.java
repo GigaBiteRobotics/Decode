@@ -1,6 +1,8 @@
 package org.firstinspires.ftc.teamcode.drive.opmode;
 
+
 import com.pedropathing.follower.Follower;
+import com.pedropathing.geometry.Pose;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.HardwareMap;
@@ -13,18 +15,16 @@ import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
 @TeleOp(name = "Drive", group = "!advanced")
 public class MainDriveOpmode extends OpMode {
-    private AprilTagLocalizer localizer;
-    public HardwareMap hardwareMap;
-    public Telemetry telemetry;
-    Follower follower;
+    //private AprilTagLocalizer localizer;
     IMU imuEX;
     RobotCoreCustom robotCoreCustom;
+    Follower follower;
 
     @Override
-    public void init() {
+    public void init() {;
         robotCoreCustom = new RobotCoreCustom(hardwareMap);
-        localizer = new AprilTagLocalizer(hardwareMap, telemetry);
-        imuEX = hardwareMap.get(IMU.class, "imuEX");
+        //localizer = new AprilTagLocalizer(hardwareMap, telemetry);
+        //imuEX = hardwareMap.get(IMU.class, "imuEX");
         // Optional: Configure camera and offsets for your robot
         /*
         localizer.setCameraConfig("webcam", 1920, 1080);
@@ -34,19 +34,19 @@ public class MainDriveOpmode extends OpMode {
 
          */
         follower = Constants.createFollower(hardwareMap);
-        localizer.init();
+        follower.setStartingPose(new Pose(0, 0, 0));//localizer.init();
+        follower.startTeleopDrive();
     }
 
     @Override
     public void loop() {
         // Update the localizer to process the latest camera frame
-        localizer.update();
+        //localizer.update();
+        follower.update();
         follower.setTeleOpDrive(
-                -gamepad1.left_stick_y,
-                -gamepad1.left_stick_x,
-                -gamepad1.right_stick_x,
-                true
+                -gamepad1.left_stick_y, -gamepad1.left_stick_x, gamepad1.right_stick_x * -0.67, true
         );
+
         /*
         // Retrieve and display the robot's pose if available
         if (localizer.isLocalized()) {
@@ -63,6 +63,7 @@ public class MainDriveOpmode extends OpMode {
 
         Double[] launchVectors = RobotCoreCustom.localizerLauncherCalc(follower, new Double[]{0.0, 36.0, 30.0});
         telemetry.addData("External Heading (deg)", RobotCoreCustom.getExternalHeading());
+        telemetry.addData("Pose", follower.getPose().toString());
         if (launchVectors != null) {
             telemetry.addData("Launch Elevation (deg)", Math.toDegrees(launchVectors[0]));
             telemetry.addData("Launch Azimuth (deg)", Math.toDegrees(launchVectors[1]));
