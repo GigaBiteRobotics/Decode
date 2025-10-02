@@ -44,7 +44,7 @@ public class MainDriveOpmode extends OpMode {
         //localizer.update();
         follower.update();
         follower.setTeleOpDrive(
-                -gamepad1.left_stick_y, -gamepad1.left_stick_x, gamepad1.right_stick_x * -0.67, true
+                -gamepad1.left_stick_y, -gamepad1.left_stick_x, gamepad1.right_stick_x * -0.4, true
         );
 
         /*
@@ -61,7 +61,7 @@ public class MainDriveOpmode extends OpMode {
 
          */
 
-        Double[] launchVectors = RobotCoreCustom.localizerLauncherCalc(follower, new Double[]{0.0, 36.0, 30.0});
+        Double[] launchVectors = RobotCoreCustom.localizerLauncherCalc(follower, new Double[]{-70.0, 70.0, 40.0});
         telemetry.addData("External Heading (deg)", RobotCoreCustom.getExternalHeading());
         telemetry.addData("Pose", follower.getPose().toString());
         if (launchVectors != null) {

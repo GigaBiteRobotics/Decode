@@ -18,24 +18,26 @@ public class LocalizationAutoAim {
 			Double v, Double g) {
 		Double vertDist = targetXYZ[2] - launchXYZ[2];
 		Double horizontalDist = Math.hypot(targetXYZ[0] - launchXYZ[0], targetXYZ[1] - launchXYZ[1]);
-		Double elevation = calculateLaunchElevation(horizontalDist, vertDist, v, g);
+		Double[] targetXY = {horizontalDist, vertDist};
+		Double[] launchXY = {0.0, 0.0};
+		Double elevation = calculateLaunchElevation(launchXY, targetXY, v, g);
 		if (elevation == null) {
 			return null; // Target unreachable
 		}
 		double azimuth = Math.atan2(targetXYZ[1] - launchXYZ[1], targetXYZ[0] - launchXYZ[0]);
 		return new Double[]{elevation, azimuth};
 	}
-	public static Double calculateLaunchElevation(Double x, Double y, Double v, Double g) {
-		Double v2 = v * v;
-		Double gx2 = g * x * x;
-		Double twoYv2 = 2 * y * v2;
-		double discriminant = v2 * v2 - g * (gx2 + twoYv2);
-
-		if (discriminant < 0) {
-			return null; // Target unreachable`
+	public static Double calculateLaunchElevation(Double[] launchXY, Double[] targetXY, Double v, Double g) {
+		Double dx = targetXY[0] - launchXY[0];
+		Double dy = targetXY[1] - launchXY[1];
+		Double part = (Math.pow(v, 4) - g * (g * (dx * dx + dy * dy) + 2 * (targetXY[2] - launchXY[2]) * Math.pow(v, 2)));
+		if (part <= 0) {
+			return null; // Target unreachable
+		} else if (dx <= 0) return null; // Prevent backward shots
+		else {
+			Double angle1 = Math.atan((Math.pow(v, 2) + Math.sqrt(part)) / (g * dx));
+			Double angle2 = Math.atan((Math.pow(v, 2) - Math.sqrt(part)) / (g * dx));
+			return Math.min(angle1, angle2); // Return the lower angle for a more direct shot
 		}
-
-		Double sqrtDisc = Math.sqrt(discriminant);
-		return Math.atan((v2 - sqrtDisc) / (g * x));
 	}
 }
