@@ -13,18 +13,20 @@ import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
 import org.firstinspires.ftc.teamcode.drive.RobotCoreCustom;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
+import java.text.DecimalFormat;
+
 @TeleOp(name = "Drive", group = "!advanced")
 public class MainDriveOpmode extends OpMode {
     //private AprilTagLocalizer localizer;
     IMU imuEX;
     RobotCoreCustom robotCoreCustom;
     Follower follower;
+    DecimalFormat df = new DecimalFormat("#.##");
 
     @Override
     public void init() {;
         robotCoreCustom = new RobotCoreCustom(hardwareMap);
         //localizer = new AprilTagLocalizer(hardwareMap, telemetry);
-        //imuEX = hardwareMap.get(IMU.class, "imuEX");
         // Optional: Configure camera and offsets for your robot
         /*
         localizer.setCameraConfig("webcam", 1920, 1080);
@@ -63,10 +65,11 @@ public class MainDriveOpmode extends OpMode {
 
         Double[] launchVectors = RobotCoreCustom.localizerLauncherCalc(follower, new Double[]{-70.0, 70.0, 40.0});
         telemetry.addData("External Heading (deg)", RobotCoreCustom.getExternalHeading());
-        telemetry.addData("Pose", follower.getPose().toString());
+        telemetry.addData("Pose X: ", df.format(follower.getPose().getX()));
+        telemetry.addData("Pose Y: ", df.format(follower.getPose().getY()));
         if (launchVectors != null) {
-            telemetry.addData("Launch Elevation (deg)", Math.toDegrees(launchVectors[0]));
-            telemetry.addData("Launch Azimuth (deg)", Math.toDegrees(launchVectors[1]));
+            telemetry.addData("Launch Elevation (deg)", df.format(Math.toDegrees(launchVectors[0])));
+            telemetry.addData("Launch Azimuth (deg)", df.format(Math.toDegrees(launchVectors[1])));
         } else {
             telemetry.addData("Launch Vectors", "Target Unreachable");
         }
