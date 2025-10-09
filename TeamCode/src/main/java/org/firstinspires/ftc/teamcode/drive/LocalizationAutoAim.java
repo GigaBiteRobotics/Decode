@@ -16,6 +16,9 @@ public class LocalizationAutoAim {
 			Double[] launchXYZ,
 			Double[] targetXYZ,
 			Double v, Double g) {
+		if (launchXYZ == null || targetXYZ == null || launchXYZ.length < 3 || targetXYZ.length < 3) {
+			return null; // Invalid input
+		}
 		Double vertDist = targetXYZ[2] - launchXYZ[2];
 		Double horizontalDist = Math.hypot(targetXYZ[0] - launchXYZ[0], targetXYZ[1] - launchXYZ[1]);
 		Double[] targetXY = {horizontalDist, vertDist};
@@ -30,7 +33,7 @@ public class LocalizationAutoAim {
 	public static Double calculateLaunchElevation(Double[] launchXY, Double[] targetXY, Double v, Double g) {
 		Double dx = targetXY[0] - launchXY[0];
 		Double dy = targetXY[1] - launchXY[1];
-		Double part = (Math.pow(v, 4) - g * (g * (dx * dx + dy * dy) + 2 * (targetXY[2] - launchXY[2]) * Math.pow(v, 2)));
+		Double part = (Math.pow(v, 4) - g * (g * (dx * dx + dy * dy) + 2 * (targetXY[1] - launchXY[1]) * Math.pow(v, 2)));
 		if (part <= 0) {
 			return null; // Target unreachable
 		} else if (dx <= 0) return null; // Prevent backward shots
