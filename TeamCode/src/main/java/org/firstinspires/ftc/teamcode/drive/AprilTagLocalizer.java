@@ -34,8 +34,6 @@ public class AprilTagLocalizer {
 	private VisionPortal visionPortal;
 	private AprilTagProcessor aprilTag;
 	private HardwareMap hardwareMap;
-	private Telemetry telemetry;
-
 	// Robot pose tracking
 	private double robotX = 0.0;
 	private double robotY = 0.0;
@@ -55,17 +53,14 @@ public class AprilTagLocalizer {
 	private double cameraPitch = 0.0; // degrees (positive = tilted up)
 
 	// Localization settings
-	private boolean enableTelemetry = true;
 	private double confidenceThreshold = 0.8; // Minimum detection confidence
 
 	/**
 	 * Constructor
 	 * @param hardwareMap The robot's hardware map
-	 * @param telemetry Telemetry object for debugging output
 	 */
-	public AprilTagLocalizer(HardwareMap hardwareMap, Telemetry telemetry) {
+	public AprilTagLocalizer(HardwareMap hardwareMap) {
 		this.hardwareMap = hardwareMap;
-		this.telemetry = telemetry;
 	}
 
 	/**
@@ -89,11 +84,6 @@ public class AprilTagLocalizer {
 				.setCameraResolution(new android.util.Size(cameraWidth, cameraHeight))
 				.addProcessor(aprilTag)
 				.build();
-
-		if (enableTelemetry) {
-			telemetry.addData("AprilTag Localizer", "Initialized");
-			telemetry.update();
-		}
 	}
 
 	/**
@@ -112,9 +102,6 @@ public class AprilTagLocalizer {
 				isLocalized = true;
 				lastDetectionTime = System.currentTimeMillis();
 
-				if (enableTelemetry) {
-					displayDetectionTelemetry(bestDetection);
-				}
 			}
 		} else {
 			// Check if we've lost localization
@@ -122,14 +109,9 @@ public class AprilTagLocalizer {
 				isLocalized = false;
 			}
 
-			if (enableTelemetry) {
-				telemetry.addData("AprilTag", "No tags detected");
-			}
+
 		}
 
-		if (enableTelemetry) {
-			displayRobotPose();
-		}
 	}
 
 	/**
@@ -217,29 +199,6 @@ public class AprilTagLocalizer {
 	/**
 	 * Display detection telemetry
 	 */
-	private void displayDetectionTelemetry(AprilTagDetection detection) {
-		double tagX = detection.metadata.fieldPosition.get(0);
-		double tagY = detection.metadata.fieldPosition.get(1);
-
-		telemetry.addData("Detected Tag", "ID %d", detection.id);
-		telemetry.addData("Tag Position", "X=%.1f, Y=%.1f", tagX, tagY);
-		telemetry.addData("Relative Pose", "X=%.1f, Y=%.1f, Z=%.1f",
-				detection.ftcPose.x, detection.ftcPose.y, detection.ftcPose.z);
-		telemetry.addData("Relative Angles", "Yaw=%.1f, Pitch=%.1f",
-				detection.ftcPose.yaw, detection.ftcPose.pitch);
-		telemetry.addData("Range/Bearing", "%.1f in, %.1f°", detection.ftcPose.range, detection.ftcPose.bearing);
-	}
-
-	/**
-	 * Display current robot pose
-	 */
-	private void displayRobotPose() {
-		telemetry.addData("Robot Position", "X=%.1f, Y=%.1f", robotX, robotY);
-		telemetry.addData("Robot Heading", "%.1f°", robotHeading);
-		telemetry.addData("Localized", isLocalized ? "YES" : "NO");
-		telemetry.update();
-	}
-
 	/**
 	 * Clean up vision resources
 	 * Call this when your OpMode stops
@@ -324,14 +283,6 @@ public class AprilTagLocalizer {
 		this.isLocalized = true;
 		this.lastDetectionTime = System.currentTimeMillis();
 	}
-
-	/**
-	 * Enable or disable telemetry output
-	 */
-	public void setTelemetryEnabled(boolean enabled) {
-		this.enableTelemetry = enabled;
-	}
-
 	/**
 	 * Set minimum detection confidence threshold
 	 */

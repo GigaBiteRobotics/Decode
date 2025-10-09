@@ -1,8 +1,11 @@
 package org.firstinspires.ftc.teamcode.drive.opmode;
 
 
+import com.bylazar.configurables.annotations.IgnoreConfigurable;
+import com.bylazar.telemetry.TelemetryManager;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.Pose;
+import com.pedropathing.util.PoseHistory;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
@@ -26,16 +29,21 @@ public class MainDriveOpmode extends OpMode {
     Servo elevationServo;
     RobotCoreCustom.CustomMotor launcher;
     Double[] lastAprilLocalization = null;
+    /*
+    @IgnoreConfigurable
+    static TelemetryManager telemetryM;
+    @IgnoreConfigurable
+    static PoseHistory poseHistory;
+     */
 
     @Override
     public void init() {;
         robotCoreCustom = new RobotCoreCustom(hardwareMap);
-        localizer = new AprilTagLocalizer(hardwareMap, telemetry);
+        localizer = new AprilTagLocalizer(hardwareMap);
         elevationServo = hardwareMap.get(Servo.class, "elevationServo");
         localizer.setCameraConfig("webcam", 1920, 1080);
         localizer.setCameraOffsets(6.0, 0.0, 2.0); // forward, side, height offsets
         localizer.setConfidenceThreshold(0.85);
-        localizer.setTelemetryEnabled(true);
 
         launcher = new RobotCoreCustom.CustomMotor(hardwareMap, "launcher", true, 28);
 
@@ -90,7 +98,7 @@ public class MainDriveOpmode extends OpMode {
 
         if (launchVectors != null) {
             // Offset azimuth by robot heading
-            double fieldRelativeAzimuth = launchVectors[1] + robotHeadingRad;
+            double fieldRelativeAzimuth = launchVectors[1] - robotHeadingRad;
 
             // Clamp and normalize as before
             double minAngleRad = Math.toRadians(0);
