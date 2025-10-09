@@ -290,8 +290,8 @@ public class AprilTagLocalizer {
 	/**
 	 * Get current robot pose as an array [x, y, heading]
 	 */
-	public double[] getRobotPose() {
-		return new double[]{robotX, robotY, robotHeading};
+	public Double[] getRobotPose() {
+		return new Double[]{robotX, robotY, robotHeading};
 	}
 
 	// ====== CONFIGURATION METHODS ======

@@ -43,23 +43,59 @@ public class RobotCoreCustom {
 		);
 	}
 	// Get RPM over a fixed time window
-	public double getRPM(DcMotor motor, final double TICKS_PER_REV) {
-		int startTicks = motor.getCurrentPosition();
-		long startTime = System.nanoTime();
 
-		// wait small interval, e.g. 100 ms
-		try { Thread.sleep(100); } catch (InterruptedException ignored) {}
+	public static class CustomMotor {
+		private final DcMotor motor;
+		private final double TICKS_PER_REV;
+		private final boolean encoderEnabled;
 
-		int endTicks = motor.getCurrentPosition();
-		long endTime = System.nanoTime();
+		public CustomMotor(HardwareMap hardwareMap, String motorName) {
+			this.TICKS_PER_REV = -1; // Default value, can be changed as needed
+			this.encoderEnabled = false;
+			try {
+				this.motor = hardwareMap.get(DcMotor.class, motorName);			} catch (Exception e) {
+				throw new IllegalArgumentException("Motor with name " + motorName + " not found in hardware map.");
+			}
+		}
+		public CustomMotor(HardwareMap hardwareMap, String motorName, Boolean hasEncoder, double ticksPerRev) {
+			this.TICKS_PER_REV = ticksPerRev;
+			try {
+				this.motor = hardwareMap.get(DcMotor.class, motorName);
+			} catch (Exception e) {
+				throw new IllegalArgumentException("Motor with name " + motorName + " not found in hardware map.");
+			}
+			if (hasEncoder) {
+				this.motor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+				this.motor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+				this.encoderEnabled = true;
+			} else {
+				this.encoderEnabled = false;
+			}
+		}
+		public double getRPM() {
+			if (!encoderEnabled) {
+				throw new IllegalStateException("Encoder disabled for this motor: " + motor.getDeviceName());
+			}
+			int startTicks = motor.getCurrentPosition();
+			long startTime = System.nanoTime();
 
-		double deltaTicks = endTicks - startTicks;
-		double deltaTime = (endTime - startTime) / 1e9; // seconds
+			try { Thread.sleep(100); } catch (InterruptedException ignored) {}
 
-		double revs = deltaTicks / TICKS_PER_REV;
-		double revsPerSec = revs / deltaTime;
-		return revsPerSec * 60.0; // RPM
+			int endTicks = motor.getCurrentPosition();
+			long endTime = System.nanoTime();
+
+			double deltaTicks = endTicks - startTicks;
+			double deltaTime = (endTime - startTime) / 1e9; // seconds
+
+			double revs = deltaTicks / TICKS_PER_REV;
+			double revsPerSec = revs / deltaTime;
+			return revsPerSec * 60.0;
+		}
+		public void setPower(double power) {
+			motor.setPower(power);
+		}
+		public DcMotor getMotor() {
+			return motor;
+		}
 	}
-
-
 }

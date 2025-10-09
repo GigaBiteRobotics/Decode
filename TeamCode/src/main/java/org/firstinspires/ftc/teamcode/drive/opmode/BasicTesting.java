@@ -2,19 +2,17 @@ package org.firstinspires.ftc.teamcode.drive.opmode;
 
 
 import com.pedropathing.follower.Follower;
-import com.pedropathing.geometry.Pose;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.IMU;
 
 import org.firstinspires.ftc.teamcode.drive.RobotCoreCustom;
-import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
 import java.text.DecimalFormat;
 
-@TeleOp(name = "BasicMechanum", group = "!advanced")
-public class BasicMechanum extends OpMode {
+@TeleOp(name = "BasicTesting", group = "!advanced")
+public class BasicTesting extends OpMode {
     //private AprilTagLocalizer localizer;
     IMU imuEX;
     RobotCoreCustom robotCoreCustom;
@@ -22,23 +20,23 @@ public class BasicMechanum extends OpMode {
     DecimalFormat df = new DecimalFormat("#.##");
     //AprilTagLocalizer localizer;
     //Servo elevationServo;
-    DcMotor launcher0, launcher1;
+    RobotCoreCustom.CustomMotor launcher0, launcher1;
 
     @Override
     public void init() {;
         robotCoreCustom = new RobotCoreCustom(hardwareMap);
+        launcher0 = new RobotCoreCustom.CustomMotor( hardwareMap, "rr", true, 28);
+        launcher1 = new RobotCoreCustom.CustomMotor( hardwareMap, "rf", true, 28);
 
-        launcher0 = hardwareMap.get(DcMotor.class, "rr");
-        launcher1 = hardwareMap.get(DcMotor.class, "rf");
     }
 
     @Override
     public void loop() {
         launcher0.setPower(gamepad1.right_stick_y);
         launcher1.setPower(-gamepad1.right_stick_y);
-        double launcher0RPM = robotCoreCustom.getRPM(launcher0, 28);
+        double launcher0RPM = launcher0.getRPM();
         telemetry.addData("Launcher0 RPM", df.format(launcher0RPM));
-        double launcher1RPM = robotCoreCustom.getRPM(launcher1, 28);
+        double launcher1RPM = launcher1.getRPM();
         telemetry.addData("Launcher1 RPM", df.format(launcher1RPM));
         telemetry.update();
     }
