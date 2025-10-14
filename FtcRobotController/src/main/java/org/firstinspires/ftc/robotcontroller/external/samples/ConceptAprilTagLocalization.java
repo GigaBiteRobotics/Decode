@@ -98,7 +98,6 @@ public class ConceptAprilTagLocalization extends LinearOpMode {
             0, 0, 0, 0);
     private YawPitchRollAngles cameraOrientation = new YawPitchRollAngles(AngleUnit.DEGREES,
             0, -90, 0, 0);
-
     /**
      * The variable to store our instance of the AprilTag processor.
      */
@@ -182,7 +181,7 @@ public class ConceptAprilTagLocalization extends LinearOpMode {
 
         // Set the camera (webcam vs. built-in RC phone camera).
         if (USE_WEBCAM) {
-            builder.setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"));
+            builder.setCamera(hardwareMap.get(WebcamName.class, "webcam"));
         } else {
             builder.setCamera(BuiltinCameraDirection.BACK);
         }

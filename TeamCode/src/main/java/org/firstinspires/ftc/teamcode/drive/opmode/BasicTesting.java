@@ -7,6 +7,7 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.IMU;
 
+import org.firstinspires.ftc.teamcode.drive.CustomPIDFController;
 import org.firstinspires.ftc.teamcode.drive.RobotCoreCustom;
 
 import java.text.DecimalFormat;
@@ -25,8 +26,8 @@ public class BasicTesting extends OpMode {
     @Override
     public void init() {;
         robotCoreCustom = new RobotCoreCustom(hardwareMap);
-        launcher0 = new RobotCoreCustom.CustomMotor( hardwareMap, "rr", true, 28);
-        launcher1 = new RobotCoreCustom.CustomMotor( hardwareMap, "rf", true, 28);
+        launcher0 = new RobotCoreCustom.CustomMotor( hardwareMap, "rr", true, 28, new CustomPIDFController(0.1, 0.01, 0.005, 0.0));
+        launcher1 = new RobotCoreCustom.CustomMotor( hardwareMap, "rf", true, 28, new CustomPIDFController(0.1, 0.01, 0.005, 0.0));
 
     }
 

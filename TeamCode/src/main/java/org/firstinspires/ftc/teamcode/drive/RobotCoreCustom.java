@@ -47,18 +47,23 @@ public class RobotCoreCustom {
 	public static class CustomMotor {
 		private final DcMotor motor;
 		private final double TICKS_PER_REV;
-		private final boolean encoderEnabled;
+		private final boolean hasEncoder;
+		private boolean isRPMMode = false;
+		private int targetRPM = 0;
+		// PID coefficients
+		private CustomPIDFController pidfController = new CustomPIDFController(0.1, 0.01, 0.005, 0.0);
 
 		public CustomMotor(HardwareMap hardwareMap, String motorName) {
 			this.TICKS_PER_REV = -1; // Default value, can be changed as needed
-			this.encoderEnabled = false;
+			this.hasEncoder = false;
 			try {
 				this.motor = hardwareMap.get(DcMotor.class, motorName);			} catch (Exception e) {
 				throw new IllegalArgumentException("Motor with name " + motorName + " not found in hardware map.");
 			}
 		}
-		public CustomMotor(HardwareMap hardwareMap, String motorName, Boolean hasEncoder, double ticksPerRev) {
+		public CustomMotor(HardwareMap hardwareMap, String motorName, Boolean hasEncoder, double ticksPerRev, CustomPIDFController pidfController) {
 			this.TICKS_PER_REV = ticksPerRev;
+			this.pidfController = pidfController;
 			try {
 				this.motor = hardwareMap.get(DcMotor.class, motorName);
 			} catch (Exception e) {
@@ -67,13 +72,13 @@ public class RobotCoreCustom {
 			if (hasEncoder) {
 				this.motor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
 				this.motor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-				this.encoderEnabled = true;
+				this.hasEncoder = true;
 			} else {
-				this.encoderEnabled = false;
+				this.hasEncoder = false;
 			}
 		}
 		public double getRPM() {
-			if (!encoderEnabled) {
+			if (!hasEncoder) {
 				throw new IllegalStateException("Encoder disabled for this motor: " + motor.getDeviceName());
 			}
 			int startTicks = motor.getCurrentPosition();
@@ -91,8 +96,26 @@ public class RobotCoreCustom {
 			double revsPerSec = revs / deltaTime;
 			return revsPerSec * 60.0;
 		}
+		public void setRPM(int rpm) {
+			if (!hasEncoder) {
+				throw new IllegalStateException("Encoder disabled for this motor: " + motor.getDeviceName());
+			}
+			this.targetRPM = rpm;
+			this.isRPMMode = true;
+		}
+		public void updateRPMPID() {
+			if (isRPMMode) {
+				double currentRPM = getRPM();
+				double power = pidfController.calculate(targetRPM, currentRPM, 0, 5);
+				power = Math.max(-1.0, Math.min(1.0, power)); // Clamp power to [-1, 1]
+				motor.setPower(power);
+			}
+
+		}
+
 		public void setPower(double power) {
 			motor.setPower(power);
+			this.isRPMMode = false;
 		}
 		public DcMotor getMotor() {
 			return motor;

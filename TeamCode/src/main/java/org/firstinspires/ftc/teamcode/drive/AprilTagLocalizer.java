@@ -2,9 +2,12 @@ package org.firstinspires.ftc.teamcode.drive;
 
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import org.firstinspires.ftc.robotcore.external.Telemetry;
+import org.firstinspires.ftc.robotcore.external.hardware.camera.BuiltinCameraDirection;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.Position;
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
@@ -29,318 +32,107 @@ import java.util.List;
  *   double heading = localizer.getRobotHeading();
  */
 public class AprilTagLocalizer {
-
-	// Vision components
-	private VisionPortal visionPortal;
-	private AprilTagProcessor aprilTag;
-	private HardwareMap hardwareMap;
-	// Robot pose tracking
-	private double robotX = 0.0;
-	private double robotY = 0.0;
-	private double robotHeading = 0.0;
-	private boolean isLocalized = false;
-	private long lastDetectionTime = 0;
-
-	// Camera configuration
-	private String cameraName = "webcam";
-	private int cameraWidth = 1920;
-	private int cameraHeight = 1020;
-
-	// Camera calibration parameters (adjustable)
-	private double cameraHeightOffset = 8.0; // inches above ground
-	private double cameraForwardOffset = 6.0; // inches forward from robot center
-	private double cameraSideOffset = 0.0; // inches right from robot center
-	private double cameraPitch = 0.0; // degrees (positive = tilted up)
-
-	// Localization settings
-	private double confidenceThreshold = 0.8; // Minimum detection confidence
+	public Position cameraPosition = new Position(DistanceUnit.INCH,
+			0, 0, 0, 0);
+	public YawPitchRollAngles cameraOrientation = new YawPitchRollAngles(AngleUnit.DEGREES,
+			0, -90, 0, 0);
+	/**
+	 * The variable to store our instance of the AprilTag processor.
+	 */
+	public AprilTagProcessor aprilTag;
 
 	/**
-	 * Constructor
-	 * @param hardwareMap The robot's hardware map
+	 * The variable to store our instance of the vision portal.
 	 */
-	public AprilTagLocalizer(HardwareMap hardwareMap) {
-		this.hardwareMap = hardwareMap;
-	}
+	public VisionPortal visionPortal;
 
-	/**
-	 * Initialize the AprilTag detection system
-	 * Call this once during OpMode initialization
-	 */
-	public void init() {
-		// Create AprilTag processor
+	public void initAprilTag(HardwareMap hardwareMap, String cameraName) {
+
+		// Create the AprilTag processor.
 		aprilTag = new AprilTagProcessor.Builder()
-				.setDrawAxes(true)
-				.setDrawCubeProjection(true)
+
+				// The following default settings are available to un-comment and edit as needed.
+				.setDrawAxes(false)
+				.setDrawCubeProjection(false)
 				.setDrawTagOutline(true)
-				.setTagFamily(AprilTagProcessor.TagFamily.TAG_36h11)
-				.setTagLibrary(AprilTagGameDatabase.getCurrentGameTagLibrary())
-				.setOutputUnits(DistanceUnit.INCH, AngleUnit.DEGREES)
+				//.setTagFamily(AprilTagProcessor.TagFamily.TAG_36h11)
+				//.setTagLibrary(AprilTagGameDatabase.getCenterStageTagLibrary())
+				//.setOutputUnits(DistanceUnit.INCH, AngleUnit.DEGREES)
+				.setCameraPose(cameraPosition, cameraOrientation)
+
+				// == CAMERA CALIBRATION ==
+				// If you do not manually specify calibration parameters, the SDK will attempt
+				// to load a predefined calibration for your camera.
+				//.setLensIntrinsics(578.272, 578.272, 402.145, 221.506)
+				// ... these parameters are fx, fy, cx, cy.
+
 				.build();
 
-		// Create vision portal
-		visionPortal = new VisionPortal.Builder()
-				.setCamera(hardwareMap.get(WebcamName.class, cameraName))
-				.setCameraResolution(new android.util.Size(cameraWidth, cameraHeight))
-				.addProcessor(aprilTag)
-				.build();
-	}
+		// Adjust Image Decimation to trade-off detection-range for detection-rate.
+		// eg: Some typical detection data using a Logitech C920 WebCam
+		// Decimation = 1 ..  Detect 2" Tag from 10 feet away at 10 Frames per second
+		// Decimation = 2 ..  Detect 2" Tag from 6  feet away at 22 Frames per second
+		// Decimation = 3 ..  Detect 2" Tag from 4  feet away at 30 Frames Per Second (default)
+		// Decimation = 3 ..  Detect 5" Tag from 10 feet away at 30 Frames Per Second (default)
+		// Note: Decimation can be changed on-the-fly to adapt during a match.
+		//aprilTag.setDecimation(3);
 
-	/**
-	 * Update robot localization
-	 * Call this regularly in your OpMode loop
-	 */
-	public void update() {
+		// Create the vision portal by using a builder.
+		VisionPortal.Builder builder = new VisionPortal.Builder();
+
+		// Set the camera (webcam vs. built-in RC phone camera).
+		builder.setCamera(hardwareMap.get(WebcamName.class, cameraName));
+
+
+		// Choose a camera resolution. Not all cameras support all resolutions.
+		//builder.setCameraResolution(new Size(640, 480));
+
+		// Enable the RC preview (LiveView).  Set "false" to omit camera monitoring.
+		//builder.enableLiveView(true);
+
+		// Set the stream format; MJPEG uses less bandwidth than default YUY2.
+		//builder.setStreamFormat(VisionPortal.StreamFormat.YUY2);
+
+		// Choose whether or not LiveView stops if no processors are enabled.
+		// If set "true", monitor shows solid orange screen if no processors enabled.
+		// If set "false", monitor shows camera view without annotations.
+		//builder.setAutoStopLiveView(false);
+
+		// Set and enable the processor.
+		builder.addProcessor(aprilTag);
+
+		// Build the Vision Portal, using the above settings.
+		visionPortal = builder.build();
+
+		// Disable or re-enable the aprilTag processor at any time.
+		//visionPortal.setProcessorEnabled(aprilTag, true);
+
+	}   // end method initAprilTag()
+	public Double[] getPosition() {
 		List<AprilTagDetection> currentDetections = aprilTag.getDetections();
-
-		if (!currentDetections.isEmpty()) {
-			// Find the best detection (highest confidence)
-			AprilTagDetection bestDetection = getBestDetection(currentDetections);
-
-			if (bestDetection != null && bestDetection.metadata != null) {
-				updateRobotPose(bestDetection);
-				isLocalized = true;
-				lastDetectionTime = System.currentTimeMillis();
-
-			}
-		} else {
-			// Check if we've lost localization
-			if (System.currentTimeMillis() - lastDetectionTime > 2000) { // 2 seconds
-				isLocalized = false;
-			}
-
-
-		}
-
-	}
-
-	/**
-	 * Find the detection with the highest confidence
-	 */
-	private AprilTagDetection getBestDetection(List<AprilTagDetection> detections) {
-		AprilTagDetection best = null;
-		double highestConfidence = confidenceThreshold;
-
-		for (AprilTagDetection detection : detections) {
-			if (detection.metadata != null) {
-				// Use distance as a confidence metric (closer = more reliable)
-				double confidence = 1.0 / (1.0 + Math.sqrt(
-						detection.ftcPose.x * detection.ftcPose.x +
-								detection.ftcPose.y * detection.ftcPose.y +
-								detection.ftcPose.z * detection.ftcPose.z));
-
-				if (confidence > highestConfidence) {
-					highestConfidence = confidence;
-					best = detection;
+		for (AprilTagDetection detection : currentDetections) {
+			if (detection != null) {
+				if (!detection.metadata.name.contains("Obelisk")) {
+					return new Double[]{
+							detection.robotPose.getPosition().x,
+							detection.robotPose.getPosition().y,
+							detection.robotPose.getPosition().z,
+							detection.robotPose.getOrientation().getYaw(AngleUnit.RADIANS)
+					};
 				}
 			}
 		}
-
-		return best;
+		return null;
 	}
-
-	/**
-	 * Update robot pose based on AprilTag detection
-	 */
-	private void updateRobotPose(AprilTagDetection detection) {
-		// Get tag position in field coordinates
-		double tagX = detection.metadata.fieldPosition.get(0);
-		double tagY = detection.metadata.fieldPosition.get(1);
-		double tagZ = detection.metadata.fieldPosition.get(2);
-		double tagYaw = Math.toDegrees(detection.metadata.fieldOrientation.w); // Assuming yaw is the 3rd element
-
-		// Get robot position relative to tag
-		double relativeX = detection.ftcPose.x;
-		double relativeY = detection.ftcPose.y;
-		double relativeZ = detection.ftcPose.z;
-		double relativeYaw = detection.ftcPose.yaw;
-
-		// Calculate robot heading (tag yaw + relative yaw + 180 degrees)
-		robotHeading = tagYaw + relativeYaw + 180.0;
-		normalizeHeading();
-
-		// Transform relative position to field coordinates
-		double tagYawRad = Math.toRadians(tagYaw);
-		double cosTagYaw = Math.cos(tagYawRad);
-		double sinTagYaw = Math.sin(tagYawRad);
-
-		// Robot position relative to tag in field coordinates
-		double fieldRelativeX = relativeX * cosTagYaw - relativeY * sinTagYaw;
-		double fieldRelativeY = relativeX * sinTagYaw + relativeY * cosTagYaw;
-
-		// Add tag position to get robot field position
-		robotX = tagX + fieldRelativeX;
-		robotY = tagY + fieldRelativeY;
-
-		// Apply camera offset corrections
-		applyCameraOffsets();
-	}
-
-	/**
-	 * Apply camera mounting offset corrections
-	 */
-	private void applyCameraOffsets() {
-		double headingRad = Math.toRadians(robotHeading);
-		double cosHeading = Math.cos(headingRad);
-		double sinHeading = Math.sin(headingRad);
-
-		robotX += cameraForwardOffset * cosHeading - cameraSideOffset * sinHeading;
-		robotY += cameraForwardOffset * sinHeading + cameraSideOffset * cosHeading;
-	}
-
-	/**
-	 * Normalize heading to [-180, 180] range
-	 */
-	private void normalizeHeading() {
-		while (robotHeading > 180) robotHeading -= 360;
-		while (robotHeading <= -180) robotHeading += 360;
-	}
-
-	/**
-	 * Display detection telemetry
-	 */
-	/**
-	 * Clean up vision resources
-	 * Call this when your OpMode stops
-	 */
-	public void shutdown() {
-		if (visionPortal != null) {
-			visionPortal.close();
-		}
-	}
-
-	// ====== GETTER METHODS ======
-
-	/**
-	 * Get robot X position on field (inches)
-	 */
-	public double getRobotX() {
-		return robotX;
-	}
-
-	/**
-	 * Get robot Y position on field (inches)
-	 */
-	public double getRobotY() {
-		return robotY;
-	}
-
-	/**
-	 * Get robot heading (degrees, -180 to 180)
-	 */
-	public double getRobotHeading() {
-		return robotHeading;
-	}
-
-	/**
-	 * Check if robot is currently localized
-	 */
 	public boolean isLocalized() {
-		return isLocalized;
-	}
-
-	/**
-	 * Get time of last successful detection (milliseconds)
-	 */
-	public long getLastDetectionTime() {
-		return lastDetectionTime;
-	}
-
-	/**
-	 * Get current robot pose as an array [x, y, heading]
-	 */
-	public Double[] getRobotPose() {
-		return new Double[]{robotX, robotY, robotHeading};
-	}
-
-	// ====== CONFIGURATION METHODS ======
-
-	/**
-	 * Set camera configuration
-	 */
-	public void setCameraConfig(String name, int width, int height) {
-		this.cameraName = name;
-		this.cameraWidth = width;
-		this.cameraHeight = height;
-	}
-
-	/**
-	 * Set camera mounting offsets
-	 */
-	public void setCameraOffsets(double forwardOffset, double sideOffset, double heightOffset) {
-		this.cameraForwardOffset = forwardOffset;
-		this.cameraSideOffset = sideOffset;
-		this.cameraHeightOffset = heightOffset;
-	}
-
-	/**
-	 * Set initial robot position (useful for field-relative navigation)
-	 */
-	public void setInitialPose(double x, double y, double heading) {
-		this.robotX = x;
-		this.robotY = y;
-		this.robotHeading = heading;
-		this.isLocalized = true;
-		this.lastDetectionTime = System.currentTimeMillis();
-	}
-	/**
-	 * Set minimum detection confidence threshold
-	 */
-	public void setConfidenceThreshold(double threshold) {
-		this.confidenceThreshold = threshold;
-	}
-
-	// ====== UTILITY METHODS ======
-
-	/**
-	 * Calculate distance to a target position
-	 */
-	public double getDistanceToTarget(double targetX, double targetY) {
-		double deltaX = targetX - robotX;
-		double deltaY = targetY - robotY;
-		return Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-	}
-
-	/**
-	 * Calculate heading to a target position
-	 */
-	public double getHeadingToTarget(double targetX, double targetY) {
-		double deltaX = targetX - robotX;
-		double deltaY = targetY - robotY;
-		return Math.toDegrees(Math.atan2(deltaY, deltaX));
-	}
-
-	/**
-	 * Get heading error to target (normalized to [-180, 180])
-	 */
-	public double getHeadingError(double targetHeading) {
-		double error = targetHeading - robotHeading;
-		while (error > 180) error -= 360;
-		while (error <= -180) error += 360;
-		return error;
-	}
-
-	/**
-	 * Get the field orientation (yaw) of a specific AprilTag
-	 * Override this method to match your field's tag orientations
-	 */
-	private double getTagOrientation(int tagId) {
-		// Default: All tags face forward (0 degrees)
-		// Customize this based on your field setup
-		switch (tagId) {
-			case 1:
-			case 2:
-			case 3:
-			case 4:
-			case 5:
-			case 6:
-			case 7:
-			case 8:
-			case 9:
-			case 10:
-				return 0.0; // Most tags face forward
-			default:
-				return 0.0;
+		List<AprilTagDetection> currentDetections = aprilTag.getDetections();
+		for (AprilTagDetection detection : currentDetections) {
+			if (detection != null) {
+				if (!detection.metadata.name.contains("Obelisk")) {
+					return true;
+				}
+			}
 		}
+		return false;
 	}
 }
