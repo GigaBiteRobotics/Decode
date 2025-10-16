@@ -25,7 +25,7 @@ public class BasicTesting extends OpMode {
 
     @Override
     public void init() {;
-        robotCoreCustom = new RobotCoreCustom(hardwareMap);
+        robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
         launcher0 = new RobotCoreCustom.CustomMotor( hardwareMap, "rr", true, 28, new CustomPIDFController(0.1, 0.01, 0.005, 0.0));
         launcher1 = new RobotCoreCustom.CustomMotor( hardwareMap, "rf", true, 28, new CustomPIDFController(0.1, 0.01, 0.005, 0.0));
 

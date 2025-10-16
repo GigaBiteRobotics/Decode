@@ -1,6 +1,8 @@
 package org.firstinspires.ftc.teamcode.drive;
 
+import com.bylazar.telemetry.TelemetryManager;
 import com.pedropathing.follower.Follower;
+import com.pedropathing.util.PoseHistory;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.HardwareMap;
@@ -8,16 +10,19 @@ import com.qualcomm.robotcore.hardware.IMU;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+import org.firstinspires.ftc.teamcode.pedroPathing.Drawing;
 
 public class RobotCoreCustom {
+	private final Follower follower;
 	IMU.Parameters parameters = new IMU.Parameters(new RevHubOrientationOnRobot(
 			RevHubOrientationOnRobot.LogoFacingDirection.UP,
 			RevHubOrientationOnRobot.UsbFacingDirection.FORWARD
 	));
 	static IMU imuEX;
 
-	public RobotCoreCustom(HardwareMap hardwareMap) {
+	public RobotCoreCustom(HardwareMap hardwareMap, Follower follower) {
 		imuEX = hardwareMap.get(IMU.class, "imuEX");
+		this.follower = follower;
 		//imuEX.initialize(parameters);
 	}
 	public static Double getExternalHeading() {
@@ -41,6 +46,20 @@ public class RobotCoreCustom {
 				250.00, // launch velocity (in/s)
 				386.09 // gravity (in/s^2)
 		);
+	}
+	public void drawCurrent(Follower follower) {
+		try {
+			Drawing.drawRobot(follower.getPose());
+			Drawing.sendPacket();
+		} catch (Exception e) {
+			throw new RuntimeException("Drawing failed " + e);
+		}
+	}
+
+	public void drawCurrentAndHistory(Follower follower) {
+		PoseHistory poseHistory = follower.getPoseHistory();
+		Drawing.drawPoseHistory(poseHistory);
+		drawCurrent(follower);
 	}
 	// Get RPM over a fixed time window
 
@@ -119,6 +138,30 @@ public class RobotCoreCustom {
 		}
 		public DcMotor getMotor() {
 			return motor;
+		}
+	}
+	public static class CustomTelemetryM {
+		private final TelemetryManager telemetryManager;
+
+		public CustomTelemetryM(TelemetryManager telemetryManager) {
+			this.telemetryManager = telemetryManager;
+		}
+
+		// Example delegation for a method named 'debug'
+		public void debug(String message) {
+			telemetryManager.debug(message);
+		}
+
+		public void debug(String message, Object... args) {
+			telemetryManager.debug(String.format(message, args));
+			telemetryManager.addData(message, args);
+
+			// Delegate other methods as needed:
+			// public void info(String message) {
+			//     telemetryManager.info(message);
+			// }
+
+			// Add custom methods or override behavior here if needed
 		}
 	}
 }

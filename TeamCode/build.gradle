@@ -15,6 +15,8 @@
 apply from: '../build.common.gradle'
 apply from: '../build.dependencies.gradle'
 
+
+
 android {
     namespace = 'org.firstinspires.ftc.teamcode'
 
@@ -25,4 +27,17 @@ android {
 
 dependencies {
     implementation project(':FtcRobotController')
+    //implementation("dev.frozenmilk.dairy:Core:2.2.4")
+    // Example for FTC Dashboard, uncomment if needed:
+    // implementation("com.acmerobotics.slothboard:dashboard:0.2.4+0.4.17")
+    // Example for excluding dashboard from other dependencies:
+    // implementation("com.pedropathing:pedro:1.0.8") {
+    //    exclude group: "com.acmerobotics.dashboard"
+    // }
+    // implementation("com.acmerobotics.roadrunner:ftc:0.1.21") {
+    //    exclude group: "com.acmerobotics.dashboard"
+    // }
+    // implementation ("com.acmerobotics.roadrunner:actions:1.0.1"){
+    //    exclude group: "com.acmerobotics.dashboard"
+    // }
 }

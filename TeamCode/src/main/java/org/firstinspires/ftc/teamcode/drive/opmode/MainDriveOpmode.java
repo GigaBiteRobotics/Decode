@@ -1,14 +1,11 @@
 package org.firstinspires.ftc.teamcode.drive.opmode;
 
-
-import com.bylazar.configurables.annotations.IgnoreConfigurable;
+import com.bylazar.telemetry.PanelsTelemetry;
 import com.bylazar.telemetry.TelemetryManager;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.Pose;
-import com.pedropathing.util.PoseHistory;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
@@ -34,16 +31,12 @@ public class MainDriveOpmode extends OpMode {
     double targetPower = 0.0;
     // timer
     ElapsedTime gamepadTimer = new ElapsedTime();
-    /*
-    @IgnoreConfigurable
     static TelemetryManager telemetryM;
-    @IgnoreConfigurable
-    static PoseHistory poseHistory;
-     */
 
-    @Override
-    public void init() {;
-        robotCoreCustom = new RobotCoreCustom(hardwareMap);
+	@Override
+    public void init() {
+        ;
+        robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
         localizer = new AprilTagLocalizer();
         elevationServo = hardwareMap.get(Servo.class, "elevationServo");
         localizer.initAprilTag(hardwareMap, "Webcam 1");
@@ -54,6 +47,7 @@ public class MainDriveOpmode extends OpMode {
         follower.setStartingPose(new Pose(0, 0, 0));
         follower.startTeleopDrive();
         gamepadTimer.reset();
+        telemetryM = PanelsTelemetry.INSTANCE.getTelemetry();
     }
 
     @Override
@@ -62,29 +56,31 @@ public class MainDriveOpmode extends OpMode {
         //localizer.update();
         launcher.updateRPMPID();
         follower.update();
+        robotCoreCustom.drawCurrentAndHistory(follower);
         /*
         follower.setTeleOpDrive(
                 -gamepad1.left_stick_y, -gamepad1.left_stick_x, gamepad1.right_stick_x * -0.67, true // 67 hehe
         );
 
          */
-        telemetry.addData("launcherPower", targetPower);
+        telemetryM.debug("launcherPower: " + targetPower);
         if (localizer.isLocalized()) {
             Double[] aprilPose = localizer.getPosition();
-            telemetry.addData("X (in) AprilTag", aprilPose[0]);
-            telemetry.addData("Y (in) AprilTag", aprilPose[1]);
+            telemetryM.debug("X (in) AprilTag" + aprilPose[0].toString());
+            telemetryM.addData("Y (in) AprilTag", aprilPose[1].toString());
+            telemetryM.debug("Y (in) AprilTag" + aprilPose[1].toString());
 
             follower.setPose(new Pose(aprilPose[0], aprilPose[1], RobotCoreCustom.getExternalHeading()));
         }
         Double[] launchVectors = RobotCoreCustom.localizerLauncherCalc(follower, new Double[]{-70.0, 70.0, 40.0});
-        telemetry.addData("External Heading (deg)", RobotCoreCustom.getExternalHeading());
-        telemetry.addData("Pose X: ", df.format(follower.getPose().getX()));
-        telemetry.addData("Pose Y: ", df.format(follower.getPose().getY()));
+        telemetryM.debug("External Heading (deg)"+ RobotCoreCustom.getExternalHeading());
+        telemetryM.debug("Pose X: "+ df.format(follower.getPose().getX()));
+        telemetryM.debug("Pose Y: "+ df.format(follower.getPose().getY()));
         if (launchVectors != null) {
-            telemetry.addData("Launch Elevation (deg)", df.format(Math.toDegrees(launchVectors[0])));
-            telemetry.addData("Launch Azimuth (deg)", df.format(Math.toDegrees(launchVectors[1])));
+            telemetryM.debug("Launch Elevation (deg)"+ df.format(Math.toDegrees(launchVectors[0])));
+            telemetryM.debug("Launch Azimuth (deg)"+ df.format(Math.toDegrees(launchVectors[1])));
         } else {
-            telemetry.addData("Launch Vectors", "Target Unreachable");
+            telemetryM.debug("Launch Vectors: " + "Target Unreachable");
         }
 
         // Get robot heading from IMU in radians
@@ -101,14 +97,14 @@ public class MainDriveOpmode extends OpMode {
             normalized = Math.max(0, Math.min(1, normalized));
             elevationServo.setPosition(normalized);
 
-            telemetry.addData("Launch Azimuth (deg, offset)", df.format(Math.toDegrees(fieldRelativeAzimuth)));
+            telemetryM.debug("Launch Azimuth (deg, offset): "+ df.format(Math.toDegrees(fieldRelativeAzimuth)));
         }
         //launcher.setRPM((int) (gamepad1.right_stick_y * 4000));
         launcher.setPower(targetPower);
         double launcherRPM = launcher.getRPM();
-        telemetry.addData("Launcher RPM", df.format(launcherRPM));
-        //telemetry.addData("Target Launcher RPM", df.format((int) (gamepad1.right_stick_y * 4000)));
-        telemetry.update();
+        telemetryM.debug("Launcher RPM: "+ df.format(launcherRPM));
+        //telemetryM.debug("Target Launcher RPM", df.format((int) (gamepad1.right_stick_y * 4000)));
+        telemetryM.update();
 
         if (gamepad1.a) { targetPower = 0.0; }
         if (gamepad1.b) { targetPower = 0.78; }
