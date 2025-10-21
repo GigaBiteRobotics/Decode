@@ -125,14 +125,16 @@ public class AprilTagLocalizer {
 		return null;
 	}
 	public boolean isLocalized() {
-		List<AprilTagDetection> currentDetections = aprilTag.getDetections();
-		for (AprilTagDetection detection : currentDetections) {
-			if (detection != null) {
-				if (!detection.metadata.name.contains("Obelisk")) {
-					return true;
+		try {
+			List<AprilTagDetection> currentDetections = aprilTag.getDetections();
+			for (AprilTagDetection detection : currentDetections) {
+				if (detection != null) {
+					if (!detection.metadata.name.contains("Obelisk")) {
+						return true;
+					}
 				}
 			}
-		}
-		return false;
+			return false;
+		} catch (Exception e) { return false; }
 	}
 }

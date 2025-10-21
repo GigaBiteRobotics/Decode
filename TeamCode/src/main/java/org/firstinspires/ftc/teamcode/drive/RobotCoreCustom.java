@@ -7,6 +7,7 @@ import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.IMU;
+import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
@@ -139,29 +140,9 @@ public class RobotCoreCustom {
 		public DcMotor getMotor() {
 			return motor;
 		}
-	}
-	public static class CustomTelemetryM {
-		private final TelemetryManager telemetryManager;
 
-		public CustomTelemetryM(TelemetryManager telemetryManager) {
-			this.telemetryManager = telemetryManager;
-		}
-
-		// Example delegation for a method named 'debug'
-		public void debug(String message) {
-			telemetryManager.debug(message);
-		}
-
-		public void debug(String message, Object... args) {
-			telemetryManager.debug(String.format(message, args));
-			telemetryManager.addData(message, args);
-
-			// Delegate other methods as needed:
-			// public void info(String message) {
-			//     telemetryManager.info(message);
-			// }
-
-			// Add custom methods or override behavior here if needed
+		public void setPidfController(CustomPIDFController pidfController) {
+			this.pidfController = pidfController;
 		}
 	}
 }
