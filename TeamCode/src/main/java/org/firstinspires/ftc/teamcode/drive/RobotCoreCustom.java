@@ -7,14 +7,13 @@ import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.IMU;
-import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 
+import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 import org.firstinspires.ftc.teamcode.pedroPathing.Drawing;
 
 public class RobotCoreCustom {
-	private final Follower follower;
 	IMU.Parameters parameters = new IMU.Parameters(new RevHubOrientationOnRobot(
 			RevHubOrientationOnRobot.LogoFacingDirection.UP,
 			RevHubOrientationOnRobot.UsbFacingDirection.FORWARD
@@ -23,8 +22,7 @@ public class RobotCoreCustom {
 
 	public RobotCoreCustom(HardwareMap hardwareMap, Follower follower) {
 		imuEX = hardwareMap.get(IMU.class, "imuEX");
-		this.follower = follower;
-		//imuEX.initialize(parameters);
+		imuEX.initialize(parameters);
 	}
 	public static Double getExternalHeading() {
 		YawPitchRollAngles robotOrientation = imuEX.getRobotYawPitchRollAngles();
@@ -137,12 +135,27 @@ public class RobotCoreCustom {
 			motor.setPower(power);
 			this.isRPMMode = false;
 		}
-		public DcMotor getMotor() {
-			return motor;
-		}
 
 		public void setPidfController(CustomPIDFController pidfController) {
 			this.pidfController = pidfController;
 		}
+	}
+	public static class CustomTelemetry {
+		private final Telemetry telemetry;
+		private final TelemetryManager telemetryM;
+
+		public CustomTelemetry(Telemetry telemetry, TelemetryManager telemetryM) {
+			this.telemetry = telemetry;
+			this.telemetryM = telemetryM;
+		}
+		public void addData(String caption, Object value) {
+			telemetry.addData(caption, value);
+			telemetryM.debug(caption + value.toString());
+		}
+		public void update() {
+			telemetry.update();
+			telemetryM.update();
+		}
+
 	}
 }

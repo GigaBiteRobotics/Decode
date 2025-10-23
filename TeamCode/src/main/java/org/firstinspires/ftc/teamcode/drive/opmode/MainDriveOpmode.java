@@ -30,11 +30,28 @@ public class MainDriveOpmode extends OpMode {
     double targetPower = 0.0;
     // timer
     ElapsedTime gamepadTimer = new ElapsedTime();
+    RobotCoreCustom.CustomTelemetry telemetryC;
+
+    enum Team {
+        RED,
+        BLUE
+    }
+
+    Team team = Team.BLUE;
+     ElapsedTime aprilSlowdownTimer = new ElapsedTime();
     static TelemetryManager telemetryM;
 
 	@Override
     public void init() {
-        ;
+        telemetryM = PanelsTelemetry.INSTANCE.getTelemetry();
+        telemetryC = new RobotCoreCustom.CustomTelemetry(telemetry, telemetryM);
+        if (gamepad1.a) { team = Team.RED; }
+        else { team = Team.BLUE; }
+        if (team == Team.RED) {
+            MDOConstants.targetLocation = new Double[]{-70.0, -70.0, 40.0};
+        } else {
+            MDOConstants.targetLocation = new Double[]{-70.0, 70.0, 40.0};
+        }
         robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
         localizer = new AprilTagLocalizer();
         elevationServo = hardwareMap.get(Servo.class, "elevationServo");
@@ -46,7 +63,8 @@ public class MainDriveOpmode extends OpMode {
         follower.setStartingPose(new Pose(0, 0, 0));
         follower.startTeleopDrive();
         gamepadTimer.reset();
-        telemetryM = PanelsTelemetry.INSTANCE.getTelemetry();
+        aprilSlowdownTimer.reset();
+
     }
 
     @Override
@@ -55,31 +73,43 @@ public class MainDriveOpmode extends OpMode {
         launcher.updateRPMPID();
         follower.update();
         robotCoreCustom.drawCurrentAndHistory(follower);
-        /*
+
         follower.setTeleOpDrive(
                 -gamepad1.left_stick_y, -gamepad1.left_stick_x, gamepad1.right_stick_x * -0.67, true // 67 hehe
         );
 
-         */
-        telemetry.addData("launcherPower: ", targetPower);
-        if (localizer.isLocalized()) {
+
+        telemetryC.addData("launcherPower: ", targetPower);
+        if (localizer.getPosition() != null) {
             Double[] aprilPose = localizer.getPosition();
-            telemetry.addData("X (in) AprilTag", aprilPose[0].toString());
-            telemetry.addData("Y (in) AprilTag", aprilPose[1].toString());
-            telemetry.addData("Y (in) AprilTag", aprilPose[1].toString());
-            if (MDOConstants.useAprilTags) {
+            lastAprilLocalization = aprilPose;
+
+            telemetryC.addData("X (in) AprilTag", aprilPose[0].toString());
+            telemetryC.addData("Y (in) AprilTag", aprilPose[1].toString());
+            telemetryC.addData("Y (in) AprilTag", aprilPose[1].toString());
+
+            if (MDOConstants.useAprilTags && aprilSlowdownTimer.milliseconds() > 100 &&
+                    localizer.getPosition() != lastAprilLocalization &&
+                    localizer.getPosition() != null &&
+                    localizer.getDecisionMargin() > 0.8) {
                 follower.setPose(new Pose(aprilPose[0], aprilPose[1], aprilPose[3] + Math.toRadians(90.0)));
-            } else return;
+
+                aprilSlowdownTimer.reset();
+            } else {
+                telemetryC.addData("X (in) AprilTag", aprilPose[0].toString());
+                telemetryC.addData("Y (in) AprilTag", aprilPose[1].toString());
+                telemetryC.addData("Y (in) AprilTag", aprilPose[1].toString());
+            }
         }
         Double[] launchVectors = RobotCoreCustom.localizerLauncherCalc(follower, MDOConstants.targetLocation);
-        telemetry.addData("External Heading (rad)", RobotCoreCustom.getExternalHeading());
-        telemetry.addData("Pose X: ", df.format(follower.getPose().getX()));
-        telemetry.addData("Pose Y: ", df.format(follower.getPose().getY()));
+        telemetryC.addData("External Heading (rad)", RobotCoreCustom.getExternalHeading());
+        telemetryC.addData("Pose X: ", df.format(follower.getPose().getX()));
+        telemetryC.addData("Pose Y: ", df.format(follower.getPose().getY()));
         if (launchVectors != null) {
-            telemetry.addData("Launch Elevation (deg)", df.format(Math.toDegrees(launchVectors[0])));
-            telemetry.addData("Launch Azimuth (deg)", df.format(Math.toDegrees(launchVectors[1])));
+            telemetryC.addData("Launch Elevation (deg)", df.format(Math.toDegrees(launchVectors[0])));
+            telemetryC.addData("Launch Azimuth (deg)", df.format(Math.toDegrees(launchVectors[1])));
         } else {
-            telemetry.addData("Launch Vectors: ", "Target Unreachable");
+            telemetryC.addData("Launch Vectors: ", "Target Unreachable");
         }
 
         // Get robot heading from IMU in radians
@@ -91,12 +121,12 @@ public class MainDriveOpmode extends OpMode {
 
             // Clamp and normalize as before
             double minAngleRad = Math.toRadians(0);
-            double maxAngleRad = Math.toRadians(60);
+            double maxAngleRad = Math.toRadians(180);
             double normalized = (fieldRelativeAzimuth - minAngleRad) / (maxAngleRad - minAngleRad);
             normalized = Math.max(0, Math.min(1, normalized));
             elevationServo.setPosition(normalized);
 
-            telemetry.addData("Launch Azimuth (deg, offset): ", df.format(Math.toDegrees(fieldRelativeAzimuth)));
+            telemetryC.addData("Launch Azimuth (deg, offset): ", df.format(Math.toDegrees(fieldRelativeAzimuth)));
         }
         //launcher.setRPM((int) (gamepad1.right_stick_y * 4000));
         if (MDOConstants.usePIDFLauncher) {
@@ -104,12 +134,12 @@ public class MainDriveOpmode extends OpMode {
         } else { launcher.setPower(targetPower); }
 
         double launcherRPM = launcher.getRPM();
-        telemetry.addData("Launcher RPM: ", df.format(launcherRPM));
-        //telemetry.addData("Target Launcher RPM", df.format((int) (gamepad1.right_stick_y * 4000)));
-        telemetryM.debug("External Heading (deg)", RobotCoreCustom.getExternalHeading());
-        telemetryM.debug("Pose X: "+ df.format(follower.getPose().getX()));
-        telemetryM.debug("Pose Y: "+ df.format(follower.getPose().getY()));
-        telemetryM.update();
+        telemetryC.addData("Launcher RPM: ", df.format(launcherRPM));
+        //telemetryC.addData("Target Launcher RPM", df.format((int) (gamepad1.right_stick_y * 4000)));
+        telemetryC.addData("External Heading (deg)", RobotCoreCustom.getExternalHeading());
+        telemetryC.addData("Pose X: ", df.format(follower.getPose().getX()));
+        telemetryC.addData("Pose Y: ", df.format(follower.getPose().getY()));
+        telemetryC.update();
 
         if (gamepad1.a) { targetPower = 0.0; }
         if (gamepad1.b) { targetPower = 0.78; }

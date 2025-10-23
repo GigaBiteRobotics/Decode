@@ -1,8 +1,6 @@
 package org.firstinspires.ftc.teamcode.drive;
 
 import com.qualcomm.robotcore.hardware.HardwareMap;
-import org.firstinspires.ftc.robotcore.external.Telemetry;
-import org.firstinspires.ftc.robotcore.external.hardware.camera.BuiltinCameraDirection;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
@@ -11,20 +9,19 @@ import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
-import org.firstinspires.ftc.vision.apriltag.AprilTagGameDatabase;
 
 import java.util.List;
 
 /**
  * AprilTag Localizer Class for FTC
- *
+
  * This class provides real-time robot localization using AprilTag detection.
  * It can be easily integrated into any OpMode for autonomous navigation.
- *
+
  * Usage:
  *   AprilTagLocalizer localizer = new AprilTagLocalizer(hardwareMap, telemetry);
  *   localizer.init();
- *
+
  *   // In your loop:
  *   localizer.update();
  *   double x = localizer.getRobotX();
@@ -136,5 +133,18 @@ public class AprilTagLocalizer {
 			}
 			return false;
 		} catch (Exception e) { return false; }
+	}
+	public double getDecisionMargin() {
+		try {
+			List<AprilTagDetection> currentDetections = aprilTag.getDetections();
+			for (AprilTagDetection detection : currentDetections) {
+				if (detection != null) {
+					if (!detection.metadata.name.contains("Obelisk")) {
+						return detection.decisionMargin;
+					}
+				}
+			}
+			return 0.0;
+		} catch (Exception e) { return 0.0; }
 	}
 }
