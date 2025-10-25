@@ -42,8 +42,8 @@ public class RobotCoreCustom {
 		return LocalizationAutoAim.calculateLaunchAngle(
 				new Double[]{pose[0], pose[1], 10.0}, // launch position (x, y, z)
 				new Double[]{target[0], target[1], target[2]}, // target position (x, y, z)
-				250.00, // launch velocity (in/s)
-				386.09 // gravity (in/s^2)
+				MDOConstants.launcherCalcConstants[0], // launch velocity (in/s)
+				MDOConstants.launcherCalcConstants[1] // gravity (in/s^2)
 		);
 	}
 	public void drawCurrent(Follower follower) {
@@ -150,11 +150,11 @@ public class RobotCoreCustom {
 		}
 		public void addData(String caption, Object value) {
 			telemetry.addData(caption, value);
-			telemetryM.debug(caption + value.toString());
+			//telemetryM.debug(caption + value.toString());
 		}
 		public void update() {
 			telemetry.update();
-			telemetryM.update();
+			//telemetryM.update();
 		}
 
 	}
