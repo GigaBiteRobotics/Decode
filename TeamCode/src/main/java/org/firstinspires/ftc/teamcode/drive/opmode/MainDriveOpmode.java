@@ -241,46 +241,46 @@ public class MainDriveOpmode extends OpMode {
         // ===== TELEMETRY BLOCK - Update every 3 loops to reduce overhead =====
         sectionTimer.reset();
 
-        if (loopCounter % 3 == 0) {
-            telemetryC.addData("Launcher Elevation Servo Pos", elevationServoPos);
-            telemetryC.addData("External Heading (deg)", robotHeadingRad);
-            telemetryC.addData("Pose X", poseX);
-            telemetryC.addData("Pose Y", poseY);
+        telemetryC.addData("Launcher Elevation Servo Pos", elevationServoPos);
+        telemetryC.addData("External Heading (deg)", robotHeadingRad);
+        telemetryC.addData("Pose X", poseX);
+        telemetryC.addData("Pose Y", poseY);
 
-            if (aprilPose != null) {
-                telemetryC.addData("X (in) AprilTag", aprilPose[0]);
-                telemetryC.addData("Y (in) AprilTag", aprilPose[1]);
-            }
-
-            if (launchVectors != null) {
-                telemetryC.addData("Launch Elevation (deg)", launchElevationDeg);
-                telemetryC.addData("Launch Azimuth (deg)", launchAzimuthDeg);
-                telemetryC.addData("Launch Azimuth (deg, offset)", fieldRelativeAzimuthDeg);
-            } else {
-                telemetryC.addData("Launch Vectors", "Target Unreachable");
-            }
-
-            telemetryC.addData("Launcher RPM", launcherRPM);
-            telemetryC.addData("Launcher Power", targetPower);
-            telemetryC.addData("Loop Time (ms)", loopTimeMs);
-
-            // ===== PERFORMANCE TIMING TELEMETRY =====
-            telemetryC.addData("--- Performance Breakdown ---", "");
-            telemetryC.addData("Caching: ", String.format("%.2f ms", timeCaching));
-            telemetryC.addData("Update/PIDF: ", String.format("%.2f ms", timeUpdate));
-            telemetryC.addData("Drive Control: ", String.format("%.2f ms", timeDrive));
-            telemetryC.addData("AprilTag: ", String.format("%.2f ms", timeAprilTag));
-            telemetryC.addData("Servo Control: ", String.format("%.2f ms", timeServo));
-            telemetryC.addData("Launcher Control: ", String.format("%.2f ms", timeLauncher));
-            telemetryC.addData("Telemetry: ", String.format("%.2f ms", timeTelemetry));
-
-            double totalAccountedTime = timeCaching + timeUpdate + timeDraw + timeDrive +
-                    timeAprilTag + timeServo + timeLauncher + timeTelemetry;
-            telemetryC.addData("Total Accounted", String.format("%.2f ms", totalAccountedTime));
-            telemetryC.addData("Percent Accounted", String.format("%.2f %%", (totalAccountedTime / loopTimeMs) * 100.0));
-
-            telemetryC.update();
+        if (aprilPose != null) {
+            telemetryC.addData("X (in) AprilTag", aprilPose[0]);
+            telemetryC.addData("Y (in) AprilTag", aprilPose[1]);
+        } else {
+            telemetryC.addData("X (in) AprilTag", "No Tag");
+            telemetryC.addData("Y (in) AprilTag", "No Tag");
         }
+
+        if (launchVectors != null) {
+            telemetryC.addData("Launch Elevation (deg)", launchElevationDeg);
+            telemetryC.addData("Launch Azimuth (deg)", launchAzimuthDeg);
+            telemetryC.addData("Launch Azimuth (deg, offset)", fieldRelativeAzimuthDeg);
+        } else {
+            telemetryC.addData("Launch Vectors", "Target Unreachable");
+        }
+
+        telemetryC.addData("Launcher RPM", launcherRPM);
+        telemetryC.addData("Launcher Power", targetPower);
+        telemetryC.addData("Loop Time (ms)", loopTimeMs);
+
+        // ===== PERFORMANCE TIMING TELEMETRY =====
+        telemetryC.addData("--- Performance Breakdown ---", "");
+        telemetryC.addData("Caching: ", String.format("%.2f ms", timeCaching));
+        telemetryC.addData("Update/PIDF: ", String.format("%.2f ms", timeUpdate));
+        telemetryC.addData("Drive Control: ", String.format("%.2f ms", timeDrive));
+        telemetryC.addData("AprilTag: ", String.format("%.2f ms", timeAprilTag));
+        telemetryC.addData("Servo Control: ", String.format("%.2f ms", timeServo));
+        telemetryC.addData("Launcher Control: ", String.format("%.2f ms", timeLauncher));
+        telemetryC.addData("Telemetry: ", String.format("%.2f ms", timeTelemetry));
+
+        double totalAccountedTime = timeCaching + timeUpdate + timeDraw + timeDrive +
+                timeAprilTag + timeServo + timeLauncher + timeTelemetry;
+        telemetryC.addData("Total Accounted", String.format("%.2f ms", totalAccountedTime));
+        telemetryC.addData("Percent Accounted", String.format("%.2f %%", (totalAccountedTime / loopTimeMs) * 100.0));
+        telemetryC.update();
 
         timeTelemetry = sectionTimer.milliseconds();
 
