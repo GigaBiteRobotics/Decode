@@ -76,8 +76,14 @@ public class MainDriveOpmode extends OpMode {
     public void loop() {
         loopTimer.reset();
 
+        // Performance timing instrumentation
+        ElapsedTime sectionTimer = new ElapsedTime();
+        double timeCaching = 0, timeUpdate = 0, timeDraw = 0, timeDrive = 0;
+        double timeAprilTag = 0, timeServo = 0, timeLauncher = 0, timeTelemetry = 0;
+
         // ===== CACHE ALL VALUES AT THE BEGINNING =====
 
+        sectionTimer.reset();
         // Servo positions
         double elevationServoPos = elevationServo.getPosition();
 
@@ -86,9 +92,10 @@ public class MainDriveOpmode extends OpMode {
         double poseX = currentPose.getX();
         double poseY = currentPose.getY();
         double robotHeadingRad = follower.getHeading();
-        double externalHeading = RobotCoreCustom.getExternalHeading();
+
 
         // Launch calculations
+
         Double[] launchVectors = RobotCoreCustom.localizerLauncherCalc(follower, MDOConstants.targetLocation);
 
         // Launcher data
@@ -111,19 +118,27 @@ public class MainDriveOpmode extends OpMode {
 
         // Cache AprilTag position ONCE to avoid multiple blocking calls
         Double[] aprilPose = localizer.getPosition();
+        timeCaching = sectionTimer.milliseconds();
 
         // ===== MAIN LOOP LOGIC =====
-
-        launcher.setPidfController(pidfConstant);
+        sectionTimer.reset();
+        launcher.setPIDFController(pidfConstant);
         launcher.updateRPMPID();
+        ;
         follower.update();
+        timeUpdate = sectionTimer.milliseconds();
+
+
 
         // Only draw every x loops to reduce overhead
+        sectionTimer.reset();
         if (loopCounter % 10 == 0) {
             robotCoreCustom.drawCurrentAndHistory(follower);
         }
+        timeDraw = sectionTimer.milliseconds();
 
         // ===== DRIVE CONTROL =====
+        sectionTimer.reset();
 
         follower.setTeleOpDrive(
                 -gamepad1LeftStickY,
@@ -132,7 +147,10 @@ public class MainDriveOpmode extends OpMode {
                 true
         );
 
+        timeDrive = sectionTimer.milliseconds();
+
         // ===== APRILTAG LOCALIZATION =====
+        sectionTimer.reset();
 
         if (aprilPose != null) {
             lastAprilLocalization = aprilPose;
@@ -147,7 +165,10 @@ public class MainDriveOpmode extends OpMode {
             }
         }
 
+        timeAprilTag = sectionTimer.milliseconds();
+
         // ===== SERVO CONTROL =====
+        sectionTimer.reset();
 
         // Pre-calculate launch vector conversions if available
         Double launchElevationDeg = null;
@@ -176,7 +197,10 @@ public class MainDriveOpmode extends OpMode {
             fieldRelativeAzimuthDeg = Math.toDegrees(fieldRelativeAzimuth);
         }
 
+        timeServo = sectionTimer.milliseconds();
+
         // ===== LAUNCHER CONTROL =====
+        sectionTimer.reset();
 
         if (usePIDFLauncher) {
             int targetRPM = (int) (targetPower * 5500);
@@ -200,14 +224,17 @@ public class MainDriveOpmode extends OpMode {
         // Clamp target power
         targetPower = Math.max(-1.0, Math.min(1.0, targetPower));
 
+        timeLauncher = sectionTimer.milliseconds();
+
         // Cache loop time at the end for accurate measurement
         double loopTimeMs = loopTimer.milliseconds();
 
         // ===== TELEMETRY BLOCK - Update every 3 loops to reduce overhead =====
+        sectionTimer.reset();
 
         if (loopCounter % 3 == 0) {
             telemetryC.addData("Launcher Elevation Servo Pos", elevationServoPos);
-            telemetryC.addData("External Heading (deg)", externalHeading);
+            telemetryC.addData("External Heading (deg)", robotHeadingRad);
             telemetryC.addData("Pose X", poseX);
             telemetryC.addData("Pose Y", poseY);
 
@@ -228,9 +255,25 @@ public class MainDriveOpmode extends OpMode {
             telemetryC.addData("Launcher Power", targetPower);
             telemetryC.addData("Loop Time (ms)", loopTimeMs);
 
+            // ===== PERFORMANCE TIMING TELEMETRY =====
+            telemetryC.addData("--- Performance Breakdown ---", "");
+            telemetryC.addData("Caching: ", String.format("%.2f ms", timeCaching));
+            telemetryC.addData("Update/PIDF: ", String.format("%.2f ms", timeUpdate));
+            telemetryC.addData("Drawing: ", String.format("%.2f ms", timeDraw));
+            telemetryC.addData("Drive Control: ", String.format("%.2f ms", timeDrive));
+            telemetryC.addData("AprilTag: ", String.format("%.2f ms", timeAprilTag));
+            telemetryC.addData("Servo Control: ", String.format("%.2f ms", timeServo));
+            telemetryC.addData("Launcher Control: ", String.format("%.2f ms", timeLauncher));
+            telemetryC.addData("Telemetry: ", String.format("%.2f ms", timeTelemetry));
+
+            double totalAccountedTime = timeCaching + timeUpdate + timeDraw + timeDrive +
+                    timeAprilTag + timeServo + timeLauncher + timeTelemetry;
+            telemetryC.addData("Total Accounted", String.format("%.2f ms", totalAccountedTime));
+
             telemetryC.update();
         }
 
+        timeTelemetry = sectionTimer.milliseconds();
 
         loopCounter++;
     }
