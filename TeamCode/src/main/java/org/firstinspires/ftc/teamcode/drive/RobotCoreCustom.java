@@ -68,6 +68,11 @@ public class RobotCoreCustom {
 		private final boolean hasEncoder;
 		private boolean isRPMMode = false;
 		private int targetRPM = 0;
+		private int lastTicks = 0;
+		private double lastValidRPM = 0.0;
+		private long lastTime = 0;
+		private static final double MIN_DELTA_TIME = 0.1; // minimum 100ms between readings
+
 		// PID coefficients
 		private CustomPIDFController pidfController = new CustomPIDFController(0.1, 0.01, 0.005, 0.0);
 
@@ -95,25 +100,42 @@ public class RobotCoreCustom {
 				this.hasEncoder = false;
 			}
 		}
-		public double getRPM() {
-			if (!hasEncoder) {
-				throw new IllegalStateException("Encoder disabled for this motor: " + motor.getDeviceName());
-			}
-			int startTicks = motor.getCurrentPosition();
-			long startTime = System.nanoTime();
 
-			try { Thread.sleep(100); } catch (InterruptedException ignored) {}
-
-			int endTicks = motor.getCurrentPosition();
-			long endTime = System.nanoTime();
-
-			double deltaTicks = endTicks - startTicks;
-			double deltaTime = (endTime - startTime) / 1e9; // seconds
-
-			double revs = deltaTicks / TICKS_PER_REV;
-			double revsPerSec = revs / deltaTime;
-			return revsPerSec * 60.0;
+	public Double getRPM() {
+		if (!hasEncoder) {
+			throw new IllegalStateException("Encoder disabled for this motor: " + motor.getDeviceName());
 		}
+
+		int currentTicks = motor.getCurrentPosition();
+		long currentTime = System.nanoTime();
+
+		// Initialize on first call
+		if (lastTime == 0) {
+			lastTicks = currentTicks;
+			lastTime = currentTime;
+			return lastValidRPM; // Will be 0.0 initially
+		}
+
+		double deltaTime = (currentTime - lastTime) / 1e9; // seconds
+
+		// Only calculate if enough time has passed
+		if (deltaTime < MIN_DELTA_TIME) {
+			return lastValidRPM; // Return last valid reading
+		}
+
+		double deltaTicks = currentTicks - lastTicks;
+
+		// Update stored values for next call
+		lastTicks = currentTicks;
+		lastTime = currentTime;
+
+		// Calculate RPM
+		double revs = deltaTicks / TICKS_PER_REV;
+		double revsPerSec = revs / deltaTime;
+		lastValidRPM = revsPerSec * 60.0;
+
+		return lastValidRPM;
+	}
 		public void setRPM(int rpm) {
 			if (!hasEncoder) {
 				throw new IllegalStateException("Encoder disabled for this motor: " + motor.getDeviceName());

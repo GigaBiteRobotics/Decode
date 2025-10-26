@@ -118,10 +118,12 @@ public class MainDriveOpmode extends OpMode {
         launcher.updateRPMPID();
         follower.update();
 
-        // Only draw every 3 loops to reduce overhead
-        if (loopCounter % 3 == 0) {
+        // Only draw every x loops to reduce overhead
+        if (loopCounter % 10 == 0) {
             robotCoreCustom.drawCurrentAndHistory(follower);
         }
+
+        // ===== DRIVE CONTROL =====
 
         follower.setTeleOpDrive(
                 -gamepad1LeftStickY,
@@ -130,7 +132,8 @@ public class MainDriveOpmode extends OpMode {
                 true
         );
 
-        // AprilTag localization - now using cached value
+        // ===== APRILTAG LOCALIZATION =====
+
         if (aprilPose != null) {
             lastAprilLocalization = aprilPose;
 
@@ -144,12 +147,13 @@ public class MainDriveOpmode extends OpMode {
             }
         }
 
+        // ===== SERVO CONTROL =====
+
         // Pre-calculate launch vector conversions if available
         Double launchElevationDeg = null;
         Double launchAzimuthDeg = null;
         double fieldRelativeAzimuthDeg = 0;
 
-        // Servo control logic
         if (launchVectors != null) {
             launchElevationDeg = Math.toDegrees(launchVectors[0]);
             launchAzimuthDeg = Math.toDegrees(launchVectors[1]);
@@ -172,7 +176,8 @@ public class MainDriveOpmode extends OpMode {
             fieldRelativeAzimuthDeg = Math.toDegrees(fieldRelativeAzimuth);
         }
 
-        // Launcher control
+        // ===== LAUNCHER CONTROL =====
+
         if (usePIDFLauncher) {
             int targetRPM = (int) (targetPower * 5500);
             launcher.setRPM(targetRPM);
@@ -199,6 +204,7 @@ public class MainDriveOpmode extends OpMode {
         double loopTimeMs = loopTimer.milliseconds();
 
         // ===== TELEMETRY BLOCK - Update every 3 loops to reduce overhead =====
+
         if (loopCounter % 3 == 0) {
             telemetryC.addData("Launcher Elevation Servo Pos", elevationServoPos);
             telemetryC.addData("External Heading (deg)", externalHeading);
@@ -224,6 +230,7 @@ public class MainDriveOpmode extends OpMode {
 
             telemetryC.update();
         }
+
 
         loopCounter++;
     }
