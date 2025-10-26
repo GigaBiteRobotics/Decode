@@ -44,7 +44,7 @@ public class MainDriveOpmode extends OpMode {
 
 	@Override
     public void init() {
-        //telemetryM = PanelsTelemetry.INSTANCE.getTelemetry();
+        telemetryM = PanelsTelemetry.INSTANCE.getTelemetry();
         telemetryC = new RobotCoreCustom.CustomTelemetry(telemetry, telemetryM);
         if (gamepad1.a) { team = Team.RED; }
         else { team = Team.BLUE; }
@@ -69,6 +69,8 @@ public class MainDriveOpmode extends OpMode {
         aprilSlowdownTimer.reset();
 
     }
+
+    private int loopCounter = 0;
 
     @Override
     public void loop() {
@@ -105,41 +107,42 @@ public class MainDriveOpmode extends OpMode {
 
         // Constants used multiple times
         CustomPIDFController pidfConstant = MDOConstants.launcherPIDF;
-        Double[] targetLocation = MDOConstants.targetLocation;
         boolean usePIDFLauncher = MDOConstants.usePIDFLauncher;
+
+        // Cache AprilTag position ONCE to avoid multiple blocking calls
+        Double[] aprilPose = localizer.getPosition();
 
         // ===== MAIN LOOP LOGIC =====
 
         launcher.setPidfController(pidfConstant);
         launcher.updateRPMPID();
         follower.update();
-        robotCoreCustom.drawCurrentAndHistory(follower);
+
+        // Only draw every 3 loops to reduce overhead
+        if (loopCounter % 3 == 0) {
+            robotCoreCustom.drawCurrentAndHistory(follower);
+        }
 
         follower.setTeleOpDrive(
                 -gamepad1LeftStickY,
                 -gamepad1LeftStickX,
                 gamepad1RightStickX * -0.67,
-                true // 67 hehe
+                true
         );
 
+        // AprilTag localization - now using cached value
+        if (aprilPose != null) {
+            lastAprilLocalization = aprilPose;
 
-    if (localizer.getPosition() != null) {
-        Double[] aprilPose = localizer.getPosition();
-        lastAprilLocalization = aprilPose;
+            if (MDOConstants.useAprilTags &&
+                    aprilSlowdownTimer.milliseconds() > 100 &&
+                    aprilPose != lastAprilLocalization &&
+                    localizer.getDecisionMargin() > 0.9) {
 
-        //telemetryC.addData("X (in) AprilTag", aprilPose[0].toString());
-        //telemetryC.addData("Y (in) AprilTag", aprilPose[1].toString());
-
-        if (MDOConstants.useAprilTags && aprilSlowdownTimer.milliseconds() > 100 &&
-                localizer.getPosition() != lastAprilLocalization &&
-                localizer.getPosition() != null &&
-                localizer.getDecisionMargin() > 0.9) {
-            follower.setPose(new Pose(aprilPose[0], aprilPose[1], aprilPose[3] + Math.toRadians(90.0)));
-
-            aprilSlowdownTimer.reset();
+                follower.setPose(new Pose(aprilPose[0], aprilPose[1], aprilPose[3] + Math.toRadians(90.0)));
+                aprilSlowdownTimer.reset();
+            }
         }
-    }
-
 
         // Pre-calculate launch vector conversions if available
         Double launchElevationDeg = null;
@@ -154,14 +157,14 @@ public class MainDriveOpmode extends OpMode {
             // Offset azimuth by robot heading
             double fieldRelativeAzimuth = launchVectors[1] - robotHeadingRad;
 
-            // Clamp and normalize as before
-            double minAngleRad = Math.toRadians(0);
+            // Clamp and normalize
+            double minAngleRad = 0;
             double maxAngleRad = Math.toRadians(180);
             double normalized = (fieldRelativeAzimuth - minAngleRad) / (maxAngleRad - minAngleRad);
             normalized = Math.max(0.0, Math.min(1.0, normalized));
 
             // Calculate servo positions
-            double elevationServoTarget = launchVectors[0] / Math.toRadians(45.0); // assuming max elevation is 45 degrees
+            double elevationServoTarget = launchVectors[0] / Math.toRadians(45.0);
 
             elevationServo.setPosition(elevationServoTarget);
             azimuthServo0.setPosition(normalized);
@@ -190,46 +193,38 @@ public class MainDriveOpmode extends OpMode {
         }
 
         // Clamp target power
-        if (targetPower > 1.0) targetPower = 1.0;
-        if (targetPower < -1.0) targetPower = -1.0;
+        targetPower = Math.max(-1.0, Math.min(1.0, targetPower));
 
         // Cache loop time at the end for accurate measurement
         double loopTimeMs = loopTimer.milliseconds();
 
-        // ===== TELEMETRY BLOCK =====
+        // ===== TELEMETRY BLOCK - Update every 3 loops to reduce overhead =====
+        if (loopCounter % 3 == 0) {
+            telemetryC.addData("Launcher Elevation Servo Pos", elevationServoPos);
+            telemetryC.addData("External Heading (deg)", externalHeading);
+            telemetryC.addData("Pose X", poseX);
+            telemetryC.addData("Pose Y", poseY);
 
-        // Format all values for //telemetry
-        String formattedElevationServoPos = df.format(elevationServoPos);
-        String formattedPoseX = df.format(poseX);
-        String formattedPoseY = df.format(poseY);
-        String formattedLauncherRPM = df.format(launcherRPM);
-        String formattedLoopTime = df.format(loopTimeMs);
+            if (aprilPose != null) {
+                telemetryC.addData("X (in) AprilTag", aprilPose[0]);
+                telemetryC.addData("Y (in) AprilTag", aprilPose[1]);
+            }
 
-        // Add all //telemetry data
-        //telemetryC.addData("Launcher Elevation Servo Pos: ", formattedElevationServoPos);
-        //telemetryC.addData("External Heading (deg)", externalHeading);
-        //telemetryC.addData("Pose X: ", formattedPoseX);
-        //telemetryC.addData("Pose Y: ", formattedPoseY);
+            if (launchVectors != null) {
+                telemetryC.addData("Launch Elevation (deg)", launchElevationDeg);
+                telemetryC.addData("Launch Azimuth (deg)", launchAzimuthDeg);
+                telemetryC.addData("Launch Azimuth (deg, offset)", fieldRelativeAzimuthDeg);
+            } else {
+                telemetryC.addData("Launch Vectors", "Target Unreachable");
+            }
 
-        if (launchVectors != null) {
-            String formattedLaunchElevation = df.format(launchElevationDeg);
-            String formattedLaunchAzimuth = df.format(launchAzimuthDeg);
-            String formattedFieldRelativeAzimuth = df.format(fieldRelativeAzimuthDeg);
+            telemetryC.addData("Launcher RPM", launcherRPM);
+            telemetryC.addData("Launcher Power", targetPower);
+            telemetryC.addData("Loop Time (ms)", loopTimeMs);
 
-            //telemetryC.addData("Launch Elevation (deg)", formattedLaunchElevation);
-            //telemetryC.addData("Launch Azimuth (deg)", formattedLaunchAzimuth);
-            //telemetryC.addData("Launch Azimuth (deg, offset): ", formattedFieldRelativeAzimuth);
-        } else {
-            //telemetryC.addData("Launch Vectors: ", "Target Unreachable");
+            telemetryC.update();
         }
 
-        //telemetryC.addData("Launcher RPM: ", formattedLauncherRPM);
-        //telemetryC.addData("External Heading (deg)", externalHeading);
-        //telemetryC.addData("Pose X: ", formattedPoseX);
-        //telemetryC.addData("Pose Y: ", formattedPoseY);
-        //telemetryC.addData("launcherPower: ", targetPower);
-        telemetryC.addData("Loop Time (ms): ", formattedLoopTime);
-
-        telemetryC.update();
+        loopCounter++;
     }
 }
