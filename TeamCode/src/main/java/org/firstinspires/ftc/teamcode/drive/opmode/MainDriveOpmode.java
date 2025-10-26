@@ -1,5 +1,7 @@
 package org.firstinspires.ftc.teamcode.drive.opmode;
 
+import android.annotation.SuppressLint;
+
 import com.bylazar.telemetry.PanelsTelemetry;
 import com.bylazar.telemetry.TelemetryManager;
 import com.pedropathing.follower.Follower;
@@ -40,7 +42,17 @@ public class MainDriveOpmode extends OpMode {
     Team team = Team.BLUE;
      ElapsedTime aprilSlowdownTimer = new ElapsedTime();
      ElapsedTime loopTimer = new ElapsedTime();
+    ElapsedTime sectionTimer = new ElapsedTime();
+    double timeCaching = 0, timeUpdate = 0, timeDraw = 0, timeDrive = 0;
+    double timeAprilTag = 0, timeServo = 0, timeLauncher = 0, timeTelemetry = 0;
     static TelemetryManager telemetryM;
+    private int loopCounter = 0;
+
+
+    // Threading
+
+    private Thread drawingThread;
+    private volatile boolean drawingThreadRunning = false;
 
 	@Override
     public void init() {
@@ -70,16 +82,20 @@ public class MainDriveOpmode extends OpMode {
 
     }
 
-    private int loopCounter = 0;
+    @Override
+    public void start() {
+        startDrawingThread();
+    }
+    @Override
+    public void stop() {
+        stopDrawingThread();
+    }
 
+
+    @SuppressLint("DefaultLocale")
     @Override
     public void loop() {
         loopTimer.reset();
-
-        // Performance timing instrumentation
-        ElapsedTime sectionTimer = new ElapsedTime();
-        double timeCaching = 0, timeUpdate = 0, timeDraw = 0, timeDrive = 0;
-        double timeAprilTag = 0, timeServo = 0, timeLauncher = 0, timeTelemetry = 0;
 
         // ===== CACHE ALL VALUES AT THE BEGINNING =====
 
@@ -88,10 +104,12 @@ public class MainDriveOpmode extends OpMode {
         double elevationServoPos = elevationServo.getPosition();
 
         // Follower/Pose data
-        Pose currentPose = follower.getPose();
-        double poseX = currentPose.getX();
-        double poseY = currentPose.getY();
-        double robotHeadingRad = follower.getHeading();
+        Pose currentPose;
+        double poseX, poseY, robotHeadingRad;
+        currentPose = follower.getPose();
+        poseX = currentPose.getX();
+        poseY = currentPose.getY();
+        robotHeadingRad = follower.getHeading();
 
 
         // Launch calculations
@@ -124,18 +142,9 @@ public class MainDriveOpmode extends OpMode {
         sectionTimer.reset();
         launcher.setPIDFController(pidfConstant);
         launcher.updateRPMPID();
-        ;
+
         follower.update();
         timeUpdate = sectionTimer.milliseconds();
-
-
-
-        // Only draw every x loops to reduce overhead
-        sectionTimer.reset();
-        if (loopCounter % 10 == 0) {
-            robotCoreCustom.drawCurrentAndHistory(follower);
-        }
-        timeDraw = sectionTimer.milliseconds();
 
         // ===== DRIVE CONTROL =====
         sectionTimer.reset();
@@ -259,7 +268,6 @@ public class MainDriveOpmode extends OpMode {
             telemetryC.addData("--- Performance Breakdown ---", "");
             telemetryC.addData("Caching: ", String.format("%.2f ms", timeCaching));
             telemetryC.addData("Update/PIDF: ", String.format("%.2f ms", timeUpdate));
-            telemetryC.addData("Drawing: ", String.format("%.2f ms", timeDraw));
             telemetryC.addData("Drive Control: ", String.format("%.2f ms", timeDrive));
             telemetryC.addData("AprilTag: ", String.format("%.2f ms", timeAprilTag));
             telemetryC.addData("Servo Control: ", String.format("%.2f ms", timeServo));
@@ -269,6 +277,7 @@ public class MainDriveOpmode extends OpMode {
             double totalAccountedTime = timeCaching + timeUpdate + timeDraw + timeDrive +
                     timeAprilTag + timeServo + timeLauncher + timeTelemetry;
             telemetryC.addData("Total Accounted", String.format("%.2f ms", totalAccountedTime));
+            telemetryC.addData("Percent Accounted", String.format("%.2f %%", (totalAccountedTime / loopTimeMs) * 100.0));
 
             telemetryC.update();
         }
@@ -276,5 +285,30 @@ public class MainDriveOpmode extends OpMode {
         timeTelemetry = sectionTimer.milliseconds();
 
         loopCounter++;
+    }
+
+    private void startDrawingThread() {
+        drawingThreadRunning = true;
+        drawingThread = new Thread(() -> {
+            while (drawingThreadRunning) {
+                robotCoreCustom.drawCurrentAndHistory(follower);
+                try {
+                    Thread.sleep(10); // Adjust the sleep time as needed
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        });
+        drawingThread.start();
+    }
+    private void stopDrawingThread() {
+        drawingThreadRunning = false;
+        if (drawingThread != null) {
+            try {
+                drawingThread.join(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 }
