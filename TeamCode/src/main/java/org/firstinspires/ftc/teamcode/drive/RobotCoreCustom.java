@@ -172,7 +172,7 @@ public class RobotCoreCustom {
 		}
 		public void addData(String caption, Object value) {
 			telemetry.addData(caption, value);
-			telemetryM.debug(caption + value.toString());
+			telemetryM.debug(caption + ": " + value.toString());
 		}
 		public void update() {
 			telemetry.update();

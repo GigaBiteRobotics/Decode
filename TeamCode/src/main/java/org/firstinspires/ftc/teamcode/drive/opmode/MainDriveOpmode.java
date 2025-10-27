@@ -8,17 +8,16 @@ import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.Pose;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-//import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
 import org.firstinspires.ftc.teamcode.drive.CustomPIDFController;
+import org.firstinspires.ftc.teamcode.drive.CustomThreads;
 import org.firstinspires.ftc.teamcode.drive.MDOConstants;
 import org.firstinspires.ftc.teamcode.drive.RobotCoreCustom;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
-import java.text.DecimalFormat;
 
 @TeleOp(name = "Drive", group = "!advanced")
 public class MainDriveOpmode extends OpMode {
@@ -26,8 +25,9 @@ public class MainDriveOpmode extends OpMode {
     //IMU imuEX;
     RobotCoreCustom robotCoreCustom;
     Follower follower;
-    DecimalFormat df = new DecimalFormat("#.##");
     Servo elevationServo, azimuthServo0, azimuthServo1;
+    Double launchElevationDeg = 0.0;
+    double elevationServoTarget = 0.0;
     RobotCoreCustom.CustomMotor launcher;
     Double[] lastAprilLocalization = null;
     double targetPower = 0.0;
@@ -42,17 +42,15 @@ public class MainDriveOpmode extends OpMode {
     Team team = Team.BLUE;
      ElapsedTime aprilSlowdownTimer = new ElapsedTime();
      ElapsedTime loopTimer = new ElapsedTime();
+    double loopTimeMs = 0;
     ElapsedTime sectionTimer = new ElapsedTime();
-    double timeCaching = 0, timeUpdate = 0, timeDraw = 0, timeDrive = 0;
+    double timeCaching = 0, timeUpdate = 0, timeDrive = 0;
     double timeAprilTag = 0, timeServo = 0, timeLauncher = 0, timeTelemetry = 0;
+
     static TelemetryManager telemetryM;
-    private int loopCounter = 0;
 
-
-    // Threading
-
-    private Thread drawingThread;
-    private volatile boolean drawingThreadRunning = false;
+    // Threads
+    CustomThreads customThreads;
 
 	@Override
     public void init() {
@@ -79,16 +77,18 @@ public class MainDriveOpmode extends OpMode {
         follower.startTeleopDrive();
         gamepadTimer.reset();
         aprilSlowdownTimer.reset();
-
+        customThreads = new CustomThreads(robotCoreCustom, follower);
     }
 
     @Override
     public void start() {
-        startDrawingThread();
+        customThreads.startDrawingThread();
+        customThreads.startCPUMonThread();
     }
     @Override
     public void stop() {
-        stopDrawingThread();
+        customThreads.stopDrawingThread();
+        customThreads.stopCPUMonThread();
     }
 
 
@@ -100,8 +100,6 @@ public class MainDriveOpmode extends OpMode {
         // ===== CACHE ALL VALUES AT THE BEGINNING =====
 
         sectionTimer.reset();
-        // Servo positions
-        double elevationServoPos = elevationServo.getPosition();
 
         // Follower/Pose data
         Pose currentPose;
@@ -180,7 +178,6 @@ public class MainDriveOpmode extends OpMode {
         sectionTimer.reset();
 
         // Pre-calculate launch vector conversions if available
-        Double launchElevationDeg = null;
         Double launchAzimuthDeg = null;
         double fieldRelativeAzimuthDeg = 0;
 
@@ -198,11 +195,10 @@ public class MainDriveOpmode extends OpMode {
             normalized = Math.max(0.0, Math.min(1.0, normalized));
 
             // Calculate servo positions
-            double elevationServoTarget = launchVectors[0] / Math.toRadians(45.0);
+            elevationServoTarget = launchVectors[0] / Math.toRadians(45.0);
 
             elevationServo.setPosition(elevationServoTarget);
             azimuthServo0.setPosition(normalized);
-
             fieldRelativeAzimuthDeg = Math.toDegrees(fieldRelativeAzimuth);
         }
 
@@ -236,12 +232,11 @@ public class MainDriveOpmode extends OpMode {
         timeLauncher = sectionTimer.milliseconds();
 
         // Cache loop time at the end for accurate measurement
-        double loopTimeMs = loopTimer.milliseconds();
+
 
         // ===== TELEMETRY BLOCK - Update every 3 loops to reduce overhead =====
         sectionTimer.reset();
 
-        telemetryC.addData("Launcher Elevation Servo Pos", elevationServoPos);
         telemetryC.addData("External Heading (deg)", robotHeadingRad);
         telemetryC.addData("Pose X", poseX);
         telemetryC.addData("Pose Y", poseY);
@@ -255,7 +250,7 @@ public class MainDriveOpmode extends OpMode {
         }
 
         if (launchVectors != null) {
-            telemetryC.addData("Launch Elevation (deg)", launchElevationDeg);
+            telemetryC.addData("Launch Elevation (deg)", elevationServoTarget);
             telemetryC.addData("Launch Azimuth (deg)", launchAzimuthDeg);
             telemetryC.addData("Launch Azimuth (deg, offset)", fieldRelativeAzimuthDeg);
         } else {
@@ -264,51 +259,27 @@ public class MainDriveOpmode extends OpMode {
 
         telemetryC.addData("Launcher RPM", launcherRPM);
         telemetryC.addData("Launcher Power", targetPower);
-        telemetryC.addData("Loop Time (ms)", loopTimeMs);
+
+        // ===== CPU USAGE/TEMP TELEMETRY =====
+        telemetryC.addData("CPU Usage (%)", String.format("%.2f %%", customThreads.getCpuUsage()));
+        telemetryC.addData("CPU Temp (°C)", String.format("%.2f °C", customThreads.getCpuTemp()));
+
 
         // ===== PERFORMANCE TIMING TELEMETRY =====
+        telemetryC.addData("Loop Time (ms)", loopTimeMs);
         telemetryC.addData("--- Performance Breakdown ---", "");
-        telemetryC.addData("Caching: ", String.format("%.2f ms", timeCaching));
-        telemetryC.addData("Update/PIDF: ", String.format("%.2f ms", timeUpdate));
-        telemetryC.addData("Drive Control: ", String.format("%.2f ms", timeDrive));
-        telemetryC.addData("AprilTag: ", String.format("%.2f ms", timeAprilTag));
-        telemetryC.addData("Servo Control: ", String.format("%.2f ms", timeServo));
-        telemetryC.addData("Launcher Control: ", String.format("%.2f ms", timeLauncher));
-        telemetryC.addData("Telemetry: ", String.format("%.2f ms", timeTelemetry));
+        telemetryC.addData("Caching", String.format("%.2f ms", timeCaching));
+        telemetryC.addData("Update/PIDF", String.format("%.2f ms", timeUpdate));
+        telemetryC.addData("Drive Control", String.format("%.2f ms", timeDrive));
+        telemetryC.addData("AprilTag", String.format("%.2f ms", timeAprilTag));
+        telemetryC.addData("Servo Control", String.format("%.2f ms", timeServo));
+        telemetryC.addData("Launcher Control", String.format("%.2f ms", timeLauncher));
+        telemetryC.addData("Telemetry", String.format("%.2f ms", timeTelemetry));
 
-        double totalAccountedTime = timeCaching + timeUpdate + timeDraw + timeDrive +
-                timeAprilTag + timeServo + timeLauncher + timeTelemetry;
-        telemetryC.addData("Total Accounted", String.format("%.2f ms", totalAccountedTime));
-        telemetryC.addData("Percent Accounted", String.format("%.2f %%", (totalAccountedTime / loopTimeMs) * 100.0));
+        // Update Telemetry
         telemetryC.update();
 
         timeTelemetry = sectionTimer.milliseconds();
-
-        loopCounter++;
-    }
-
-    private void startDrawingThread() {
-        drawingThreadRunning = true;
-        drawingThread = new Thread(() -> {
-            while (drawingThreadRunning) {
-                robotCoreCustom.drawCurrentAndHistory(follower);
-                try {
-                    Thread.sleep(10); // Adjust the sleep time as needed
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-            }
-        });
-        drawingThread.start();
-    }
-    private void stopDrawingThread() {
-        drawingThreadRunning = false;
-        if (drawingThread != null) {
-            try {
-                drawingThread.join(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
+        loopTimeMs = loopTimer.milliseconds();
     }
 }
