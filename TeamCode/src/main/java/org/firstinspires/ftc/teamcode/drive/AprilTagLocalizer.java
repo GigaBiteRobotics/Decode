@@ -106,19 +106,21 @@ public class AprilTagLocalizer {
 
 	}   // end method initAprilTag()
 	public Double[] getPosition() {
-		List<AprilTagDetection> currentDetections = aprilTag.getDetections();
-		for (AprilTagDetection detection : currentDetections) {
-			if (detection != null) {
-				if (!detection.metadata.name.contains("Obelisk")) {
-					return new Double[]{
-							detection.robotPose.getPosition().x,
-							detection.robotPose.getPosition().y,
-							detection.robotPose.getPosition().z,
-							detection.robotPose.getOrientation().getYaw(AngleUnit.RADIANS)
-					};
+		try {
+			List<AprilTagDetection> currentDetections = aprilTag.getDetections();
+			for (AprilTagDetection detection : currentDetections) {
+				if (detection != null) {
+					if (!detection.metadata.name.contains("Obelisk")) {
+						return new Double[]{
+								detection.robotPose.getPosition().x,
+								detection.robotPose.getPosition().y,
+								detection.robotPose.getPosition().z,
+								detection.robotPose.getOrientation().getYaw(AngleUnit.RADIANS)
+						};
+					}
 				}
 			}
-		}
+		} catch (Exception e) { return null; }
 		return null;
 	}
 	public boolean isLocalized() {

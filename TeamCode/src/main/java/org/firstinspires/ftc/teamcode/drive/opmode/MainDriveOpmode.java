@@ -160,12 +160,9 @@ public class MainDriveOpmode extends OpMode {
         sectionTimer.reset();
 
         if (aprilPose != null) {
-            lastAprilLocalization = aprilPose;
-
             if (MDOConstants.useAprilTags &&
                     aprilSlowdownTimer.milliseconds() > 100 &&
-                    aprilPose != lastAprilLocalization &&
-                    localizer.getDecisionMargin() > 0.9) {
+                    localizer.getDecisionMargin() > 0.8) {
 
                 follower.setPose(new Pose(aprilPose[0], aprilPose[1], aprilPose[3] + Math.toRadians(90.0)));
                 aprilSlowdownTimer.reset();
@@ -180,6 +177,7 @@ public class MainDriveOpmode extends OpMode {
         // Pre-calculate launch vector conversions if available
         Double launchAzimuthDeg = null;
         double fieldRelativeAzimuthDeg = 0;
+        double maxRotations = MDOConstants.maxTurretAzimuthRotations; // Maximum servo rotations (1.0 = 360°, 2.0 = 720°, etc.)
 
         if (launchVectors != null) {
             launchElevationDeg = Math.toDegrees(launchVectors[0]);
@@ -188,17 +186,48 @@ public class MainDriveOpmode extends OpMode {
             // Offset azimuth by robot heading
             double fieldRelativeAzimuth = launchVectors[1] - robotHeadingRad;
 
-            // Clamp and normalize
-            double minAngleRad = 0;
-            double maxAngleRad = Math.toRadians(180);
-            double normalized = (fieldRelativeAzimuth - minAngleRad) / (maxAngleRad - minAngleRad);
-            normalized = Math.max(0.0, Math.min(1.0, normalized));
+            // Wrap around: normalize to -PI to PI range
+            fieldRelativeAzimuth = Math.atan2(Math.sin(fieldRelativeAzimuth), Math.cos(fieldRelativeAzimuth));
+
+            // Store the current servo position to find shortest path
+            double currentServoPos = azimuthServo0.getPosition();
+
+            // Convert field relative azimuth to 0 to 2*PI range
+            double targetAzimuth = fieldRelativeAzimuth;
+            if (targetAzimuth < 0) {
+                targetAzimuth += 2 * Math.PI;
+            }
+
+            // Map to servo range (0.0 to 1.0)
+            double targetNormalized = targetAzimuth / (2 * Math.PI);
+
+            // Find shortest path considering wrap-around
+            double directDistance = Math.abs(targetNormalized - currentServoPos);
+            double wrapDistance = 1.0 - directDistance;
+
+            double finalServoPos;
+            if (directDistance <= wrapDistance) {
+                // Direct path is shorter
+                finalServoPos = targetNormalized;
+            } else {
+                // Wrapped path is shorter
+                if (targetNormalized > currentServoPos) {
+                    // Wrap backwards (through 0)
+                    finalServoPos = targetNormalized - 1.0;
+                } else {
+                    // Wrap forwards (through 1.0)
+                    finalServoPos = targetNormalized + 1.0;
+                }
+            }
+
+            // Clamp to valid servo range considering max rotations
+            finalServoPos = Math.max(0.0, Math.min(maxRotations, finalServoPos));
 
             // Calculate servo positions
             elevationServoTarget = launchVectors[0] / Math.toRadians(45.0);
 
             elevationServo.setPosition(elevationServoTarget);
-            azimuthServo0.setPosition(normalized);
+            azimuthServo0.setPosition(finalServoPos);
             fieldRelativeAzimuthDeg = Math.toDegrees(fieldRelativeAzimuth);
         }
 
