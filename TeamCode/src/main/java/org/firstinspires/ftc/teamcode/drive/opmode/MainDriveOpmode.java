@@ -1,23 +1,23 @@
 package org.firstinspires.ftc.teamcode.drive.opmode;
 
 import android.annotation.SuppressLint;
-
+import android.graphics.Color;
 import com.bylazar.telemetry.PanelsTelemetry;
 import com.bylazar.telemetry.TelemetryManager;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.Pose;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.ColorSensor;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
-
 import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
 import org.firstinspires.ftc.teamcode.drive.CustomPIDFController;
 import org.firstinspires.ftc.teamcode.drive.CustomThreads;
 import org.firstinspires.ftc.teamcode.drive.MDOConstants;
 import org.firstinspires.ftc.teamcode.drive.RobotCoreCustom;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
-
+import org.firstinspires.ftc.teamcode.utils.ColorUtils;
 
 @TeleOp(name = "Drive", group = "!advanced")
 public class MainDriveOpmode extends OpMode {
@@ -52,6 +52,8 @@ public class MainDriveOpmode extends OpMode {
     // Threads
     CustomThreads customThreads;
 
+    ColorSensor colorSensor;
+
 	@Override
     public void init() {
         telemetryM = PanelsTelemetry.INSTANCE.getTelemetry();
@@ -78,6 +80,7 @@ public class MainDriveOpmode extends OpMode {
         gamepadTimer.reset();
         aprilSlowdownTimer.reset();
         customThreads = new CustomThreads(robotCoreCustom, follower);
+        colorSensor = hardwareMap.get(ColorSensor.class, "colorSensor");
     }
 
     @Override
@@ -304,6 +307,42 @@ public class MainDriveOpmode extends OpMode {
         telemetryC.addData("Servo Control", String.format("%.2f ms", timeServo));
         telemetryC.addData("Launcher Control", String.format("%.2f ms", timeLauncher));
         telemetryC.addData("Telemetry", String.format("%.2f ms", timeTelemetry));
+
+        // ===== COLOR SENSOR TELEMETRY =====
+        int red = colorSensor.red();
+        int green = colorSensor.green();
+        int blue = colorSensor.blue();
+
+        // Use ColorUtils library for classification
+        String detectedColor;
+        if (ColorUtils.isBlack(red, green, blue)) {
+            detectedColor = "Black";
+        } else if (ColorUtils.isWhite(red, green, blue)) {
+            detectedColor = "White";
+        } else if (ColorUtils.isGreen(red, green, blue)) {
+            detectedColor = "Green";
+        } else if (ColorUtils.isPurple(red, green, blue)) {
+            detectedColor = "Purple";
+        } else {
+            detectedColor = "Unknown";
+        }
+
+        // Add detailed telemetry data
+        telemetryC.addData("Raw Red", red);
+        telemetryC.addData("Raw Green", green);
+        telemetryC.addData("Raw Blue", blue);
+        telemetryC.addData("Detected Color", detectedColor);
+
+        // ===== COLOR SENSOR DISTANCE ESTIMATION =====
+        // Approximate distance calculation using the intensity of the color sensor readings
+        int totalIntensity = red + green + blue;
+
+        // Use a simple inverse relationship for distance estimation
+        // Note: This is a rough approximation and may need calibration for your specific sensor and environment
+        double estimatedDistance = totalIntensity > 0 ? 1000.0 / totalIntensity : Double.MAX_VALUE;
+
+        // Add distance telemetry
+        telemetryC.addData("Estimated Distance (cm)", estimatedDistance);
 
         // Update Telemetry
         telemetryC.update();
