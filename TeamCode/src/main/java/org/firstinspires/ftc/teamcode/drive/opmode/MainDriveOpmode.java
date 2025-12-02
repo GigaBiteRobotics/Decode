@@ -17,7 +17,6 @@ import org.firstinspires.ftc.teamcode.drive.CustomThreads;
 import org.firstinspires.ftc.teamcode.drive.MDOConstants;
 import org.firstinspires.ftc.teamcode.drive.RobotCoreCustom;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
-import org.firstinspires.ftc.teamcode.utils.ColorUtils;
 
 @TeleOp(name = "Drive", group = "!advanced")
 public class MainDriveOpmode extends OpMode {
@@ -180,7 +179,6 @@ public class MainDriveOpmode extends OpMode {
         // Pre-calculate launch vector conversions if available
         Double launchAzimuthDeg = null;
         double fieldRelativeAzimuthDeg = 0;
-        double maxRotations = MDOConstants.maxTurretAzimuthRotations; // Maximum servo rotations (1.0 = 360°, 2.0 = 720°, etc.)
 
         if (launchVectors != null) {
             launchElevationDeg = Math.toDegrees(launchVectors[0]);
@@ -192,45 +190,16 @@ public class MainDriveOpmode extends OpMode {
             // Wrap around: normalize to -PI to PI range
             fieldRelativeAzimuth = Math.atan2(Math.sin(fieldRelativeAzimuth), Math.cos(fieldRelativeAzimuth));
 
-            // Store the current servo position to find shortest path
-            double currentServoPos = azimuthServo0.getPosition();
-
-            // Convert field relative azimuth to 0 to 2*PI range
-            double targetAzimuth = fieldRelativeAzimuth;
-            if (targetAzimuth < 0) {
-                targetAzimuth += 2 * Math.PI;
-            }
-
             // Map to servo range (0.0 to 1.0)
-            double targetNormalized = targetAzimuth / (2 * Math.PI);
-
-            // Find shortest path considering wrap-around
-            double directDistance = Math.abs(targetNormalized - currentServoPos);
-            double wrapDistance = 1.0 - directDistance;
-
-            double finalServoPos;
-            if (directDistance <= wrapDistance) {
-                // Direct path is shorter
-                finalServoPos = targetNormalized;
-            } else {
-                // Wrapped path is shorter
-                if (targetNormalized > currentServoPos) {
-                    // Wrap backwards (through 0)
-                    finalServoPos = targetNormalized - 1.0;
-                } else {
-                    // Wrap forwards (through 1.0)
-                    finalServoPos = targetNormalized + 1.0;
-                }
-            }
-
-            // Clamp to valid servo range considering max rotations
-            finalServoPos = Math.max(0.0, Math.min(maxRotations, finalServoPos));
+            double azimuthServoPos = (fieldRelativeAzimuth + Math.PI) / (2 * Math.PI);
 
             // Calculate servo positions
             elevationServoTarget = launchVectors[0] / Math.toRadians(45.0);
 
             elevationServo.setPosition(elevationServoTarget);
-            azimuthServo0.setPosition(finalServoPos);
+            azimuthServo0.setPosition(
+                    azimuthServoPos);
+            azimuthServo1.setPosition(azimuthServoPos);
             fieldRelativeAzimuthDeg = Math.toDegrees(fieldRelativeAzimuth);
         }
 
@@ -314,25 +283,12 @@ public class MainDriveOpmode extends OpMode {
         int blue = colorSensor.blue();
 
         // Use ColorUtils library for classification
-        String detectedColor;
-        if (ColorUtils.isBlack(red, green, blue)) {
-            detectedColor = "Black";
-        } else if (ColorUtils.isWhite(red, green, blue)) {
-            detectedColor = "White";
-        } else if (ColorUtils.isGreen(red, green, blue)) {
-            detectedColor = "Green";
-        } else if (ColorUtils.isPurple(red, green, blue)) {
-            detectedColor = "Purple";
-        } else {
-            detectedColor = "Unknown";
-        }
 
         // Add detailed telemetry data
+        telemetryC.addData("--- Color Sensor ---", "");
         telemetryC.addData("Raw Red", red);
         telemetryC.addData("Raw Green", green);
         telemetryC.addData("Raw Blue", blue);
-        telemetryC.addData("Detected Color", detectedColor);
-
         // ===== COLOR SENSOR DISTANCE ESTIMATION =====
         // Approximate distance calculation using the intensity of the color sensor readings
         int totalIntensity = red + green + blue;
