@@ -4,9 +4,12 @@ import com.bylazar.telemetry.TelemetryManager;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.util.PoseHistory;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
+import com.qualcomm.robotcore.hardware.ColorSensor;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.IMU;
+import com.qualcomm.robotcore.hardware.Servo;
+import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
@@ -179,5 +182,78 @@ public class RobotCoreCustom {
 			telemetryM.update();
 		}
 
+	}
+	public static class CustomSorterController {
+		public enum CustomColor {
+			GREEN,
+			PURPLE,
+			NULL
+		}
+		private CustomColor customColor0;
+		int lifterState[] = new int[3];
+		ElapsedTime lifterTimer;
+		private CustomColor customColor1;
+		private CustomColor customColor2;
+		private Servo lifter[] = new Servo[3];
+		private ColorSensor colorSensor[] = new ColorSensor[3];
+
+		public CustomSorterController(HardwareMap hardwareMap) {
+			lifter[0] = hardwareMap.get(Servo.class, "lifter0");
+			lifter[1] = hardwareMap.get(Servo.class, "lifter1");
+			lifter[2] = hardwareMap.get(Servo.class, "lifter2");
+			colorSensor[0] = hardwareMap.get(ColorSensor.class, "colorSensor0");
+			colorSensor[1] = hardwareMap.get(ColorSensor.class, "colorSensor1");
+			colorSensor[2] = hardwareMap.get(ColorSensor.class, "colorSensor2");
+		}
+
+		public CustomColor getColor(int pitSelector) {
+			switch (pitSelector) {
+				case 0:
+					return calcColor(colorSensor[0].argb());
+				case 1:
+					return calcColor(colorSensor[1].argb());
+				case 2:
+					return calcColor(colorSensor[2].argb());
+				default:
+					return CustomColor.NULL;
+			}
+		}
+
+		public void launch(CustomColor color) {
+			for (int i = 0; i < 3; i++) {
+				int colorARGB = colorSensor[i].argb();
+				if (calcColor(colorARGB) == color) {
+					lifterState[i] = 1;
+				}
+			}
+		}
+		public void lifterUpdater() {
+				for (int i = 0; i < 3; i++) {
+					if (lifterState[i] == 1) {
+						lifterState[i] = 2;
+						lifterTimer.reset();
+						lifter[i].setPosition(MDOConstants.LifterPositionHigh);
+					}
+					if (lifterState[i] == 2 && lifterTimer.milliseconds() > MDOConstants.LifterWaitToTopTimerMillis) {
+						lifterState[i] = 0;
+						lifter[i].setPosition(MDOConstants.LifterPositionLow);
+					}
+				}
+		}
+
+		private CustomColor calcColor(int argb) {
+			// Extract color components from ARGB int
+			int red = (argb >> 16) & 0xFF;
+			int green = (argb >> 8) & 0xFF;
+			int blue = argb & 0xFF;
+
+			if (green > blue && green > red) {
+				return CustomColor.GREEN;
+			} else if (blue > green && blue > red) {
+				return CustomColor.PURPLE;
+			} else {
+				return CustomColor.NULL;
+			}
+		}
 	}
 }

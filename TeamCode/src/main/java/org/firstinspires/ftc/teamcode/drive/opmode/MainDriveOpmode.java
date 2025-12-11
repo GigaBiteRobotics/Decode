@@ -1,7 +1,7 @@
 package org.firstinspires.ftc.teamcode.drive.opmode;
 
 import android.annotation.SuppressLint;
-import android.graphics.Color;
+
 import com.bylazar.telemetry.PanelsTelemetry;
 import com.bylazar.telemetry.TelemetryManager;
 import com.pedropathing.follower.Follower;
@@ -12,6 +12,7 @@ import com.qualcomm.robotcore.hardware.ColorSensor;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
+import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
 import org.firstinspires.ftc.teamcode.drive.CustomPIDFController;
 import org.firstinspires.ftc.teamcode.drive.CustomThreads;
 import org.firstinspires.ftc.teamcode.drive.MDOConstants;
@@ -27,11 +28,13 @@ public class MainDriveOpmode extends OpMode {
     Servo elevationServo, azimuthServo0, azimuthServo1;
     Double launchElevationDeg = 0.0;
     double elevationServoTarget = 0.0;
-    RobotCoreCustom.CustomMotor launcher;
+    RobotCoreCustom.CustomMotor launcher0;
+    RobotCoreCustom.CustomMotor launcher1;
     Double[] lastAprilLocalization = null;
     double targetPower = 0.0;
     ElapsedTime gamepadTimer = new ElapsedTime();
     RobotCoreCustom.CustomTelemetry telemetryC;
+    RobotCoreCustom.CustomSorterController sorterController;
 
     enum Team {
         RED,
@@ -57,13 +60,32 @@ public class MainDriveOpmode extends OpMode {
     public void init() {
         telemetryM = PanelsTelemetry.INSTANCE.getTelemetry();
         telemetryC = new RobotCoreCustom.CustomTelemetry(telemetry, telemetryM);
-        if (gamepad1.a) { team = Team.RED; }
-        else { team = Team.BLUE; }
+
+        // Sorting Initialization
+        sorterController = new RobotCoreCustom.CustomSorterController(hardwareMap);
+
+        // Get data from autonomous if available
+        AutoToTeleDataTransferer dataTransfer = AutoToTeleDataTransferer.getInstance();
+        Pose startPose = dataTransfer.getEndPose();
+        String allianceColor = dataTransfer.getAllianceColor();
+
+        // Set team based on auto data or gamepad input
+        if (!allianceColor.equals("UNKNOWN")) {
+            // Use alliance color from auto
+            team = allianceColor.equals("RED") ? Team.RED : Team.BLUE;
+            telemetryC.addData("Alliance from Auto", allianceColor);
+        } else {
+            // Manual selection if no auto data
+            if (gamepad1.a) { team = Team.RED; }
+            else { team = Team.BLUE; }
+        }
+
         if (team == Team.RED) {
             MDOConstants.targetLocation = new Double[]{-70.0, -70.0, 40.0};
         } else {
             MDOConstants.targetLocation = new Double[]{-70.0, 70.0, 40.0};
         }
+
         robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
         localizer = new AprilTagLocalizer();
         elevationServo = hardwareMap.get(Servo.class, "elevationServo");
@@ -71,15 +93,36 @@ public class MainDriveOpmode extends OpMode {
         azimuthServo1 = hardwareMap.get(Servo.class, "azimuthServo1");
         localizer.initAprilTag(hardwareMap, "Webcam 1");
 
-        launcher = new RobotCoreCustom.CustomMotor(hardwareMap, "launcher0", true, 28, MDOConstants.launcherPIDF);
-
+        launcher0 = new RobotCoreCustom.CustomMotor(hardwareMap, "launcher0", true, 28, MDOConstants.launcherPIDF);
+        launcher1 = new RobotCoreCustom.CustomMotor(hardwareMap, "launcher1", false, 28, MDOConstants.launcherPIDF);
         follower = Constants.createFollower(hardwareMap);
-        follower.setStartingPose(new Pose(0, 0, 0));
+
+        // Use pose from auto if available, otherwise use default
+        if (startPose.getX() != 0 || startPose.getY() != 0 || startPose.getHeading() != 0) {
+            follower.setStartingPose(startPose);
+            telemetryC.addData("Starting Pose from Auto",
+                String.format("(%.1f, %.1f, %.1f°)",
+                    startPose.getX(), startPose.getY(), Math.toDegrees(startPose.getHeading())));
+        } else {
+            follower.setStartingPose(new Pose(0, 0, 0));
+            telemetryC.addData("Starting Pose", "Default (0, 0, 0)");
+        }
+
         follower.startTeleopDrive();
         gamepadTimer.reset();
         aprilSlowdownTimer.reset();
         customThreads = new CustomThreads(robotCoreCustom, follower);
         colorSensor = hardwareMap.get(ColorSensor.class, "colorSensor");
+
+        // Display auto summary if available
+        if (dataTransfer.isAutoCompleted()) {
+            telemetryC.addData("Auto Status", "Completed Successfully");
+            telemetryC.addData("Auto Runtime", String.format("%.2fs", dataTransfer.getAutoRuntime()));
+        } else if (!allianceColor.equals("UNKNOWN")) {
+            telemetryC.addData("Auto Status", "Did not complete");
+        }
+
+        telemetryC.update();
     }
 
     @Override
@@ -117,7 +160,7 @@ public class MainDriveOpmode extends OpMode {
         Double[] launchVectors = RobotCoreCustom.localizerLauncherCalc(follower, MDOConstants.targetLocation);
 
         // Launcher data
-        double launcherRPM = launcher.getRPM();
+        double launcherRPM = launcher0.getRPM();
 
         // Gamepad inputs - all sticks
         double gamepad1LeftStickY = gamepad1.left_stick_y;
@@ -140,11 +183,12 @@ public class MainDriveOpmode extends OpMode {
 
         // ===== MAIN LOOP LOGIC =====
         sectionTimer.reset();
-        launcher.setPIDFController(pidfConstant);
-        launcher.updateRPMPID();
+        launcher0.setPIDFController(pidfConstant);
+        launcher0.updateRPMPID();
 
         follower.update();
         timeUpdate = sectionTimer.milliseconds();
+        sorterController.lifterUpdater();
 
         // ===== DRIVE CONTROL =====
         sectionTimer.reset();
@@ -197,9 +241,8 @@ public class MainDriveOpmode extends OpMode {
             elevationServoTarget = launchVectors[0] / Math.toRadians(45.0);
 
             elevationServo.setPosition(elevationServoTarget);
-            azimuthServo0.setPosition(
-                    azimuthServoPos);
-            azimuthServo1.setPosition(azimuthServoPos);
+            azimuthServo0.setPosition(azimuthServoPos);
+            azimuthServo1.setPosition(1.0 - azimuthServoPos); // Flipped around center 0.5
             fieldRelativeAzimuthDeg = Math.toDegrees(fieldRelativeAzimuth);
         }
 
@@ -210,9 +253,9 @@ public class MainDriveOpmode extends OpMode {
 
         if (usePIDFLauncher) {
             int targetRPM = (int) (targetPower * 5500);
-            launcher.setRPM(targetRPM);
+            launcher0.setRPM(targetRPM);
         } else {
-            launcher.setPower(targetPower);
+            launcher0.setPower(targetPower);
         }
 
         // Gamepad controls for target power

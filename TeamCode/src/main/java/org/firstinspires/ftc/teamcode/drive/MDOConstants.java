@@ -10,4 +10,7 @@ public class MDOConstants {
     public static CustomPIDFController launcherPIDF = new CustomPIDFController(1.5, 0.0, 0.2, 0.0);
     public static Double[] launcherCalcConstants = new Double[]{280.00, 386.09};
     public static double maxTurretAzimuthRotations = 1.5;
+    public static double LifterPositionHigh = 0;
+    public static double LifterPositionLow = 0;
+    public static int LifterWaitToTopTimerMillis = 200;
 }
