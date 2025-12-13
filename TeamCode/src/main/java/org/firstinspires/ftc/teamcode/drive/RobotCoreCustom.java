@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode.drive;
 
+import com.bylazar.lights.RGBIndicator;
 import com.bylazar.telemetry.TelemetryManager;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.util.PoseHistory;
@@ -196,6 +197,7 @@ public class RobotCoreCustom {
 		private CustomColor customColor2;
 		private Servo lifter[] = new Servo[3];
 		private ColorSensor colorSensor[] = new ColorSensor[3];
+		private Servo rgbIndicator[] = new Servo[3];
 
 		public CustomSorterController(HardwareMap hardwareMap) {
 			lifter[0] = hardwareMap.get(Servo.class, "lifter0");
@@ -204,6 +206,10 @@ public class RobotCoreCustom {
 			colorSensor[0] = hardwareMap.get(ColorSensor.class, "colorSensor0");
 			colorSensor[1] = hardwareMap.get(ColorSensor.class, "colorSensor1");
 			colorSensor[2] = hardwareMap.get(ColorSensor.class, "colorSensor2");
+			rgbIndicator[0] = hardwareMap.get(Servo.class, "rgbInd0");
+			rgbIndicator[1] = hardwareMap.get(Servo.class, "rgbInd1");
+			rgbIndicator[2] = hardwareMap.get(Servo.class, "rgbInd2");
+			lifterTimer = new ElapsedTime();
 		}
 
 		public CustomColor getColor(int pitSelector) {
@@ -220,10 +226,19 @@ public class RobotCoreCustom {
 		}
 
 		public void launch(CustomColor color) {
-			for (int i = 0; i < 3; i++) {
-				int colorARGB = colorSensor[i].argb();
-				if (calcColor(colorARGB) == color) {
-					lifterState[i] = 1;
+			if (color == CustomColor.NULL) {
+				for (int i = 0; i < 3; i++) {
+					int colorARGB = colorSensor[i].argb();
+					if (calcColor(colorARGB) != CustomColor.NULL) {
+						lifterState[i] = 1;
+					}
+				}
+			} else {
+				for (int i = 0; i < 3; i++) {
+					int colorARGB = colorSensor[i].argb();
+					if (calcColor(colorARGB) == color) {
+						lifterState[i] = 1;
+					}
 				}
 			}
 		}
@@ -238,7 +253,26 @@ public class RobotCoreCustom {
 						lifterState[i] = 0;
 						lifter[i].setPosition(MDOConstants.LifterPositionLow);
 					}
+					if (lifterState[i] != 0) {
+						lifter[i].setPosition(MDOConstants.LifterPositionLow);
+					}
 				}
+		}
+		public void lightingUpdater() {
+			for (int i = 0; i < 3; i++) {
+				CustomColor color = calcColor(colorSensor[i].argb());
+				switch (color) {
+					case GREEN:
+						rgbIndicator[i].setPosition(0.5);
+						break;
+					case PURPLE:
+						rgbIndicator[i].setPosition(0.722);
+						break;
+					case NULL:
+						rgbIndicator[i].setPosition(0.0);
+						break;
+				}
+			}
 		}
 
 		private CustomColor calcColor(int argb) {

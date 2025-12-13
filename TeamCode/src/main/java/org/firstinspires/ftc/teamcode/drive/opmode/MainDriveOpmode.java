@@ -35,6 +35,7 @@ public class MainDriveOpmode extends OpMode {
     ElapsedTime gamepadTimer = new ElapsedTime();
     RobotCoreCustom.CustomTelemetry telemetryC;
     RobotCoreCustom.CustomSorterController sorterController;
+    boolean lastGamepad1DpadDown = false;
 
     enum Team {
         RED,
@@ -53,8 +54,6 @@ public class MainDriveOpmode extends OpMode {
 
     // Threads
     CustomThreads customThreads;
-
-    ColorSensor colorSensor;
 
 	@Override
     public void init() {
@@ -112,7 +111,6 @@ public class MainDriveOpmode extends OpMode {
         gamepadTimer.reset();
         aprilSlowdownTimer.reset();
         customThreads = new CustomThreads(robotCoreCustom, follower);
-        colorSensor = hardwareMap.get(ColorSensor.class, "colorSensor");
 
         // Display auto summary if available
         if (dataTransfer.isAutoCompleted()) {
@@ -189,6 +187,7 @@ public class MainDriveOpmode extends OpMode {
         follower.update();
         timeUpdate = sectionTimer.milliseconds();
         sorterController.lifterUpdater();
+        sorterController.lightingUpdater();
 
         // ===== DRIVE CONTROL =====
         sectionTimer.reset();
@@ -269,14 +268,15 @@ public class MainDriveOpmode extends OpMode {
             targetPower += gamepad2RightStickY * 0.1;
             gamepadTimer.reset();
         }
+        if (gamepad1.dpad_down && !lastGamepad1DpadDown) {
+            sorterController.launch(RobotCoreCustom.CustomSorterController.CustomColor.NULL);
+        }
+        lastGamepad1DpadDown = gamepad1.dpad_down;
 
         // Clamp target power
         targetPower = Math.max(-1.0, Math.min(1.0, targetPower));
 
         timeLauncher = sectionTimer.milliseconds();
-
-        // Cache loop time at the end for accurate measurement
-
 
         // ===== TELEMETRY BLOCK - Update every 3 loops to reduce overhead =====
         sectionTimer.reset();
@@ -319,29 +319,6 @@ public class MainDriveOpmode extends OpMode {
         telemetryC.addData("Servo Control", String.format("%.2f ms", timeServo));
         telemetryC.addData("Launcher Control", String.format("%.2f ms", timeLauncher));
         telemetryC.addData("Telemetry", String.format("%.2f ms", timeTelemetry));
-
-        // ===== COLOR SENSOR TELEMETRY =====
-        int red = colorSensor.red();
-        int green = colorSensor.green();
-        int blue = colorSensor.blue();
-
-        // Use ColorUtils library for classification
-
-        // Add detailed telemetry data
-        telemetryC.addData("--- Color Sensor ---", "");
-        telemetryC.addData("Raw Red", red);
-        telemetryC.addData("Raw Green", green);
-        telemetryC.addData("Raw Blue", blue);
-        // ===== COLOR SENSOR DISTANCE ESTIMATION =====
-        // Approximate distance calculation using the intensity of the color sensor readings
-        int totalIntensity = red + green + blue;
-
-        // Use a simple inverse relationship for distance estimation
-        // Note: This is a rough approximation and may need calibration for your specific sensor and environment
-        double estimatedDistance = totalIntensity > 0 ? 1000.0 / totalIntensity : Double.MAX_VALUE;
-
-        // Add distance telemetry
-        telemetryC.addData("Estimated Distance (cm)", estimatedDistance);
 
         // Update Telemetry
         telemetryC.update();
