@@ -243,6 +243,17 @@ public class MainDriveOpmode extends OpMode {
             azimuthServo0.setPosition(azimuthServoPos);
             azimuthServo1.setPosition(1.0 - azimuthServoPos); // Flipped around center 0.5
             fieldRelativeAzimuthDeg = Math.toDegrees(fieldRelativeAzimuth);
+
+
+
+
+
+
+
+
+
+
+
         }
 
         timeServo = sectionTimer.milliseconds();

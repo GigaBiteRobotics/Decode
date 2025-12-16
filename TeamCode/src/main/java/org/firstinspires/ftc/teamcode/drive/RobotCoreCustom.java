@@ -28,12 +28,14 @@ public class RobotCoreCustom {
 		imuEX = hardwareMap.get(IMU.class, "imuEX");
 		imuEX.initialize(parameters);
 	}
+
 	public static Double getExternalHeading() {
 		YawPitchRollAngles robotOrientation = imuEX.getRobotYawPitchRollAngles();
 
 		// Extract the yaw angle and convert to degrees
 		return robotOrientation.getYaw(AngleUnit.DEGREES);
 	}
+
 	public static Double[] localizerLauncherCalc(Follower follower, Double[] target) {
 		if (follower == null || target == null || target.length < 3) {
 			return null;
@@ -50,6 +52,7 @@ public class RobotCoreCustom {
 				MDOConstants.launcherCalcConstants[1] // gravity (in/s^2)
 		);
 	}
+
 	public void drawCurrent(Follower follower) {
 		try {
 			Drawing.drawRobot(follower.getPose());
@@ -84,10 +87,12 @@ public class RobotCoreCustom {
 			this.TICKS_PER_REV = -1; // Default value, can be changed as needed
 			this.hasEncoder = false;
 			try {
-				this.motor = hardwareMap.get(DcMotor.class, motorName);			} catch (Exception e) {
+				this.motor = hardwareMap.get(DcMotor.class, motorName);
+			} catch (Exception e) {
 				throw new IllegalArgumentException("Motor with name " + motorName + " not found in hardware map.");
 			}
 		}
+
 		public CustomMotor(HardwareMap hardwareMap, String motorName, Boolean hasEncoder, double ticksPerRev, CustomPIDFController pidfController) {
 			this.TICKS_PER_REV = ticksPerRev;
 			this.pidfController = pidfController;
@@ -105,41 +110,42 @@ public class RobotCoreCustom {
 			}
 		}
 
-	public Double getRPM() {
-		if (!hasEncoder) {
-			throw new IllegalStateException("Encoder disabled for this motor: " + motor.getDeviceName());
-		}
+		public Double getRPM() {
+			if (!hasEncoder) {
+				throw new IllegalStateException("Encoder disabled for this motor: " + motor.getDeviceName());
+			}
 
-		int currentTicks = motor.getCurrentPosition();
-		long currentTime = System.nanoTime();
+			int currentTicks = motor.getCurrentPosition();
+			long currentTime = System.nanoTime();
 
-		// Initialize on first call
-		if (lastTime == 0) {
+			// Initialize on first call
+			if (lastTime == 0) {
+				lastTicks = currentTicks;
+				lastTime = currentTime;
+				return lastValidRPM; // Will be 0.0 initially
+			}
+
+			double deltaTime = (currentTime - lastTime) / 1e9; // seconds
+
+			// Only calculate if enough time has passed
+			if (deltaTime < MIN_DELTA_TIME) {
+				return lastValidRPM; // Return last valid reading
+			}
+
+			double deltaTicks = currentTicks - lastTicks;
+
+			// Update stored values for next call
 			lastTicks = currentTicks;
 			lastTime = currentTime;
-			return lastValidRPM; // Will be 0.0 initially
+
+			// Calculate RPM
+			double revs = deltaTicks / TICKS_PER_REV;
+			double revsPerSec = revs / deltaTime;
+			lastValidRPM = revsPerSec * 60.0;
+
+			return lastValidRPM;
 		}
 
-		double deltaTime = (currentTime - lastTime) / 1e9; // seconds
-
-		// Only calculate if enough time has passed
-		if (deltaTime < MIN_DELTA_TIME) {
-			return lastValidRPM; // Return last valid reading
-		}
-
-		double deltaTicks = currentTicks - lastTicks;
-
-		// Update stored values for next call
-		lastTicks = currentTicks;
-		lastTime = currentTime;
-
-		// Calculate RPM
-		double revs = deltaTicks / TICKS_PER_REV;
-		double revsPerSec = revs / deltaTime;
-		lastValidRPM = revsPerSec * 60.0;
-
-		return lastValidRPM;
-	}
 		public void setRPM(int rpm) {
 			if (!hasEncoder) {
 				throw new IllegalStateException("Encoder disabled for this motor: " + motor.getDeviceName());
@@ -147,6 +153,7 @@ public class RobotCoreCustom {
 			this.targetRPM = rpm;
 			this.isRPMMode = true;
 		}
+
 		public void updateRPMPID() {
 			if (isRPMMode) {
 				double currentRPM = getRPM();
@@ -166,6 +173,7 @@ public class RobotCoreCustom {
 			this.pidfController = pidfController;
 		}
 	}
+
 	public static class CustomTelemetry {
 		private final Telemetry telemetry;
 		private final TelemetryManager telemetryM;
@@ -174,10 +182,12 @@ public class RobotCoreCustom {
 			this.telemetry = telemetry;
 			this.telemetryM = telemetryM;
 		}
+
 		public void addData(String caption, Object value) {
 			telemetry.addData(caption, value);
 			telemetryM.debug(caption + ": " + value.toString());
 		}
+
 		public void update() {
 			telemetry.update();
 			telemetryM.update();
