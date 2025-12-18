@@ -1,6 +1,5 @@
 package org.firstinspires.ftc.teamcode.drive;
 
-import com.bylazar.lights.RGBIndicator;
 import com.bylazar.telemetry.TelemetryManager;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.util.PoseHistory;
@@ -15,6 +14,8 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+import org.firstinspires.ftc.teamcode.Prism.GoBildaPrismDriver;
+import org.firstinspires.ftc.teamcode.Prism.PrismAnimations;
 import org.firstinspires.ftc.teamcode.pedroPathing.Drawing;
 
 public class RobotCoreCustom {
@@ -206,47 +207,46 @@ public class RobotCoreCustom {
 		private CustomColor customColor1;
 		private CustomColor customColor2;
 		private Servo lifter[] = new Servo[3];
-		private ColorSensor colorSensor[] = new ColorSensor[3];
-		private Servo rgbIndicator[] = new Servo[3];
-
+		private ColorSensor colorSensor[] = new ColorSensor[6];
+		private CustomRGBController RGBPrism;
 		public CustomSorterController(HardwareMap hardwareMap) {
 			lifter[0] = hardwareMap.get(Servo.class, "lifter0");
 			lifter[1] = hardwareMap.get(Servo.class, "lifter1");
 			lifter[2] = hardwareMap.get(Servo.class, "lifter2");
 			colorSensor[0] = hardwareMap.get(ColorSensor.class, "colorSensor0");
-			colorSensor[1] = hardwareMap.get(ColorSensor.class, "colorSensor1");
-			colorSensor[2] = hardwareMap.get(ColorSensor.class, "colorSensor2");
-			rgbIndicator[0] = hardwareMap.get(Servo.class, "rgbInd0");
-			rgbIndicator[1] = hardwareMap.get(Servo.class, "rgbInd1");
-			rgbIndicator[2] = hardwareMap.get(Servo.class, "rgbInd2");
+			colorSensor[1] = hardwareMap.get(ColorSensor.class, "colorSensor0-1");
+			colorSensor[2] = hardwareMap.get(ColorSensor.class, "colorSensor1");
+			colorSensor[3] = hardwareMap.get(ColorSensor.class, "colorSensor1-1");
+			colorSensor[4] = hardwareMap.get(ColorSensor.class, "colorSensor2");
+			colorSensor[5] = hardwareMap.get(ColorSensor.class, "colorSensor2-1");
+			RGBPrism = new CustomRGBController(hardwareMap, 6);
 			lifterTimer = new ElapsedTime();
 		}
 
 		public CustomColor getColor(int pitSelector) {
-			switch (pitSelector) {
-				case 0:
-					return calcColor(colorSensor[0].argb());
-				case 1:
-					return calcColor(colorSensor[1].argb());
-				case 2:
-					return calcColor(colorSensor[2].argb());
-				default:
-					return CustomColor.NULL;
+			if (pitSelector < 0 || pitSelector >= 3) {
+				throw new IllegalArgumentException("Invalid pit selector: " + pitSelector);
+			}
+			int colorARGB0 = colorSensor[pitSelector * 3].argb();
+			CustomColor color0 = calcColor(colorARGB0);
+			if (color0 != CustomColor.NULL) {
+				return color0;
+			} else {
+				int colorARGB1 = colorSensor[pitSelector * 3 + 1].argb();
+				return calcColor(colorARGB1);
 			}
 		}
 
 		public void launch(CustomColor color) {
 			if (color == CustomColor.NULL) {
 				for (int i = 0; i < 3; i++) {
-					int colorARGB = colorSensor[i].argb();
-					if (calcColor(colorARGB) != CustomColor.NULL) {
+					if (getColor(i) == CustomColor.NULL) {
 						lifterState[i] = 1;
 					}
 				}
 			} else {
 				for (int i = 0; i < 3; i++) {
-					int colorARGB = colorSensor[i].argb();
-					if (calcColor(colorARGB) == color) {
+					if (getColor(i) == color) {
 						lifterState[i] = 1;
 					}
 				}
@@ -273,13 +273,13 @@ public class RobotCoreCustom {
 				CustomColor color = calcColor(colorSensor[i].argb());
 				switch (color) {
 					case GREEN:
-						rgbIndicator[i].setPosition(0.5);
+						RGBPrism.setSolidColor(i * 2, i * 2 + 1, 0, 255, 0);
 						break;
 					case PURPLE:
-						rgbIndicator[i].setPosition(0.722);
+						RGBPrism.setSolidColor(i * 2, i * 2 + 1, 128, 0, 128);
 						break;
 					case NULL:
-						rgbIndicator[i].setPosition(0.0);
+						RGBPrism.setSolidColor(i * 2, i * 2 + 1, 0, 0, 0);
 						break;
 				}
 			}
@@ -291,7 +291,7 @@ public class RobotCoreCustom {
 			int green = (argb >> 8) & 0xFF;
 			int blue = argb & 0xFF;
 
-			if (green > blue && green > red) {
+			if (green > blue * 1.5 && green > red * 1.5) {
 				return CustomColor.GREEN;
 			} else if (blue > green && blue > red) {
 				return CustomColor.PURPLE;
@@ -299,5 +299,23 @@ public class RobotCoreCustom {
 				return CustomColor.NULL;
 			}
 		}
+	}
+	public static class CustomRGBController {
+		GoBildaPrismDriver prism;
+		public CustomRGBController(HardwareMap hardwareMap, int stripLength) {
+			prism = hardwareMap.get(GoBildaPrismDriver.class, "prism");
+			prism.setStripLength(stripLength);
+		}
+		public void setSolidColor(int startingPixel, int endingPixel, int red, int green, int blue) {
+			if (startingPixel < 0 || endingPixel >= prism.getNumberOfLEDs() || startingPixel > endingPixel) {
+				throw new IllegalArgumentException("Invalid pixel range: " + startingPixel + " to " + endingPixel);
+			}
+			PrismAnimations.Solid solid = new PrismAnimations.Solid(new org.firstinspires.ftc.teamcode.Prism.Color(red, green, blue));
+			solid.setStartIndex(startingPixel);
+			solid.setStopIndex(endingPixel);
+			solid.setBrightness(red+green+blue / 3);
+			prism.insertAndUpdateAnimation(GoBildaPrismDriver.LayerHeight.LAYER_0, solid);
+		}
+
 	}
 }
