@@ -28,8 +28,7 @@ public class MainDriveOpmode extends OpMode {
     Servo elevationServo, azimuthServo0, azimuthServo1;
     Double launchElevationDeg = 0.0;
     double elevationServoTarget = 0.0;
-    RobotCoreCustom.CustomMotor launcher0;
-    RobotCoreCustom.CustomMotor launcher1;
+    RobotCoreCustom.CustomMotor launcher0, launcher1, drawbridgeMotor;
     Double[] lastAprilLocalization = null;
     double targetPower = 0.0;
     ElapsedTime gamepadTimer = new ElapsedTime();
@@ -94,6 +93,7 @@ public class MainDriveOpmode extends OpMode {
 
         launcher0 = new RobotCoreCustom.CustomMotor(hardwareMap, "launcher0", true, 28, MDOConstants.launcherPIDF);
         launcher1 = new RobotCoreCustom.CustomMotor(hardwareMap, "launcher1", false, 28, MDOConstants.launcherPIDF);
+        drawbridgeMotor = new RobotCoreCustom.CustomMotor(hardwareMap, "drawBridge", false, 67, new CustomPIDFController(0, 0, 0, 0));
         follower = Constants.createFollower(hardwareMap);
 
         // Use pose from auto if available, otherwise use default
@@ -165,6 +165,8 @@ public class MainDriveOpmode extends OpMode {
         double gamepad1LeftStickX = gamepad1.left_stick_x;
         double gamepad1RightStickX = gamepad1.right_stick_x;
         double gamepad2RightStickY = gamepad2.right_stick_y;
+        double gamepad2RightTrigger = gamepad2.right_trigger;
+        double gamepad2LeftTrigger = gamepad2.left_trigger;
         boolean gamepad2A = gamepad2.a;
         boolean gamepad2B = gamepad2.b;
 
@@ -243,17 +245,6 @@ public class MainDriveOpmode extends OpMode {
             azimuthServo0.setPosition(azimuthServoPos);
             azimuthServo1.setPosition(1.0 - azimuthServoPos); // Flipped around center 0.5
             fieldRelativeAzimuthDeg = Math.toDegrees(fieldRelativeAzimuth);
-
-
-
-
-
-
-
-
-
-
-
         }
 
         timeServo = sectionTimer.milliseconds();
@@ -266,6 +257,15 @@ public class MainDriveOpmode extends OpMode {
             launcher0.setRPM(targetRPM);
         } else {
             launcher0.setPower(targetPower);
+        }
+
+        // ===== DRAWBRIDGE/LIFTER CONTROL =====
+        if (gamepad2LeftTrigger > 0.05) {
+            drawbridgeMotor.setPower(-gamepad2LeftTrigger);
+        } else if(gamepad2RightTrigger > 0.05) {
+            drawbridgeMotor.setPower(gamepad2RightTrigger);
+        } else {
+            drawbridgeMotor.setPower(0.0);
         }
 
         // Gamepad controls for target power

@@ -273,13 +273,13 @@ public class RobotCoreCustom {
 				CustomColor color = calcColor(colorSensor[i].argb());
 				switch (color) {
 					case GREEN:
-						RGBPrism.setSolidColor(i * 2, i * 2 + 1, 0, 255, 0);
+						//RGBPrism.setSolidColor(i * 2, i * 2 + 1, 0, 255, 0);
 						break;
 					case PURPLE:
-						RGBPrism.setSolidColor(i * 2, i * 2 + 1, 128, 0, 128);
+						//RGBPrism.setSolidColor(i * 2, i * 2 + 1, 128, 0, 128);
 						break;
 					case NULL:
-						RGBPrism.setSolidColor(i * 2, i * 2 + 1, 0, 0, 0);
+						//RGBPrism.setSolidColor(i * 2, i * 2 + 1, 0, 0, 0);
 						break;
 				}
 			}
