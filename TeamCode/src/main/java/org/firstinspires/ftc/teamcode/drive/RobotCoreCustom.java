@@ -24,10 +24,13 @@ public class RobotCoreCustom {
 			RevHubOrientationOnRobot.UsbFacingDirection.FORWARD
 	));
 	static IMU imuEX;
+	Follower follower;
 
 	public RobotCoreCustom(HardwareMap hardwareMap, Follower follower) {
 		imuEX = hardwareMap.get(IMU.class, "imuEX");
 		imuEX.initialize(parameters);
+		this.follower = follower;
+
 	}
 
 	public static Double getExternalHeading() {
@@ -83,16 +86,6 @@ public class RobotCoreCustom {
 
 		// PID coefficients
 		private CustomPIDFController pidfController = new CustomPIDFController(0.1, 0.01, 0.005, 0.0);
-
-		public CustomMotor(HardwareMap hardwareMap, String motorName) {
-			this.TICKS_PER_REV = -1; // Default value, can be changed as needed
-			this.hasEncoder = false;
-			try {
-				this.motor = hardwareMap.get(DcMotor.class, motorName);
-			} catch (Exception e) {
-				throw new IllegalArgumentException("Motor with name " + motorName + " not found in hardware map.");
-			}
-		}
 
 		public CustomMotor(HardwareMap hardwareMap, String motorName, Boolean hasEncoder, double ticksPerRev, CustomPIDFController pidfController) {
 			this.TICKS_PER_REV = ticksPerRev;
@@ -201,13 +194,10 @@ public class RobotCoreCustom {
 			PURPLE,
 			NULL
 		}
-		private CustomColor customColor0;
-		int lifterState[] = new int[3];
+		int[] lifterState = new int[3];
 		ElapsedTime lifterTimer;
-		private CustomColor customColor1;
-		private CustomColor customColor2;
-		private Servo lifter[] = new Servo[3];
-		private ColorSensor colorSensor[] = new ColorSensor[6];
+		private final Servo[] lifter = new Servo[3];
+		private final ColorSensor[] colorSensor = new ColorSensor[6];
 		private CustomRGBController RGBPrism;
 		public CustomSorterController(HardwareMap hardwareMap) {
 			lifter[0] = hardwareMap.get(Servo.class, "lifter0");
@@ -319,14 +309,14 @@ public class RobotCoreCustom {
 			solid.setBrightness(red+green+blue / 3);
 			prism.insertAndUpdateAnimation(GoBildaPrismDriver.LayerHeight.LAYER_0, solid);
 		}
-		public Boolean setThird(int third, int[] rgb) {
-			if (rgb.length != 3) return false;
+		public void setThird(int third, int[] rgb) {
+			if (rgb.length != 3) return;
 			PrismAnimations.Solid solid = new PrismAnimations.Solid(new org.firstinspires.ftc.teamcode.Prism.Color(rgb[0], rgb[1], rgb[2]));
 			solid.setStartIndex(prism.getNumberOfLEDs()/third* (third -1));
 			solid.setStopIndex(prism.getNumberOfLEDs()/third);
 			solid.setBrightness((rgb[0]+rgb[1]+rgb[2]) / 3);
 			prism.insertAndUpdateAnimation(GoBildaPrismDriver.LayerHeight.LAYER_0, solid);
-			return true;
+			return;
 		}
 
 	}
