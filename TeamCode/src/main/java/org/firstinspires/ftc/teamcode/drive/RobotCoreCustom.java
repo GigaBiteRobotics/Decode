@@ -273,12 +273,15 @@ public class RobotCoreCustom {
 				CustomColor color = calcColor(colorSensor[i].argb());
 				switch (color) {
 					case GREEN:
+						RGBPrism.setThird(i, new int[]{0, 255, 0});
 						//RGBPrism.setSolidColor(i * 2, i * 2 + 1, 0, 255, 0);
 						break;
 					case PURPLE:
+						RGBPrism.setThird(i, new int[]{128, 0, 128});
 						//RGBPrism.setSolidColor(i * 2, i * 2 + 1, 128, 0, 128);
 						break;
 					case NULL:
+						RGBPrism.setThird(i, new int[]{0, 0, 0});
 						//RGBPrism.setSolidColor(i * 2, i * 2 + 1, 0, 0, 0);
 						break;
 				}
@@ -315,6 +318,15 @@ public class RobotCoreCustom {
 			solid.setStopIndex(endingPixel);
 			solid.setBrightness(red+green+blue / 3);
 			prism.insertAndUpdateAnimation(GoBildaPrismDriver.LayerHeight.LAYER_0, solid);
+		}
+		public Boolean setThird(int third, int[] rgb) {
+			if (rgb.length != 3) return false;
+			PrismAnimations.Solid solid = new PrismAnimations.Solid(new org.firstinspires.ftc.teamcode.Prism.Color(rgb[0], rgb[1], rgb[2]));
+			solid.setStartIndex(prism.getNumberOfLEDs()/third* (third -1));
+			solid.setStopIndex(prism.getNumberOfLEDs()/third);
+			solid.setBrightness((rgb[0]+rgb[1]+rgb[2]) / 3);
+			prism.insertAndUpdateAnimation(GoBildaPrismDriver.LayerHeight.LAYER_0, solid);
+			return true;
 		}
 
 	}
