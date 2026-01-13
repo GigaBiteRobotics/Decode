@@ -1,16 +1,27 @@
 package org.firstinspires.ftc.teamcode.drive;
 
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import com.bylazar.camerastream.PanelsCameraStream;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+import org.firstinspires.ftc.robotcore.external.function.Consumer;
+import org.firstinspires.ftc.robotcore.external.function.Continuation;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.Position;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+import org.firstinspires.ftc.robotcore.external.stream.CameraStreamSource;
+import org.firstinspires.ftc.robotcore.internal.camera.calibration.CameraCalibration;
 import org.firstinspires.ftc.vision.VisionPortal;
+import org.firstinspires.ftc.vision.VisionProcessor;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
+import org.opencv.android.Utils;
+import org.opencv.core.Mat;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * AprilTag Localizer Class for FTC
@@ -29,6 +40,42 @@ import java.util.List;
  *   double heading = localizer.getRobotHeading();
  */
 public class AprilTagLocalizer {
+
+	/**
+	 * Camera Stream Processor for FTC Dashboard
+	 * Captures frames and makes them available for streaming
+	 */
+	public static class CameraStreamProcessor implements VisionProcessor, CameraStreamSource {
+		private final AtomicReference<Bitmap> lastFrame =
+				new AtomicReference<>(Bitmap.createBitmap(1, 1, Bitmap.Config.RGB_565));
+
+		@Override
+		public void init(int width, int height, CameraCalibration calibration) {
+			lastFrame.set(Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565));
+		}
+
+		@Override
+		public Object processFrame(Mat frame, long captureTimeNanos) {
+			Bitmap bitmap = Bitmap.createBitmap(frame.width(), frame.height(), Bitmap.Config.RGB_565);
+			Utils.matToBitmap(frame, bitmap);
+			lastFrame.set(bitmap);
+			return null;
+		}
+
+		@Override
+		public void onDrawFrame(Canvas canvas, int onscreenWidth, int onscreenHeight,
+		                        float scaleBmpPxToCanvasPx, float scaleCanvasDensity, Object userContext) {
+			// No drawing needed
+		}
+
+		@Override
+		public void getFrameBitmap(Continuation<? extends Consumer<Bitmap>> continuation) {
+			continuation.dispatch(bitmapConsumer -> bitmapConsumer.accept(lastFrame.get()));
+		}
+	}
+
+	public CameraStreamProcessor streamProcessor;
+	public boolean streamingEnabled = false;
 	public Position cameraPosition = new Position(DistanceUnit.INCH,
 			0, 0, 0, 0);
 	public YawPitchRollAngles cameraOrientation = new YawPitchRollAngles(AngleUnit.DEGREES,
@@ -44,6 +91,11 @@ public class AprilTagLocalizer {
 	public VisionPortal visionPortal;
 
 	public void initAprilTag(HardwareMap hardwareMap, String cameraName) {
+		initAprilTag(hardwareMap, cameraName, true);
+	}
+
+	public void initAprilTag(HardwareMap hardwareMap, String cameraName, boolean enableStreaming) {
+		this.streamingEnabled = enableStreaming;
 
 		// Create the AprilTag processor.
 		aprilTag = new AprilTagProcessor.Builder()
@@ -98,8 +150,19 @@ public class AprilTagLocalizer {
 		// Set and enable the processor.
 		builder.addProcessor(aprilTag);
 
+		// Add camera stream processor if enabled
+		if (enableStreaming) {
+			streamProcessor = new CameraStreamProcessor();
+			builder.addProcessor(streamProcessor);
+		}
+
 		// Build the Vision Portal, using the above settings.
 		visionPortal = builder.build();
+
+		// Start camera stream if enabled
+		if (enableStreaming && streamProcessor != null) {
+			PanelsCameraStream.INSTANCE.startStream(streamProcessor, null);
+		}
 
 		// Disable or re-enable the aprilTag processor at any time.
 		//visionPortal.setProcessorEnabled(aprilTag, true);
@@ -148,5 +211,15 @@ public class AprilTagLocalizer {
 			}
 			return 0.0;
 		} catch (Exception e) { return 0.0; }
+	}
+
+	/**
+	 * Stop camera streaming
+	 * Call this in the stop() method of your OpMode
+	 */
+	public void stopStream() {
+		if (streamingEnabled) {
+			PanelsCameraStream.INSTANCE.stopStream();
+		}
 	}
 }

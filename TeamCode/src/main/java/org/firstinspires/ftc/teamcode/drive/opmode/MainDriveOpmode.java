@@ -34,7 +34,8 @@ public class MainDriveOpmode extends OpMode {
     ElapsedTime gamepadTimer = new ElapsedTime();
     RobotCoreCustom.CustomTelemetry telemetryC;
     RobotCoreCustom.CustomSorterController sorterController;
-    boolean lastGamepad1DpadDown = false;
+    boolean launcherSpinning = false;
+    int targetRPM = 0;
 
     enum Team {
         RED,
@@ -132,6 +133,7 @@ public class MainDriveOpmode extends OpMode {
     public void stop() {
         customThreads.stopDrawingThread();
         customThreads.stopCPUMonThread();
+        localizer.stopStream();
     }
 
 
@@ -164,11 +166,6 @@ public class MainDriveOpmode extends OpMode {
         double gamepad1LeftStickY = gamepad1.left_stick_y;
         double gamepad1LeftStickX = gamepad1.left_stick_x;
         double gamepad1RightStickX = gamepad1.right_stick_x;
-        double gamepad2RightStickY = gamepad2.right_stick_y;
-        double gamepad2RightTrigger = gamepad2.right_trigger;
-        double gamepad2LeftTrigger = gamepad2.left_trigger;
-        boolean gamepad2A = gamepad2.a;
-        boolean gamepad2B = gamepad2.b;
 
         // Timer values
         double gamepadTimerMs = gamepadTimer.milliseconds();
@@ -197,7 +194,7 @@ public class MainDriveOpmode extends OpMode {
         follower.setTeleOpDrive(
                 -gamepad1LeftStickY,
                 -gamepad1LeftStickX,
-                gamepad1RightStickX * -0.67,
+                gamepad1RightStickX * -0.75,
                 true
         );
 
@@ -252,37 +249,29 @@ public class MainDriveOpmode extends OpMode {
         // ===== LAUNCHER CONTROL =====
         sectionTimer.reset();
 
+        if (gamepad2.dpad_down && gamepadTimerMs > 300) {
+            gamepadTimer.reset();
+            if (!launcherSpinning) {
+                if (usePIDFLauncher) {
+                    targetRPM = 5000;
+                } else {
+                    targetPower = 1;
+                }
+                launcherSpinning = true;
+            } else {
+                targetPower = 0;
+                targetRPM = 0;
+                launcherSpinning = false;
+            }
+        }
+
         if (usePIDFLauncher) {
-            int targetRPM = (int) (targetPower * 5500);
             launcher0.setRPM(targetRPM);
+            launcher1.setRPM(targetRPM);
         } else {
             launcher0.setPower(targetPower);
+            launcher1.setPower(-targetPower);
         }
-
-        // ===== DRAWBRIDGE/LIFTER CONTROL =====
-        if (gamepad2LeftTrigger > 0.05) {
-            drawbridgeMotor.setPower(-gamepad2LeftTrigger);
-        } else if(gamepad2RightTrigger > 0.05) {
-            drawbridgeMotor.setPower(gamepad2RightTrigger);
-        } else {
-            drawbridgeMotor.setPower(0.0);
-        }
-
-        // Gamepad controls for target power
-        if (gamepad2A) {
-            targetPower = 0.0;
-        }
-        if (gamepad2B) {
-            targetPower = 0.82;
-        }
-        if (gamepadTimerMs > 200 && (gamepad2RightStickY > 0.1 || gamepad2RightStickY < -0.1)) {
-            targetPower += gamepad2RightStickY * 0.1;
-            gamepadTimer.reset();
-        }
-        if (gamepad1.dpad_down && !lastGamepad1DpadDown) {
-            sorterController.launch(RobotCoreCustom.CustomSorterController.CustomColor.NULL);
-        }
-        lastGamepad1DpadDown = gamepad1.dpad_down;
 
         // Clamp target power
         targetPower = Math.max(-1.0, Math.min(1.0, targetPower));
