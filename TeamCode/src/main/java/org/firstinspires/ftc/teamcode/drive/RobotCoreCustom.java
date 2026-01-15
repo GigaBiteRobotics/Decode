@@ -195,7 +195,7 @@ public class RobotCoreCustom {
 			NULL
 		}
 		int[] lifterState = new int[3];
-		ElapsedTime lifterTimer;
+		ElapsedTime[] lifterTimer = new ElapsedTime[3];
 		private final Servo[] lifter = new Servo[3];
 		private final ColorSensor[] colorSensor = new ColorSensor[6];
 		private CustomRGBController RGBPrism;
@@ -210,7 +210,9 @@ public class RobotCoreCustom {
 			colorSensor[4] = hardwareMap.get(ColorSensor.class, "colorSensor2");
 			colorSensor[5] = hardwareMap.get(ColorSensor.class, "colorSensor2-1");
 			RGBPrism = new CustomRGBController(hardwareMap, 6);
-			lifterTimer = new ElapsedTime();
+			for (int i = 0; i < 3; i++) {
+				lifterTimer[i] = new ElapsedTime();
+			}
 		}
 
 		public CustomColor getColor(int pitSelector) {
@@ -242,22 +244,51 @@ public class RobotCoreCustom {
 				}
 			}
 		}
+
+		public void launchViaPriority(CustomColor priorityColor) {
+			for (int i = 0; i < 3; i++) {
+				CustomColor color = getColor(i);
+				if (color == priorityColor) {
+					lifterState[i] = 1;
+					return;
+				}
+			}
+			for (int i = 0; i < 3; i++) {
+				CustomColor color = getColor(i);
+				if (color != CustomColor.NULL) {
+					lifterState[i] = 1;
+					return;
+				}
+			}
+			for (int i = 0; i < 3; i++) {
+				lifterState[i] = 1;
+				return;
+			}
+		}
 		public void lifterUpdater() {
 				for (int i = 0; i < 3; i++) {
 					if (lifterState[i] == 1) {
 						lifterState[i] = 2;
-						lifterTimer.reset();
+						lifterTimer[i].reset();
 						lifter[i].setPosition(MDOConstants.LifterPositionHigh);
 					}
-					if (lifterState[i] == 2 && lifterTimer.milliseconds() > MDOConstants.LifterWaitToTopTimerMillis) {
+					if (lifterState[i] == 2 && lifterTimer[i].milliseconds() > MDOConstants.LifterWaitToTopTimerMillis) {
 						lifterState[i] = 0;
 						lifter[i].setPosition(MDOConstants.LifterPositionLow);
 					}
-					if (lifterState[i] != 0) {
+					if (lifterState[i] == 0) {
 						lifter[i].setPosition(MDOConstants.LifterPositionLow);
 					}
 				}
 		}
+		public void launcherViaIndex(int pitSelector) {
+			if (pitSelector < 0 || pitSelector >= 3) {
+				throw new IllegalArgumentException("Invalid pit selector: " + pitSelector);
+			}
+			CustomColor color = getColor(pitSelector);
+			lifterState[pitSelector] = 1;
+		}
+
 		public void lightingUpdater() {
 			for (int i = 0; i < 3; i++) {
 				CustomColor color = calcColor(colorSensor[i].argb());

@@ -8,7 +8,6 @@ import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.Pose;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-import com.qualcomm.robotcore.hardware.ColorSensor;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
@@ -25,10 +24,21 @@ public class MainDriveOpmode extends OpMode {
     //IMU imuEX;
     RobotCoreCustom robotCoreCustom;
     Follower follower;
-    Servo elevationServo, azimuthServo0, azimuthServo1;
-    Double launchElevationDeg = 0.0;
-    double elevationServoTarget = 0.0;
     RobotCoreCustom.CustomMotor launcher0, launcher1, drawbridgeMotor;
+
+    // Aiming servos
+    Servo elevationServo, azimuthServo0, azimuthServo1;
+
+    // Aiming state variables
+    double targetElevation = 0.0;      // Target elevation angle in radians
+    double targetAzimuth = 0.0;        // Target azimuth angle in radians
+    double currentElevation = 0.0;     // Current smoothed elevation
+    double currentAzimuth = 0.0;       // Current smoothed azimuth
+    double manualElevationOffset = 0.0; // Manual adjustment to elevation
+    double manualAzimuthOffset = 0.0;   // Manual adjustment to azimuth
+    boolean aimLocked = false;          // Whether aim is within acceptable error
+    ElapsedTime manualAdjustTimer = new ElapsedTime();
+
     Double[] lastAprilLocalization = null;
     double targetPower = 0.0;
     ElapsedTime gamepadTimer = new ElapsedTime();
@@ -87,10 +97,19 @@ public class MainDriveOpmode extends OpMode {
 
         robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
         localizer = new AprilTagLocalizer();
-        elevationServo = hardwareMap.get(Servo.class, "elevationServo");
-        azimuthServo0 = hardwareMap.get(Servo.class, "azimuthServo0");
-        azimuthServo1 = hardwareMap.get(Servo.class, "azimuthServo1");
         localizer.initAprilTag(hardwareMap, "Webcam 1");
+
+        // Initialize aiming servos
+        try {
+            elevationServo = hardwareMap.get(Servo.class, "elevationServo");
+            azimuthServo0 = hardwareMap.get(Servo.class, "azimuthServo0");
+            if (MDOConstants.useDualAzimuthServos) {
+                azimuthServo1 = hardwareMap.get(Servo.class, "azimuthServo1");
+            }
+            telemetryC.addData("Aiming Servos", "Initialized");
+        } catch (Exception e) {
+            telemetryC.addData("Servo Init Error", e.getMessage());
+        }
 
         launcher0 = new RobotCoreCustom.CustomMotor(hardwareMap, "launcher0", true, 28, MDOConstants.launcherPIDF);
         launcher1 = new RobotCoreCustom.CustomMotor(hardwareMap, "launcher1", false, 28, MDOConstants.launcherPIDF);
@@ -155,10 +174,6 @@ public class MainDriveOpmode extends OpMode {
         robotHeadingRad = follower.getHeading();
 
 
-        // Launch calculations
-
-        Double[] launchVectors = RobotCoreCustom.localizerLauncherCalc(follower, MDOConstants.targetLocation);
-
         // Launcher data
         double launcherRPM = launcher0.getRPM();
 
@@ -186,7 +201,10 @@ public class MainDriveOpmode extends OpMode {
         follower.update();
         timeUpdate = sectionTimer.milliseconds();
         sorterController.lifterUpdater();
-        sorterController.lightingUpdater();
+        if (gamepad2.right_bumper) {
+            sorterController.launcherViaIndex(1);
+        }
+        //sorterController.lightingUpdater();
 
         // ===== DRIVE CONTROL =====
         sectionTimer.reset();
@@ -215,41 +233,17 @@ public class MainDriveOpmode extends OpMode {
 
         timeAprilTag = sectionTimer.milliseconds();
 
-        // ===== SERVO CONTROL =====
+        // ===== SERVO CONTROL (AIMING SYSTEM) =====
         sectionTimer.reset();
 
-        // Pre-calculate launch vector conversions if available
-        Double launchAzimuthDeg = null;
-        double fieldRelativeAzimuthDeg = 0;
-
-        if (launchVectors != null) {
-            launchElevationDeg = Math.toDegrees(launchVectors[0]);
-            launchAzimuthDeg = Math.toDegrees(launchVectors[1]);
-
-            // Offset azimuth by robot heading
-            double fieldRelativeAzimuth = launchVectors[1] - robotHeadingRad;
-
-            // Wrap around: normalize to -PI to PI range
-            fieldRelativeAzimuth = Math.atan2(Math.sin(fieldRelativeAzimuth), Math.cos(fieldRelativeAzimuth));
-
-            // Map to servo range (0.0 to 1.0)
-            double azimuthServoPos = (fieldRelativeAzimuth + Math.PI) / (2 * Math.PI);
-
-            // Calculate servo positions
-            elevationServoTarget = launchVectors[0] / Math.toRadians(45.0);
-
-            elevationServo.setPosition(elevationServoTarget);
-            azimuthServo0.setPosition(azimuthServoPos);
-            azimuthServo1.setPosition(1.0 - azimuthServoPos); // Flipped around center 0.5
-            fieldRelativeAzimuthDeg = Math.toDegrees(fieldRelativeAzimuth);
-        }
+        aimingLoop(robotHeadingRad, gamepadTimerMs);
 
         timeServo = sectionTimer.milliseconds();
 
         // ===== LAUNCHER CONTROL =====
         sectionTimer.reset();
 
-        if (gamepad2.dpad_down && gamepadTimerMs > 300) {
+        if (gamepad2.x && gamepadTimerMs > 300) {
             gamepadTimer.reset();
             if (!launcherSpinning) {
                 if (usePIDFLauncher) {
@@ -278,10 +272,12 @@ public class MainDriveOpmode extends OpMode {
 
         timeLauncher = sectionTimer.milliseconds();
 
+
         // ===== TELEMETRY BLOCK - Update every 3 loops to reduce overhead =====
         sectionTimer.reset();
 
-        telemetryC.addData("External Heading (deg)", robotHeadingRad);
+        telemetryC.addData("External Heading (rad)", robotHeadingRad);
+
         telemetryC.addData("Pose X", poseX);
         telemetryC.addData("Pose Y", poseY);
 
@@ -293,17 +289,21 @@ public class MainDriveOpmode extends OpMode {
             telemetryC.addData("Y (in) AprilTag", "No Tag");
         }
 
-        if (launchVectors != null) {
-            telemetryC.addData("Launch Elevation (deg)", elevationServoTarget);
-            telemetryC.addData("Launch Azimuth (deg)", launchAzimuthDeg);
-            telemetryC.addData("Launch Azimuth (deg, offset)", fieldRelativeAzimuthDeg);
-        } else {
-            telemetryC.addData("Launch Vectors", "Target Unreachable");
-        }
 
         telemetryC.addData("Launcher RPM", launcherRPM);
         telemetryC.addData("Launcher Power", targetPower);
 
+        // ===== AIMING TELEMETRY =====
+        if (MDOConstants.enableAutoAiming) {
+            telemetryC.addData("--- Aiming System ---", "");
+            telemetryC.addData("Target Elevation (deg)", Math.toDegrees(targetElevation));
+            telemetryC.addData("Current Elevation (deg)", Math.toDegrees(currentElevation));
+            telemetryC.addData("Target Azimuth (deg)", Math.toDegrees(targetAzimuth));
+            telemetryC.addData("Current Azimuth (deg)", Math.toDegrees(currentAzimuth));
+            telemetryC.addData("Manual Elev Offset (deg)", Math.toDegrees(manualElevationOffset));
+            telemetryC.addData("Manual Azim Offset (deg)", Math.toDegrees(manualAzimuthOffset));
+            telemetryC.addData("Aim Locked", aimLocked ? "YES" : "NO");
+        }
         // ===== CPU USAGE/TEMP TELEMETRY =====
         telemetryC.addData("CPU Usage (%)", String.format("%.2f %%", customThreads.getCpuUsage()));
         telemetryC.addData("CPU Temp (°C)", String.format("%.2f °C", customThreads.getCpuTemp()));
@@ -325,5 +325,144 @@ public class MainDriveOpmode extends OpMode {
 
         timeTelemetry = sectionTimer.milliseconds();
         loopTimeMs = loopTimer.milliseconds();
+    }
+
+    /**
+     * Aiming Loop - Calculates and applies azimuth/elevation servo positions
+     * @param robotHeadingRad Current robot heading in radians
+     * @param gamepadTimerMs Current gamepad timer value in milliseconds
+     */
+    public void aimingLoop(double robotHeadingRad, double gamepadTimerMs) {
+        if (!MDOConstants.enableAutoAiming) {
+            return; // Exit if aiming is disabled
+        }
+
+        // ===== STEP 1: Calculate Target Angles =====
+        // Use launcher calculation to get required elevation and azimuth
+        Double[] launchVectors = RobotCoreCustom.localizerLauncherCalc(follower, MDOConstants.targetLocation);
+
+        if (launchVectors != null && launchVectors.length >= 2) {
+            // launchVectors[0] = elevation (radians), launchVectors[1] = azimuth (radians)
+            targetElevation = launchVectors[0];
+            targetAzimuth = launchVectors[1];
+
+            // Convert to field-relative azimuth if enabled
+            if (MDOConstants.useFieldRelativeAzimuth) {
+                // Adjust azimuth based on robot heading so target stays fixed on field
+                targetAzimuth = targetAzimuth - robotHeadingRad;
+                // Normalize to -PI to PI range
+                targetAzimuth = Math.atan2(Math.sin(targetAzimuth), Math.cos(targetAzimuth));
+            }
+        }
+
+        // ===== STEP 2: Manual Adjustments =====
+        // Allow driver to fine-tune aiming with gamepad2 D-pad
+
+        // D-pad up/down for elevation
+        if (gamepad2.dpad_up && manualAdjustTimer.milliseconds() > MDOConstants.manualAdjustmentHoldTime) {
+            manualElevationOffset += MDOConstants.manualElevationStep;
+            manualAdjustTimer.reset();
+        }
+        if (gamepad2.dpad_down && manualAdjustTimer.milliseconds() > MDOConstants.manualAdjustmentHoldTime) {
+            manualElevationOffset -= MDOConstants.manualElevationStep;
+            manualAdjustTimer.reset();
+        }
+
+        // D-pad left/right for azimuth
+        if (gamepad2.dpad_right && manualAdjustTimer.milliseconds() > MDOConstants.manualAdjustmentHoldTime) {
+            manualAzimuthOffset += MDOConstants.manualAzimuthStep;
+            manualAdjustTimer.reset();
+        }
+        if (gamepad2.dpad_left && manualAdjustTimer.milliseconds() > MDOConstants.manualAdjustmentHoldTime) {
+            manualAzimuthOffset -= MDOConstants.manualAzimuthStep;
+            manualAdjustTimer.reset();
+        }
+
+        // Reset manual offsets with gamepad2.y
+        if (gamepad2.y && gamepadTimerMs > 300) {
+            manualElevationOffset = 0.0;
+            manualAzimuthOffset = 0.0;
+            gamepadTimer.reset();
+        }
+
+        // ===== STEP 3: Apply Offsets and Clamp to Limits =====
+        double finalTargetElevation = targetElevation + manualElevationOffset;
+        double finalTargetAzimuth = targetAzimuth + manualAzimuthOffset;
+
+        // Clamp to configured min/max ranges
+        finalTargetElevation = Math.max(MDOConstants.elevationAngleMin,
+                                       Math.min(MDOConstants.elevationAngleMax, finalTargetElevation));
+        finalTargetAzimuth = Math.max(MDOConstants.azimuthAngleMin,
+                                     Math.min(MDOConstants.azimuthAngleMax, finalTargetAzimuth));
+
+        // ===== STEP 4: Apply Smoothing =====
+        // Calculate error between target and current position
+        double elevationDelta = finalTargetElevation - currentElevation;
+        double azimuthDelta = finalTargetAzimuth - currentAzimuth;
+
+        // Apply deadzone to prevent micro-adjustments and jitter
+        if (Math.abs(elevationDelta) > MDOConstants.elevationDeadzone) {
+            currentElevation += elevationDelta * MDOConstants.aimingSmoothingFactor;
+        }
+        if (Math.abs(azimuthDelta) > MDOConstants.azimuthDeadzone) {
+            currentAzimuth += azimuthDelta * MDOConstants.aimingSmoothingFactor;
+        }
+
+        // ===== STEP 5: Check Aim Lock Status =====
+        // Aim is "locked" when within acceptable error margins
+        aimLocked = (Math.abs(elevationDelta) < MDOConstants.maxElevationError) &&
+                   (Math.abs(azimuthDelta) < MDOConstants.maxAzimuthError);
+
+        // ===== STEP 6: Convert Angles to Servo Positions =====
+
+        // Elevation servo: map angle range to servo range (0.0 to 1.0)
+        double elevationServoPos = (currentElevation - MDOConstants.elevationAngleMin) /
+                                  (MDOConstants.elevationAngleMax - MDOConstants.elevationAngleMin);
+        elevationServoPos = elevationServoPos * (MDOConstants.elevationServoMax - MDOConstants.elevationServoMin)
+                          + MDOConstants.elevationServoMin;
+        elevationServoPos += MDOConstants.elevationServoOffset;
+
+        // Reverse if servo is mounted backwards
+        if (MDOConstants.elevationServoReversed) {
+            elevationServoPos = 1.0 - elevationServoPos;
+        }
+
+        // Azimuth servo: map angle range to servo range (0.0 to 1.0)
+        double azimuthServoPos = (currentAzimuth - MDOConstants.azimuthAngleMin) /
+                                (MDOConstants.azimuthAngleMax - MDOConstants.azimuthAngleMin);
+        azimuthServoPos = azimuthServoPos * (MDOConstants.azimuthServoMax - MDOConstants.azimuthServoMin)
+                        + MDOConstants.azimuthServoMin;
+        azimuthServoPos += MDOConstants.azimuthServoOffset;
+
+        // Reverse if servo is mounted backwards
+        if (MDOConstants.azimuthServoReversed) {
+            azimuthServoPos = 1.0 - azimuthServoPos;
+        }
+
+        // ===== STEP 7: Safety Clamp =====
+        // Ensure servo positions stay within valid range
+        elevationServoPos = Math.max(0.0, Math.min(1.0, elevationServoPos));
+        azimuthServoPos = Math.max(0.0, Math.min(1.0, azimuthServoPos));
+
+        // ===== STEP 8: Set Servo Positions =====
+        try {
+            // Set elevation servo
+            if (elevationServo != null) {
+                elevationServo.setPosition(elevationServoPos);
+            }
+
+            // Set primary azimuth servo
+            if (azimuthServo0 != null) {
+                azimuthServo0.setPosition(azimuthServoPos);
+            }
+
+            // Set secondary azimuth servo if enabled
+            if (MDOConstants.useDualAzimuthServos && azimuthServo1 != null) {
+                double servo1Pos = MDOConstants.azimuthServo1Mirrored ? (1.0 - azimuthServoPos) : azimuthServoPos;
+                azimuthServo1.setPosition(servo1Pos);
+            }
+        } catch (Exception e) {
+            // Silently handle servo errors to avoid spamming telemetry
+        }
     }
 }
