@@ -1,13 +1,18 @@
 package org.firstinspires.ftc.teamcode.drive;
 
+import static org.firstinspires.ftc.robotcore.external.BlocksOpModeCompanion.hardwareMap;
+
 import com.bylazar.telemetry.TelemetryManager;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.util.PoseHistory;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
+import com.qualcomm.robotcore.hardware.AnalogInput;
 import com.qualcomm.robotcore.hardware.ColorSensor;
 import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.HardwareDevice;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.IMU;
+import com.qualcomm.robotcore.hardware.PIDCoefficients;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
@@ -17,6 +22,11 @@ import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 import org.firstinspires.ftc.teamcode.Prism.GoBildaPrismDriver;
 import org.firstinspires.ftc.teamcode.Prism.PrismAnimations;
 import org.firstinspires.ftc.teamcode.pedroPathing.Drawing;
+
+import java.util.Arrays;
+import java.util.Dictionary;
+import java.util.HashMap;
+import java.util.Hashtable;
 
 public class RobotCoreCustom {
 	IMU.Parameters parameters = new IMU.Parameters(new RevHubOrientationOnRobot(
@@ -167,7 +177,6 @@ public class RobotCoreCustom {
 			this.pidfController = pidfController;
 		}
 	}
-
 	public static class CustomTelemetry {
 		private final Telemetry telemetry;
 		private final TelemetryManager telemetryM;
@@ -319,5 +328,81 @@ public class RobotCoreCustom {
 			return;
 		}
 
+	}
+	public static class CustomAxonServoController {
+		private final String[] servoGroup;
+		HashMap<String, Servo> servo;
+		AnalogInput aPosition;
+		boolean useAnalog;
+		boolean[] reverseMap;
+		double[] pidCoefficients;
+		CustomPIDFController pidController;
+		double targetPosition;
+
+		/**
+		 *
+		 * @param hardwareMap HardwareMap to get servos and analog inputs
+		 * @param servoGroup Array of servo names in the group
+		 * @param reverseMap Array of booleans indicating if each servo is reversed
+		 * @param useAnalogPositionSensors Whether to use analog position sensors for feedback
+		 * @param pidCoefficients PID coefficients for position control (if using analog sensors) - p, i, d, f, range
+		 * @param analogPositionName Name of the analog position sensor
+		 */
+		public CustomAxonServoController(HardwareMap hardwareMap, String[] servoGroup, boolean[] reverseMap, boolean useAnalogPositionSensors, double[] pidCoefficients, String analogPositionName) {
+			this.aPosition = hardwareMap.get(AnalogInput.class, analogPositionName);
+			this.pidCoefficients = pidCoefficients;
+			this.useAnalog = useAnalogPositionSensors;
+			this.servo = new HashMap<>();
+			this.servoGroup = servoGroup;
+			this.reverseMap = reverseMap;
+			this.pidController = new CustomPIDFController(pidCoefficients[0], pidCoefficients[1], pidCoefficients[2], 0.0);
+			for (String servoName : servoGroup) {
+				try {
+					this.servo.put(servoName, hardwareMap.get(Servo.class, servoName));
+				} catch (Exception e) {
+					throw new IllegalArgumentException("Servo with name " + servoName + " not found in hardware map, or its analog position sensor is missing if enabled.");
+				}
+			}
+		}
+
+
+		/**
+		 * Sets the position of all servos in the group.
+		 * @param position Desired position in range [-1, 1] - Unlike standard servo position [0, 1]
+		 */
+
+		public void setPosition(double position) {
+			if (!useAnalog) {
+				// Map input range [-1, 1] to servo range [0, 1]
+				double mapped = (position + 1.0) / 2.0;
+				mapped = Math.max(0.0, Math.min(1.0, mapped)); // clamp to [0,1]
+				for (String servoName : servoGroup) {
+					Servo s = this.servo.get(servoName);
+					if (s != null) {
+						s.setPosition(mapped);
+					}
+				}
+			} else {
+				targetPosition = (position + 1.0) / 2.0 * aPosition.getMaxVoltage(); // Map [-1, 1] to sensor voltage range
+			}
+		}
+		public void servoPidLoop() {
+			if (useAnalog) {
+				double currentPosition = aPosition.getVoltage(); // Assuming voltage maps linearly to position
+				double power = pidController.calculate(targetPosition, currentPosition, 0, 5);
+				power = Math.max(-1.0, Math.min(1.0, power)); // Clamp power to [-1, 1]
+
+				for (int i = 0; i < servoGroup.length; i++) {
+					String servoName = servoGroup[i];
+					Servo s = this.servo.get(servoName);
+					if (s != null) {
+						double finalPower = reverseMap[i] ? -power : power;
+						double mapped = (finalPower + 1.0) / 2.0;
+						mapped = Math.max(0.0, Math.min(1.0, mapped)); // clamp to [0,1]
+						s.setPosition(mapped);
+					}
+				}
+			}
+		}
 	}
 }

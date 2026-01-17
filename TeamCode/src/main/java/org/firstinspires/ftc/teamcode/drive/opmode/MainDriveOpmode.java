@@ -25,7 +25,8 @@ public class MainDriveOpmode extends OpMode {
     //IMU imuEX;
     RobotCoreCustom robotCoreCustom;
     Follower follower;
-    Servo elevationServo, azimuthServo0, azimuthServo1;
+    Servo elevationServo;
+    RobotCoreCustom.CustomAxonServoController azimuthServo;
     Double launchElevationDeg = 0.0;
     double elevationServoTarget = 0.0;
     RobotCoreCustom.CustomMotor launcher0, launcher1, drawbridgeMotor;
@@ -89,8 +90,14 @@ public class MainDriveOpmode extends OpMode {
         robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
         localizer = new AprilTagLocalizer();
         elevationServo = hardwareMap.get(Servo.class, "elevationServo");
-        azimuthServo0 = hardwareMap.get(Servo.class, "azimuthServo0");
-        azimuthServo1 = hardwareMap.get(Servo.class, "azimuthServo1");
+        azimuthServo = new RobotCoreCustom.CustomAxonServoController(
+                hardwareMap,
+                new String[] {"azimuthServo0", "azimuthServo1"},
+                new boolean[] {false, false},
+                true,
+                new double[] {0, 0, 0, 0, 32},
+                "azimuthPosition"
+        );
         localizer.initAprilTag(hardwareMap, "Webcam 1");
 
         launcher0 = new RobotCoreCustom.CustomMotor(hardwareMap, "launcher0", true, 28, MDOConstants.launcherPIDF);
@@ -189,6 +196,7 @@ public class MainDriveOpmode extends OpMode {
         timeUpdate = sectionTimer.milliseconds();
         sorterController.lifterUpdater();
         sorterController.lightingUpdater();
+        azimuthServo.servoPidLoop();
 
         // ===== DRIVE CONTROL =====
         sectionTimer.reset();
@@ -308,6 +316,7 @@ public class MainDriveOpmode extends OpMode {
         loopTimeMs = loopTimer.milliseconds();
     }
     public void aimingLoop() {
+        // Calculate elevation angle for launch
         // start off with IMU offset
         // Pre-calculate launch vector conversions if available
 
@@ -344,18 +353,14 @@ public class MainDriveOpmode extends OpMode {
                 finalAzimuthDeg += 360.0;
             }
 
-            // Map 0-360 degrees to 0-1 range for servo position
-            double servoPosition = finalAzimuthDeg / 360.0;
+            // Map 0-360 degrees to -1 to 1 range for servo position
+            double servoPosition = (finalAzimuthDeg / 180.0) - 1.0;
 
-            // Set Azimuth Servos with mapped value (0-1)
+            // Set Azimuth Servos with mapped value (-1 to 1)
             if (MDOConstants.EnableTurret) {
-                azimuthServo0.setPosition(0);
-                azimuthServo1.setPosition(0);
+                azimuthServo.setPosition(servoPosition);
             } else {
-                azimuthServo0.setPosition(servoPosition);
-                if (MDOConstants.UseBothAzimuthServos) {
-                    azimuthServo1.setPosition(MDOConstants.ReverseOneAzimuthServo ? 1.0 - servoPosition : servoPosition);
-                }
+                azimuthServo.setPosition(0.0);
             }
         }
     }
