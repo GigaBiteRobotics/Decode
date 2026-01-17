@@ -93,9 +93,9 @@ public class MainDriveOpmode extends OpMode {
         azimuthServo = new RobotCoreCustom.CustomAxonServoController(
                 hardwareMap,
                 new String[] {"azimuthServo0", "azimuthServo1"},
-                new boolean[] {false, false},
+                new boolean[] {true, true},
                 true,
-                new double[] {0, 0, 0, 0, 32},
+                MDOConstants.AzimuthPIDFConstants,
                 "azimuthPosition"
         );
         localizer.initAprilTag(hardwareMap, "Webcam 1");
@@ -120,6 +120,7 @@ public class MainDriveOpmode extends OpMode {
         gamepadTimer.reset();
         aprilSlowdownTimer.reset();
         customThreads = new CustomThreads(robotCoreCustom, follower);
+        customThreads.setAzimuthServo(azimuthServo);
 
         // Display auto summary if available
         if (dataTransfer.isAutoCompleted()) {
@@ -136,11 +137,13 @@ public class MainDriveOpmode extends OpMode {
     public void start() {
         customThreads.startDrawingThread();
         customThreads.startCPUMonThread();
+        customThreads.startAzimuthPIDThread();
     }
     @Override
     public void stop() {
         customThreads.stopDrawingThread();
         customThreads.stopCPUMonThread();
+        customThreads.stopAzimuthPIDThread();
         localizer.stopStream();
     }
 
@@ -196,7 +199,7 @@ public class MainDriveOpmode extends OpMode {
         timeUpdate = sectionTimer.milliseconds();
         sorterController.lifterUpdater();
         sorterController.lightingUpdater();
-        azimuthServo.servoPidLoop();
+        // azimuthServo.servoPidLoop() now runs in separate thread
 
         // ===== DRIVE CONTROL =====
         sectionTimer.reset();
@@ -285,7 +288,14 @@ public class MainDriveOpmode extends OpMode {
             telemetryC.addData("Robot Field Azimuth (deg)", robotFieldRelativeAzimuthDeg);
             telemetryC.addData("Field Relative Azimuth (deg)", fieldRelativeAzimuthDeg);
             telemetryC.addData("Final Azimuth (deg)", finalAzimuthDeg);
-            telemetryC.addData("Servo Position (0-1)", finalAzimuthDeg != null ? finalAzimuthDeg / 360.0 : "N/A");
+            telemetryC.addData("Servo Position (-1-1)", finalAzimuthDeg != null ? finalAzimuthDeg / 360.0 : "N/A");
+            telemetryC.addData("Servo Pos (deg)", azimuthServo.getPosition());
+            telemetryC.addData("Servo Accumulated Pos (deg)", azimuthServo.getAccumulatedPosition());
+            telemetryC.addData("Servo Power", azimuthServo.getPIDTargetPower());
+            telemetryC.addData("Servo Target (deg)", azimuthServo.getTargetPosition());
+            telemetryC.addData("Servo Error (deg)", azimuthServo.getPIDError());
+            telemetryC.addData("Analog Voltage", azimuthServo.getAnalogVoltage());
+            telemetryC.addData("Analog Max V", azimuthServo.getMaxVoltage());
         } else {
             telemetryC.addData("Launch Vectors", "Target Unreachable");
         }
@@ -356,12 +366,17 @@ public class MainDriveOpmode extends OpMode {
             // Map 0-360 degrees to -1 to 1 range for servo position
             double servoPosition = (finalAzimuthDeg / 180.0) - 1.0;
 
+            // Update PID coefficients if changed via Panels (has built-in change detection)
+            azimuthServo.setPIDCoefficients(MDOConstants.AzimuthPIDFConstants);
+
             // Set Azimuth Servos with mapped value (-1 to 1)
             if (MDOConstants.EnableTurret) {
-                azimuthServo.setPosition(servoPosition);
+                azimuthServo.setPosition(-servoPosition);
             } else {
                 azimuthServo.setPosition(0.0);
-            }
+            }// First ratio is 96:20
+            // Second ratio is 25:120
+            // Combined ratio is 96*25 : 20*120 = 2400 : 2400 = 1:1
         }
     }
 }

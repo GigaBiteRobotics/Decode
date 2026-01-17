@@ -21,4 +21,14 @@ public class MDOConstants {
     public static boolean EnableTurret = true;
     public static boolean ReverseOneAzimuthServo = false;
     public static boolean EnableLauncherCalcAzimuth = true;
+    public static boolean ReversePIDFAzimuthOutput = false;
+    // Azimuth PID Constants: {P, I, D, F}
+    // P: Proportional gain - higher = stronger response to error
+    // I: Integral gain - corrects steady-state error over time
+    // D: Derivative gain - dampens oscillation/overshoot
+    // F: Feedforward - not typically used for position control
+    // Scale is 180 degrees, so these values are tuned for degree-based error
+    // Reduced P to prevent always-max power and allow proportional control
+    // Example: 45° error × 2.0 P = 90, divided by 180 scale = 0.5 power
+    public static double[] AzimuthPIDFConstants = new double[]{5.0, 0.0, 1.0, 0.0};
 }

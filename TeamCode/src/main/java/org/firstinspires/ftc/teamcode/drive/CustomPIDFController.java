@@ -12,6 +12,7 @@ public class CustomPIDFController {
 	private double errorSum = 0;    // Integral term accumulator
 	private double lastError = 0;  // For derivative term
 	private long lastTime = System.currentTimeMillis(); // Time tracking
+	private double lastOutput = 0; // Last calculated output
 
 	// Constructor
 	public CustomPIDFController(double kP, double kI, double kD, double kF) {
@@ -30,6 +31,19 @@ public class CustomPIDFController {
 	 * @return Calculated motor power (range: -1.0 to 1.0).
 	 */
 	public double calculate(double targetPosition, double currentPosition, double targetVelocity, double range) {
+		return calculate(targetPosition, currentPosition, targetVelocity, range, 5000.0);
+	}
+
+	/**
+	 * Calculates motor power based on target position and current position with custom scaling.
+	 * @param targetPosition The desired encoder position.
+	 * @param currentPosition The current encoder position.
+	 * @param targetVelocity The desired feedforward velocity (ticks/sec). Use 0 if not required.
+	 * @param range The range within which the error is considered tolerable.
+	 * @param scale Scale factor to normalize output (use 5000 for motors, 180 for servos in degrees).
+	 * @return Calculated motor power (range: -1.0 to 1.0).
+	 */
+	public double calculate(double targetPosition, double currentPosition, double targetVelocity, double range, double scale) {
 		// Calculate error
 		error = targetPosition - currentPosition;
 
@@ -62,6 +76,11 @@ public class CustomPIDFController {
 		double output = pTerm + iTerm + dTerm + fTerm;
 
 		// Clamp output to valid motor power range
-		return Math.min(1, Math.max(output/5000, -1)); // Reverse logic if needed
+		lastOutput = Math.min(1, Math.max(output/scale, -1)); // Scale and clamp
+		return lastOutput;
+	}
+
+	public double getLastOutput() {
+		return lastOutput;
 	}
 }
