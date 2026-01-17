@@ -36,6 +36,7 @@ public class MainDriveOpmode extends OpMode {
     RobotCoreCustom.CustomSorterController sorterController;
     boolean launcherSpinning = false;
     int targetRPM = 0;
+    private Double[] launchVectors;
 
     enum Team {
         RED,
@@ -49,6 +50,12 @@ public class MainDriveOpmode extends OpMode {
     ElapsedTime sectionTimer = new ElapsedTime();
     double timeCaching = 0, timeUpdate = 0, timeDrive = 0;
     double timeAprilTag = 0, timeServo = 0, timeLauncher = 0, timeTelemetry = 0;
+
+    Double launchAzimuthDeg = null;
+    Double fieldRelativeAzimuthDeg;
+    Double robotFieldRelativeAzimuthDeg;
+    Double azimuthIMUOffset;
+    Double finalAzimuthDeg;
 
     static TelemetryManager telemetryM;
 
@@ -76,13 +83,7 @@ public class MainDriveOpmode extends OpMode {
         } else {
             // Manual selection if no auto data
             if (gamepad1.a) { team = Team.RED; }
-            else { team = Team.BLUE; }
-        }
-
-        if (team == Team.RED) {
-            MDOConstants.targetLocation = new Double[]{-70.0, -70.0, 40.0};
-        } else {
-            MDOConstants.targetLocation = new Double[]{-70.0, 70.0, 40.0};
+            else if (gamepad1.b) { team = Team.BLUE; }
         }
 
         robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
@@ -153,11 +154,12 @@ public class MainDriveOpmode extends OpMode {
         poseX = currentPose.getX();
         poseY = currentPose.getY();
         robotHeadingRad = follower.getHeading();
+        robotFieldRelativeAzimuthDeg = Math.toDegrees(robotHeadingRad);
 
 
         // Launch calculations
-
-        Double[] launchVectors = RobotCoreCustom.localizerLauncherCalc(follower, MDOConstants.targetLocation);
+        launchVectors = RobotCoreCustom.localizerLauncherCalc(follower, (team == Team.RED) ?
+                MDOConstants.redTargetLocation : MDOConstants.blueTargetLocation);
 
         // Launcher data
         double launcherRPM = launcher0.getRPM();
@@ -218,31 +220,7 @@ public class MainDriveOpmode extends OpMode {
         // ===== SERVO CONTROL =====
         sectionTimer.reset();
 
-        // Pre-calculate launch vector conversions if available
-        Double launchAzimuthDeg = null;
-        double fieldRelativeAzimuthDeg = 0;
-
-        if (launchVectors != null) {
-            launchElevationDeg = Math.toDegrees(launchVectors[0]);
-            launchAzimuthDeg = Math.toDegrees(launchVectors[1]);
-
-            // Offset azimuth by robot heading
-            double fieldRelativeAzimuth = launchVectors[1] - robotHeadingRad;
-
-            // Wrap around: normalize to -PI to PI range
-            fieldRelativeAzimuth = Math.atan2(Math.sin(fieldRelativeAzimuth), Math.cos(fieldRelativeAzimuth));
-
-            // Map to servo range (0.0 to 1.0)
-            double azimuthServoPos = (fieldRelativeAzimuth + Math.PI) / (2 * Math.PI);
-
-            // Calculate servo positions
-            elevationServoTarget = launchVectors[0] / Math.toRadians(45.0);
-
-            elevationServo.setPosition(elevationServoTarget);
-            azimuthServo0.setPosition(azimuthServoPos);
-            azimuthServo1.setPosition(1.0 - azimuthServoPos); // Flipped around center 0.5
-            fieldRelativeAzimuthDeg = Math.toDegrees(fieldRelativeAzimuth);
-        }
+        aimingLoop();
 
         timeServo = sectionTimer.milliseconds();
 
@@ -296,7 +274,10 @@ public class MainDriveOpmode extends OpMode {
         if (launchVectors != null) {
             telemetryC.addData("Launch Elevation (deg)", elevationServoTarget);
             telemetryC.addData("Launch Azimuth (deg)", launchAzimuthDeg);
-            telemetryC.addData("Launch Azimuth (deg, offset)", fieldRelativeAzimuthDeg);
+            telemetryC.addData("Robot Field Azimuth (deg)", robotFieldRelativeAzimuthDeg);
+            telemetryC.addData("Field Relative Azimuth (deg)", fieldRelativeAzimuthDeg);
+            telemetryC.addData("Final Azimuth (deg)", finalAzimuthDeg);
+            telemetryC.addData("Servo Position (0-1)", finalAzimuthDeg != null ? finalAzimuthDeg / 360.0 : "N/A");
         } else {
             telemetryC.addData("Launch Vectors", "Target Unreachable");
         }
@@ -325,5 +306,57 @@ public class MainDriveOpmode extends OpMode {
 
         timeTelemetry = sectionTimer.milliseconds();
         loopTimeMs = loopTimer.milliseconds();
+    }
+    public void aimingLoop() {
+        // start off with IMU offset
+        // Pre-calculate launch vector conversions if available
+
+        launchAzimuthDeg = launchVectors != null ? Math.toDegrees(Math.atan2(launchVectors[1], launchVectors[0])) : launchAzimuthDeg;
+
+        // Wrap-around for launchAzimuthDeg: Normalize to 0-360 degree range
+        if (launchAzimuthDeg != null) {
+            launchAzimuthDeg = launchAzimuthDeg % 360.0;
+            if (launchAzimuthDeg < 0) {
+                launchAzimuthDeg += 360.0;
+            }
+        }
+
+        if (MDOConstants.EnableTurretIMUCorrection && MDOConstants.EnableTurret) {
+            fieldRelativeAzimuthDeg = robotFieldRelativeAzimuthDeg + MDOConstants.AzimuthIMUOffset;
+
+            // Wrap-around for fieldRelativeAzimuthDeg with offset
+            fieldRelativeAzimuthDeg = fieldRelativeAzimuthDeg % 360.0;
+            if (fieldRelativeAzimuthDeg < 0) {
+                fieldRelativeAzimuthDeg += 360.0;
+            }
+
+            fieldRelativeAzimuthDeg = fieldRelativeAzimuthDeg * MDOConstants.AzimuthMultiplier;
+
+            if (MDOConstants.EnableLauncherCalcAzimuth && launchAzimuthDeg != null) {
+                finalAzimuthDeg = fieldRelativeAzimuthDeg + launchAzimuthDeg;
+            } else {
+                finalAzimuthDeg = fieldRelativeAzimuthDeg;
+            }
+
+            // Wrap-around: Normalize final angle to 0-360 degree range
+            finalAzimuthDeg = finalAzimuthDeg % 360.0;
+            if (finalAzimuthDeg < 0) {
+                finalAzimuthDeg += 360.0;
+            }
+
+            // Map 0-360 degrees to 0-1 range for servo position
+            double servoPosition = finalAzimuthDeg / 360.0;
+
+            // Set Azimuth Servos with mapped value (0-1)
+            if (MDOConstants.EnableTurret) {
+                azimuthServo0.setPosition(0);
+                azimuthServo1.setPosition(0);
+            } else {
+                azimuthServo0.setPosition(servoPosition);
+                if (MDOConstants.UseBothAzimuthServos) {
+                    azimuthServo1.setPosition(MDOConstants.ReverseOneAzimuthServo ? 1.0 - servoPosition : servoPosition);
+                }
+            }
+        }
     }
 }
