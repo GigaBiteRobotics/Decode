@@ -83,6 +83,166 @@ public class RobotCoreCustom {
 	}
 	// Get RPM over a fixed time window
 
+	public static class CustomMotorController {
+		private final String[] motorGroup;
+		HashMap<String, CustomMotor> motors;
+		boolean[] reverseMap;
+		private volatile int targetRPM = 0;
+		private volatile double targetPower = 0.0;
+		private boolean isRPMMode = false;
+
+		// Lock object for thread safety
+		private final Object lock = new Object();
+
+		/**
+		 * Constructor for motor group controller
+		 * @param hardwareMap HardwareMap to get motors
+		 * @param motorGroup Array of motor names in the group
+		 * @param reverseMap Array of booleans indicating if each motor is reversed
+		 * @param hasEncoder Whether motors have encoders (applies to all motors in group)
+		 * @param ticksPerRev Ticks per revolution for the motors
+		 * @param pidfController PID controller for RPM mode
+		 */
+		public CustomMotorController(HardwareMap hardwareMap, String[] motorGroup, boolean[] reverseMap, boolean hasEncoder, double ticksPerRev, CustomPIDFController pidfController) {
+			this.motorGroup = motorGroup;
+			this.reverseMap = reverseMap;
+			this.motors = new HashMap<>();
+
+			if (motorGroup.length != reverseMap.length) {
+				throw new IllegalArgumentException("Motor group and reverse map must have the same length.");
+			}
+
+			for (String motorName : motorGroup) {
+				try {
+					CustomMotor motor = new CustomMotor(hardwareMap, motorName, hasEncoder, ticksPerRev, pidfController);
+					this.motors.put(motorName, motor);
+				} catch (Exception e) {
+					throw new IllegalArgumentException("Failed to initialize motor: " + motorName + " - " + e.getMessage());
+				}
+			}
+		}
+
+		/**
+		 * Set RPM for all motors in the group
+		 * @param rpm Target RPM
+		 */
+		public void setRPM(int rpm) {
+			synchronized (lock) {
+				this.targetRPM = rpm;
+				this.isRPMMode = true;
+				for (int i = 0; i < motorGroup.length; i++) {
+					String motorName = motorGroup[i];
+					CustomMotor motor = motors.get(motorName);
+					if (motor != null) {
+						int finalRPM = reverseMap[i] ? -rpm : rpm;
+						motor.setRPM(finalRPM);
+					}
+				}
+			}
+		}
+
+		/**
+		 * Set power for all motors in the group
+		 * @param power Target power [-1, 1]
+		 */
+		public void setPower(double power) {
+			synchronized (lock) {
+				this.targetPower = power;
+				this.isRPMMode = false;
+				for (int i = 0; i < motorGroup.length; i++) {
+					String motorName = motorGroup[i];
+					CustomMotor motor = motors.get(motorName);
+					if (motor != null) {
+						double finalPower = reverseMap[i] ? -power : power;
+						motor.setPower(finalPower);
+					}
+				}
+			}
+		}
+
+		/**
+		 * Update RPM PID for all motors in the group - call this in a loop
+		 */
+		public void updateRPMPID() {
+			synchronized (lock) {
+				if (isRPMMode) {
+					for (CustomMotor motor : motors.values()) {
+						motor.updateRPMPID();
+					}
+				}
+			}
+		}
+
+		/**
+		 * Get average RPM of all motors in the group
+		 * @return Average RPM
+		 */
+		public double getAverageRPM() {
+			synchronized (lock) {
+				double sum = 0.0;
+				int count = 0;
+				for (CustomMotor motor : motors.values()) {
+					if (motor.hasEncoder) {
+						sum += motor.getRPM();
+						count++;
+					}
+				}
+				return count > 0 ? sum / count : 0.0;
+			}
+		}
+
+		/**
+		 * Get RPM of a specific motor by name
+		 * @param motorName Name of the motor
+		 * @return RPM of the motor
+		 */
+		public double getRPM(String motorName) {
+			synchronized (lock) {
+				CustomMotor motor = motors.get(motorName);
+				if (motor != null) {
+					return motor.getRPM();
+				}
+				throw new IllegalArgumentException("Motor not found: " + motorName);
+			}
+		}
+
+		/**
+		 * Set PIDF controller for all motors in the group
+		 * @param pidfController New PIDF controller
+		 */
+		public void setPIDFController(CustomPIDFController pidfController) {
+			synchronized (lock) {
+				for (CustomMotor motor : motors.values()) {
+					motor.setPIDFController(pidfController);
+				}
+			}
+		}
+
+		/**
+		 * Get the target RPM
+		 * @return Target RPM
+		 */
+		public int getTargetRPM() {
+			return targetRPM;
+		}
+
+		/**
+		 * Get the target power
+		 * @return Target power
+		 */
+		public double getTargetPower() {
+			return targetPower;
+		}
+
+		/**
+		 * Check if in RPM mode
+		 * @return true if in RPM mode
+		 */
+		public boolean isRPMMode() {
+			return isRPMMode;
+		}
+	}
+
 	public static class CustomMotor {
 		private final DcMotor motor;
 		private final double TICKS_PER_REV;
@@ -223,17 +383,62 @@ public class RobotCoreCustom {
 		}
 
 		public CustomColor getColor(int pitSelector) {
-			if (pitSelector < 0 || pitSelector >= 3) {
-				throw new IllegalArgumentException("Invalid pit selector: " + pitSelector);
+			int sensorIndex0, sensorIndex1;
+
+			switch (pitSelector) {
+				case 0:
+					sensorIndex0 = 0;
+					sensorIndex1 = 1;
+					break;
+				case 1:
+					sensorIndex0 = 4;
+					sensorIndex1 = 5;
+					break;
+				case 2:
+					sensorIndex0 = 2;
+					sensorIndex1 = 3;
+					break;
+				default:
+					throw new IllegalArgumentException("Invalid pit selector: " + pitSelector);
 			}
-			int colorARGB0 = colorSensor[pitSelector * 3].argb();
+
+			int colorARGB0 = colorSensor[sensorIndex0].argb();
 			CustomColor color0 = calcColor(colorARGB0);
 			if (color0 != CustomColor.NULL) {
 				return color0;
 			} else {
-				int colorARGB1 = colorSensor[pitSelector * 3 + 1].argb();
+				int colorARGB1 = colorSensor[sensorIndex1].argb();
 				return calcColor(colorARGB1);
 			}
+		}
+
+		/**
+		 * Get color from a specific sensor index (0-5)
+		 * @param sensorIndex The color sensor index (0-5)
+		 * @return The detected color
+		 */
+		public CustomColor getSensorColor(int sensorIndex) {
+			if (sensorIndex < 0 || sensorIndex >= 6) {
+				throw new IllegalArgumentException("Invalid sensor index: " + sensorIndex);
+			}
+			int colorARGB = colorSensor[sensorIndex].argb();
+			return calcColor(colorARGB);
+		}
+
+		/**
+		 * Get raw RGB values from a specific sensor
+		 * @param sensorIndex The color sensor index (0-5)
+		 * @return Array of [red, green, blue] values (0-255)
+		 */
+		public int[] getSensorRGB(int sensorIndex) {
+			if (sensorIndex < 0 || sensorIndex >= 6) {
+				throw new IllegalArgumentException("Invalid sensor index: " + sensorIndex);
+			}
+			int argb = colorSensor[sensorIndex].argb();
+			int red = (argb >> 16) & 0xFF;
+			int green = (argb >> 8) & 0xFF;
+			int blue = argb & 0xFF;
+			return new int[]{red, green, blue};
 		}
 
 		public void launch(CustomColor color) {
@@ -293,7 +498,7 @@ public class RobotCoreCustom {
 			int green = (argb >> 8) & 0xFF;
 			int blue = argb & 0xFF;
 
-			if (green > blue * 1.5 && green > red * 1.5) {
+			if (green > blue && green > red) {
 				return CustomColor.GREEN;
 			} else if (blue > green && blue > red) {
 				return CustomColor.PURPLE;
@@ -338,14 +543,17 @@ public class RobotCoreCustom {
 		boolean invertServoDirection; // If true, inverts PID output (when sensor direction is opposite to servo)
 		double[] pidCoefficients;
 		CustomPIDFController pidController;
-		double targetPosition;
+		private volatile double targetPosition;
 
 		// Wrap-around tracking for 180-degree sensors
 		private static final double WRAP_THRESHOLD = 180.0; // Degrees where wrap occurs
-		private double lastRawPosition = 0.0; // Last raw reading in degrees
-		private int wrapCount = 0; // Number of full rotations
-		private double accumulatedPosition = 0.0; // Total position including wraps
-		private double lastAppliedPower = 0.0; // The actual power sent to servos after all transformations
+		private volatile double lastRawPosition = 0.0; // Last raw reading in degrees
+		private volatile int wrapCount = 0; // Number of full rotations
+		private volatile double accumulatedPosition = 0.0; // Total position including wraps
+		private volatile double lastAppliedPower = 0.0; // The actual power sent to servos after all transformations
+
+		// Lock object for thread safety
+		private final Object lock = new Object();
 
 		/**
 		 *
@@ -371,7 +579,6 @@ public class RobotCoreCustom {
 		 * @param invertServoDirection If true, inverts the PID output (use when sensor reads opposite to servo movement)
 		 */
 		public CustomAxonServoController(HardwareMap hardwareMap, String[] servoGroup, boolean[] reverseMap, boolean useAnalogPositionSensors, double[] pidCoefficients, String analogPositionName, boolean invertServoDirection) {
-			this.aPosition = hardwareMap.get(AnalogInput.class, analogPositionName);
 			this.pidCoefficients = pidCoefficients;
 			this.useAnalog = useAnalogPositionSensors;
 			this.servo = new HashMap<>();
@@ -379,20 +586,38 @@ public class RobotCoreCustom {
 			this.reverseMap = reverseMap;
 			this.invertServoDirection = invertServoDirection;
 			this.pidController = new CustomPIDFController(pidCoefficients[0], pidCoefficients[1], pidCoefficients[2], 0.0);
+
+			// Initialize analog position sensor if using analog feedback
+			if (useAnalogPositionSensors) {
+				try {
+					this.aPosition = hardwareMap.get(AnalogInput.class, analogPositionName);
+				} catch (Exception e) {
+					throw new IllegalArgumentException("Analog input with name " + analogPositionName + " not found in hardware map.");
+				}
+			}
+
 			for (String servoName : servoGroup) {
 				try {
 					this.servo.put(servoName, hardwareMap.get(Servo.class, servoName));
 				} catch (Exception e) {
-					throw new IllegalArgumentException("Servo with name " + servoName + " not found in hardware map, or its analog position sensor is missing if enabled.");
+					throw new IllegalArgumentException("Servo with name " + servoName + " not found in hardware map.");
 				}
 			}
 
 			// Initialize position tracking if using analog sensors
-			if (useAnalogPositionSensors) {
-				lastRawPosition = voltageToDegrees(aPosition.getVoltage());
-				accumulatedPosition = lastRawPosition;
-				targetPosition = lastRawPosition; // Start with target at current position
-				wrapCount = 0;
+			if (useAnalogPositionSensors && aPosition != null) {
+				try {
+					lastRawPosition = voltageToDegrees(aPosition.getVoltage());
+					accumulatedPosition = lastRawPosition;
+					targetPosition = lastRawPosition; // Start with target at current position
+					wrapCount = 0;
+				} catch (Exception e) {
+					// If sensor initialization fails, default to safe values
+					lastRawPosition = 0.0;
+					accumulatedPosition = 0.0;
+					targetPosition = 0.0;
+					wrapCount = 0;
+				}
 			}
 		}
 
@@ -403,74 +628,95 @@ public class RobotCoreCustom {
 		 */
 
 		public void setPosition(double position) {
-			if (!useAnalog) {
-				// Map input range [-1, 1] to servo range [0, 1]
-				double mapped = (position + 1.0) / 2.0;
-				mapped = Math.max(0.0, Math.min(1.0, mapped)); // clamp to [0,1]
+			synchronized (lock) {
+				if (!useAnalog) {
+					// Map input range [-1, 1] to servo range [0, 1]
+					double mapped = (position + 1.0) / 2.0;
+					mapped = Math.max(0.0, Math.min(1.0, mapped)); // clamp to [0,1]
+					for (String servoName : servoGroup) {
+						Servo s = this.servo.get(servoName);
+						if (s != null) {
+							s.setPosition(mapped);
+						}
+					}
+				} else {
+					// Map [-1, 1] to degrees range [0, 180]
+					targetPosition = (position + 1.0) / 2.0 * WRAP_THRESHOLD;
+				}
+			}
+		}
+		 public void stopServo() {
+			synchronized (lock) {
 				for (String servoName : servoGroup) {
 					Servo s = this.servo.get(servoName);
 					if (s != null) {
-						s.setPosition(mapped);
+						s.setPosition(s.getPosition()); // Hold current position
 					}
 				}
-			} else {
-				// Map [-1, 1] to degrees range [0, 180]
-				targetPosition = (position + 1.0) / 2.0 * WRAP_THRESHOLD;
 			}
-		}
+		 }
 		public void servoPidLoop() {
-			if (useAnalog) {
-				// Get raw sensor reading and convert to degrees (0-180)
-				double rawDegrees = voltageToDegrees(aPosition.getVoltage());
+			if (useAnalog && aPosition != null) {
+				synchronized (lock) {
+					try {
+						// Get raw sensor reading and convert to degrees (0-180)
+						double rawDegrees = voltageToDegrees(aPosition.getVoltage());
 
-				// Detect wrap-around
-				double delta = rawDegrees - lastRawPosition;
+						// Detect wrap-around
+						double delta = rawDegrees - lastRawPosition;
 
-				// If we jumped from near 180 to near 0, we wrapped forward
-				if (delta < -WRAP_THRESHOLD / 2) {
-					wrapCount++;
-				}
-				// If we jumped from near 0 to near 180, we wrapped backward
-				else if (delta > WRAP_THRESHOLD / 2) {
-					wrapCount--;
-				}
+						// If we jumped from near 180 to near 0, we wrapped forward
+						if (delta < -WRAP_THRESHOLD / 2) {
+							wrapCount++;
+						}
+						// If we jumped from near 0 to near 180, we wrapped backward
+						else if (delta > WRAP_THRESHOLD / 2) {
+							wrapCount--;
+						}
 
-				// Calculate accumulated position (includes wrap count)
-				accumulatedPosition = rawDegrees + (wrapCount * WRAP_THRESHOLD);
-				lastRawPosition = rawDegrees;
+						// Calculate accumulated position (includes wrap count)
+						accumulatedPosition = rawDegrees + (wrapCount * WRAP_THRESHOLD);
+						lastRawPosition = rawDegrees;
 
 
-			// Use accumulated position for PID control with scale of 180 for degrees
-			double power = pidController.calculate(targetPosition, accumulatedPosition, 0, 2, WRAP_THRESHOLD);
+						// Use accumulated position for PID control with scale of 180 for degrees
+						double power = pidController.calculate(targetPosition, accumulatedPosition, 0, 2, WRAP_THRESHOLD);
 
-			power = Math.max(-1.0, Math.min(1.0, power)); // Clamp power to [-1, 1]
+						power = Math.max(-1.0, Math.min(1.0, power)); // Clamp power to [-1, 1]
 
-			// Invert power if sensor direction is opposite to servo direction
-			if (invertServoDirection) {
-				power = -power;
-			}
+						// Invert power if sensor direction is opposite to servo direction
+						if (invertServoDirection) {
+							power = -power;
+						}
 
-			// Store the power being applied (before per-servo reversal)
-			lastAppliedPower = power;
+						// Store the power being applied (before per-servo reversal)
+						lastAppliedPower = power;
 
-			for (int i = 0; i < servoGroup.length; i++) {
-					String servoName = servoGroup[i];
-					Servo s = this.servo.get(servoName);
-					if (s != null) {
-						double finalPower = reverseMap[i] ? -power : power;
-						double mapped = (finalPower + 1.0) / 2.0;
-						mapped = Math.max(0.0, Math.min(1.0, mapped)); // clamp to [0,1]
-						s.setPosition(mapped);
+						for (int i = 0; i < servoGroup.length; i++) {
+							String servoName = servoGroup[i];
+							Servo s = this.servo.get(servoName);
+							if (s != null) {
+								double finalPower = reverseMap[i] ? -power : power;
+								double mapped = (finalPower + 1.0) / 2.0;
+								mapped = Math.max(0.0, Math.min(1.0, mapped)); // clamp to [0,1]
+								s.setPosition(mapped);
+							}
+						}
+					} catch (Exception e) {
+						// Silently handle sensor errors to prevent crashes
+						System.err.println("Error in servo PID loop: " + e.getMessage());
 					}
 				}
 			}
 		}
 		public double getPosition() {
-			if (useAnalog) {
-				// Return accumulated position (can be > 180 degrees)
-				return accumulatedPosition;
-			} else {
-				throw new IllegalStateException("Analog position sensors are not enabled for this servo group.");
+			synchronized (lock) {
+				if (useAnalog) {
+					// Return accumulated position (can be > 180 degrees)
+					return accumulatedPosition;
+				} else {
+					throw new IllegalStateException("Analog position sensors are not enabled for this servo group.");
+				}
 			}
 		}
 
@@ -486,10 +732,12 @@ public class RobotCoreCustom {
 		 * Get the raw position (0-180 degrees) without accumulated wraps
 		 */
 		public double getRawPosition() {
-			if (useAnalog) {
-				return lastRawPosition;
-			} else {
-				throw new IllegalStateException("Analog position sensors are not enabled for this servo group.");
+			synchronized (lock) {
+				if (useAnalog) {
+					return lastRawPosition;
+				} else {
+					throw new IllegalStateException("Analog position sensors are not enabled for this servo group.");
+				}
 			}
 		}
 
@@ -497,21 +745,25 @@ public class RobotCoreCustom {
 		 * Reset the wrap counter and accumulated position
 		 */
 		public void resetPosition() {
-		wrapCount = 0;
-		accumulatedPosition = voltageToDegrees(aPosition.getVoltage());
-		lastRawPosition = accumulatedPosition;
-	}
+			synchronized (lock) {
+				wrapCount = 0;
+				accumulatedPosition = voltageToDegrees(aPosition.getVoltage());
+				lastRawPosition = accumulatedPosition;
+			}
+		}
 	public double getPIDTargetPower() {
-		return lastAppliedPower;
+		return lastAppliedPower;  // volatile read is atomic
 	}
 	public double getPIDError() {
-		return pidController.error;
+		synchronized (lock) {
+			return pidController.error;
+		}
 	}
 	public double getTargetPosition() {
-		return targetPosition;
+		return targetPosition;  // volatile read is atomic
 	}
 	public double getAccumulatedPosition() {
-		return accumulatedPosition;
+		return accumulatedPosition;  // volatile read is atomic
 	}
 	public double getAnalogVoltage() {
 		if (useAnalog && aPosition != null) {
@@ -526,12 +778,14 @@ public class RobotCoreCustom {
 		return 0.0;
 	}
 	public void setPIDCoefficients(double[] pidCoefficients) {
-		if (pidCoefficients.length < 3) {
-			throw new IllegalArgumentException("PID coefficients array must have at least 3 elements: p, i, d.");
-		}
+		synchronized (lock) {
+			if (pidCoefficients.length < 3) {
+				throw new IllegalArgumentException("PID coefficients array must have at least 3 elements: p, i, d.");
+			}
 
-		this.pidCoefficients = pidCoefficients;
-		this.pidController = new CustomPIDFController(pidCoefficients[0], pidCoefficients[1], pidCoefficients[2], 0.0);
+			this.pidCoefficients = pidCoefficients;
+			this.pidController = new CustomPIDFController(pidCoefficients[0], pidCoefficients[1], pidCoefficients[2], 0.0);
+		}
 	}
 }
 }

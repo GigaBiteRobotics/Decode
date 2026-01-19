@@ -6,7 +6,7 @@ public class CustomPIDFController {
 	private final double kI;
 	private final double kD;
 	private final double kF;
-	public double error;
+	public volatile double error;
 
 	// Internal state variables
 	private double errorSum = 0;    // Integral term accumulator
@@ -30,7 +30,7 @@ public class CustomPIDFController {
 	 * @param range The range within which the error is considered tolerable.
 	 * @return Calculated motor power (range: -1.0 to 1.0).
 	 */
-	public double calculate(double targetPosition, double currentPosition, double targetVelocity, double range) {
+	public synchronized double calculate(double targetPosition, double currentPosition, double targetVelocity, double range) {
 		return calculate(targetPosition, currentPosition, targetVelocity, range, 5000.0);
 	}
 
@@ -43,7 +43,7 @@ public class CustomPIDFController {
 	 * @param scale Scale factor to normalize output (use 5000 for motors, 180 for servos in degrees).
 	 * @return Calculated motor power (range: -1.0 to 1.0).
 	 */
-	public double calculate(double targetPosition, double currentPosition, double targetVelocity, double range, double scale) {
+	public synchronized double calculate(double targetPosition, double currentPosition, double targetVelocity, double range, double scale) {
 		// Calculate error
 		error = targetPosition - currentPosition;
 

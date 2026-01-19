@@ -29,7 +29,8 @@ public class MainDriveOpmode extends OpMode {
     RobotCoreCustom.CustomAxonServoController azimuthServo;
     Double launchElevationDeg = 0.0;
     double elevationServoTarget = 0.0;
-    RobotCoreCustom.CustomMotor launcher0, launcher1, drawbridgeMotor;
+    RobotCoreCustom.CustomMotorController launcherMotors;
+    RobotCoreCustom.CustomMotor drawbridgeMotor;
     Double[] lastAprilLocalization = null;
     double targetPower = 0.0;
     ElapsedTime gamepadTimer = new ElapsedTime();
@@ -49,7 +50,7 @@ public class MainDriveOpmode extends OpMode {
      ElapsedTime loopTimer = new ElapsedTime();
     double loopTimeMs = 0;
     ElapsedTime sectionTimer = new ElapsedTime();
-    double timeCaching = 0, timeUpdate = 0, timeDrive = 0;
+    double timeCaching = 0, timeUpdate = 0, timeSorter = 0, timeDrive = 0;
     double timeAprilTag = 0, timeServo = 0, timeLauncher = 0, timeTelemetry = 0;
 
     Double launchAzimuthDeg = null;
@@ -58,7 +59,14 @@ public class MainDriveOpmode extends OpMode {
     Double azimuthIMUOffset;
     Double finalAzimuthDeg;
 
+    // Flag to prevent turret movement on first loop iteration
+    private boolean firstLoopComplete = false;
+
     static TelemetryManager telemetryM;
+
+    // Telemetry throttling to reduce overhead
+    private int telemetryLoopCounter = 0;
+    private static final int TELEMETRY_UPDATE_INTERVAL = 3; // Update telemetry every N loops
 
     // Threads
     CustomThreads customThreads;
@@ -98,10 +106,17 @@ public class MainDriveOpmode extends OpMode {
                 MDOConstants.AzimuthPIDFConstants,
                 "azimuthPosition"
         );
+
         localizer.initAprilTag(hardwareMap, "Webcam 1");
 
-        launcher0 = new RobotCoreCustom.CustomMotor(hardwareMap, "launcher0", true, 28, MDOConstants.launcherPIDF);
-        launcher1 = new RobotCoreCustom.CustomMotor(hardwareMap, "launcher1", false, 28, MDOConstants.launcherPIDF);
+        launcherMotors = new RobotCoreCustom.CustomMotorController(
+                hardwareMap,
+                new String[]{"launcher0", "launcher1"},
+                new boolean[]{false, true}, // launcher1 is reversed
+                true, // has encoders
+                28.0, // ticks per rev
+                MDOConstants.launcherPIDF
+        );
         drawbridgeMotor = new RobotCoreCustom.CustomMotor(hardwareMap, "drawBridge", false, 67, new CustomPIDFController(0, 0, 0, 0));
         follower = Constants.createFollower(hardwareMap);
 
@@ -172,7 +187,7 @@ public class MainDriveOpmode extends OpMode {
                 MDOConstants.redTargetLocation : MDOConstants.blueTargetLocation);
 
         // Launcher data
-        double launcherRPM = launcher0.getRPM();
+        double launcherRPM = launcherMotors.getAverageRPM();
 
         // Gamepad inputs - all sticks
         double gamepad1LeftStickY = gamepad1.left_stick_y;
@@ -186,19 +201,34 @@ public class MainDriveOpmode extends OpMode {
         CustomPIDFController pidfConstant = MDOConstants.launcherPIDF;
         boolean usePIDFLauncher = MDOConstants.usePIDFLauncher;
 
+        // Cache azimuth servo data ONCE to avoid hardware I/O in telemetry
+        double servoPosition = azimuthServo.getPosition();
+        double servoTarget = azimuthServo.getTargetPosition();
+
+        // Pre-format CPU strings to avoid repeated String.format() in telemetry (expensive operation)
+        double cpuUsage = customThreads.getCpuUsage();
+        double cpuTemp = customThreads.getCpuTemp();
+
         // Cache AprilTag position ONCE to avoid multiple blocking calls
         Double[] aprilPose = localizer.getPosition();
         timeCaching = sectionTimer.milliseconds();
 
         // ===== MAIN LOOP LOGIC =====
         sectionTimer.reset();
-        launcher0.setPIDFController(pidfConstant);
-        launcher0.updateRPMPID();
+
+        if (MDOConstants.usePIDFLauncher) {
+            launcherMotors.updateRPMPID();
+            launcherMotors.setPIDFController(pidfConstant);
+        }
 
         follower.update();
         timeUpdate = sectionTimer.milliseconds();
+
+        // ===== SORTER CONTROLLER UPDATES =====
+        sectionTimer.reset();
         sorterController.lifterUpdater();
-        sorterController.lightingUpdater();
+        //sorterController.lightingUpdater();
+        timeSorter = sectionTimer.milliseconds();
         // azimuthServo.servoPidLoop() now runs in separate thread
 
         // ===== DRIVE CONTROL =====
@@ -254,12 +284,17 @@ public class MainDriveOpmode extends OpMode {
             }
         }
 
+        if (gamepad2.right_bumper) { // launch purple
+            sorterController.launch(RobotCoreCustom.CustomSorterController.CustomColor.PURPLE);
+        }
+        if (gamepad2.left_bumper) {
+            sorterController.launch(RobotCoreCustom.CustomSorterController.CustomColor.GREEN);
+        }
+
         if (usePIDFLauncher) {
-            launcher0.setRPM(targetRPM);
-            launcher1.setRPM(targetRPM);
+            launcherMotors.setRPM(targetRPM);
         } else {
-            launcher0.setPower(targetPower);
-            launcher1.setPower(-targetPower);
+            launcherMotors.setPower(targetPower);
         }
 
         // Clamp target power
@@ -267,63 +302,77 @@ public class MainDriveOpmode extends OpMode {
 
         timeLauncher = sectionTimer.milliseconds();
 
-        // ===== TELEMETRY BLOCK - Update every 3 loops to reduce overhead =====
+        // ===== TELEMETRY BLOCK - Throttled to reduce overhead =====
         sectionTimer.reset();
 
-        telemetryC.addData("External Heading (deg)", robotHeadingRad);
-        telemetryC.addData("Pose X", poseX);
-        telemetryC.addData("Pose Y", poseY);
+        telemetryLoopCounter++;
+        if (telemetryLoopCounter >= TELEMETRY_UPDATE_INTERVAL) {
+            telemetryLoopCounter = 0; // Reset counter
 
-        if (aprilPose != null) {
-            telemetryC.addData("X (in) AprilTag", aprilPose[0]);
-            telemetryC.addData("Y (in) AprilTag", aprilPose[1]);
-        } else {
-            telemetryC.addData("X (in) AprilTag", "No Tag");
-            telemetryC.addData("Y (in) AprilTag", "No Tag");
+            telemetryC.addData("External Heading (deg)", robotHeadingRad);
+            telemetryC.addData("Pose X", poseX);
+            telemetryC.addData("Pose Y", poseY);
+
+            if (aprilPose != null) {
+                telemetryC.addData("X (in) AprilTag", aprilPose[0]);
+                telemetryC.addData("Y (in) AprilTag", aprilPose[1]);
+            } else {
+                telemetryC.addData("X (in) AprilTag", "No Tag");
+                telemetryC.addData("Y (in) AprilTag", "No Tag");
+            }
+
+            if (launchVectors != null) {
+                telemetryC.addData("Launch Elevation (deg)", elevationServoTarget);
+                telemetryC.addData("Launch Azimuth (deg)", launchAzimuthDeg);
+                telemetryC.addData("Robot Field Azimuth (deg)", robotFieldRelativeAzimuthDeg);
+                telemetryC.addData("Field Relative Azimuth (deg)", fieldRelativeAzimuthDeg);
+                telemetryC.addData("Final Azimuth (deg)", finalAzimuthDeg);
+                telemetryC.addData("Servo Position (-1-1)", finalAzimuthDeg != null ? finalAzimuthDeg / 360.0 : "N/A");
+                telemetryC.addData("Servo Pos (deg)", servoPosition);
+            } else {
+                telemetryC.addData("Launch Vectors", "Target Unreachable");
+            }
+
+            telemetryC.addData("Launcher RPM", launcherRPM);
+            telemetryC.addData("Launcher Power", targetPower);
+
+
+
+            // ===== CPU USAGE/TEMP TELEMETRY =====
+            telemetryC.addData("CPU Usage (%)", cpuUsage);
+            telemetryC.addData("CPU Temp (°C)", cpuTemp);
+
+
+            // ===== PERFORMANCE TIMING TELEMETRY =====
+            telemetryC.addData("Loop Time (ms)", loopTimeMs);
+
+            double totalTrackedTime = timeCaching + timeUpdate + timeSorter + timeDrive +
+                                      timeAprilTag + timeServo + timeLauncher + timeTelemetry;
+            double unaccountedTime = loopTimeMs - totalTrackedTime;
+
+            telemetryC.addData("--- Performance Breakdown ---", "");
+            telemetryC.addData("Caching", String.format("%.2f ms", timeCaching));
+            telemetryC.addData("Update/PIDF", String.format("%.2f ms", timeUpdate));
+            telemetryC.addData("Sorter Updates", String.format("%.2f ms", timeSorter));
+            telemetryC.addData("Drive Control", String.format("%.2f ms", timeDrive));
+            telemetryC.addData("AprilTag", String.format("%.2f ms", timeAprilTag));
+            telemetryC.addData("Servo Control", String.format("%.2f ms", timeServo));
+            telemetryC.addData("Launcher Control", String.format("%.2f ms", timeLauncher));
+            telemetryC.addData("Telemetry", String.format("%.2f ms", timeTelemetry));
+            telemetryC.addData("--- Summary ---", "");
+            telemetryC.addData("Total Tracked", String.format("%.2f ms", totalTrackedTime));
+            telemetryC.addData("Unaccounted Time", String.format("%.2f ms (%.1f%%)",
+                unaccountedTime, (unaccountedTime / loopTimeMs) * 100));
+
+            // Update Telemetry
+            telemetryC.update();
         }
-
-        if (launchVectors != null) {
-            telemetryC.addData("Launch Elevation (deg)", elevationServoTarget);
-            telemetryC.addData("Launch Azimuth (deg)", launchAzimuthDeg);
-            telemetryC.addData("Robot Field Azimuth (deg)", robotFieldRelativeAzimuthDeg);
-            telemetryC.addData("Field Relative Azimuth (deg)", fieldRelativeAzimuthDeg);
-            telemetryC.addData("Final Azimuth (deg)", finalAzimuthDeg);
-            telemetryC.addData("Servo Position (-1-1)", finalAzimuthDeg != null ? finalAzimuthDeg / 360.0 : "N/A");
-            telemetryC.addData("Servo Pos (deg)", azimuthServo.getPosition());
-            telemetryC.addData("Servo Accumulated Pos (deg)", azimuthServo.getAccumulatedPosition());
-            telemetryC.addData("Servo Power", azimuthServo.getPIDTargetPower());
-            telemetryC.addData("Servo Target (deg)", azimuthServo.getTargetPosition());
-            telemetryC.addData("Servo Error (deg)", azimuthServo.getPIDError());
-            telemetryC.addData("Analog Voltage", azimuthServo.getAnalogVoltage());
-            telemetryC.addData("Analog Max V", azimuthServo.getMaxVoltage());
-        } else {
-            telemetryC.addData("Launch Vectors", "Target Unreachable");
-        }
-
-        telemetryC.addData("Launcher RPM", launcherRPM);
-        telemetryC.addData("Launcher Power", targetPower);
-
-        // ===== CPU USAGE/TEMP TELEMETRY =====
-        telemetryC.addData("CPU Usage (%)", String.format("%.2f %%", customThreads.getCpuUsage()));
-        telemetryC.addData("CPU Temp (°C)", String.format("%.2f °C", customThreads.getCpuTemp()));
-
-
-        // ===== PERFORMANCE TIMING TELEMETRY =====
-        telemetryC.addData("Loop Time (ms)", loopTimeMs);
-        telemetryC.addData("--- Performance Breakdown ---", "");
-        telemetryC.addData("Caching", String.format("%.2f ms", timeCaching));
-        telemetryC.addData("Update/PIDF", String.format("%.2f ms", timeUpdate));
-        telemetryC.addData("Drive Control", String.format("%.2f ms", timeDrive));
-        telemetryC.addData("AprilTag", String.format("%.2f ms", timeAprilTag));
-        telemetryC.addData("Servo Control", String.format("%.2f ms", timeServo));
-        telemetryC.addData("Launcher Control", String.format("%.2f ms", timeLauncher));
-        telemetryC.addData("Telemetry", String.format("%.2f ms", timeTelemetry));
-
-        // Update Telemetry
-        telemetryC.update();
 
         timeTelemetry = sectionTimer.milliseconds();
         loopTimeMs = loopTimer.milliseconds();
+
+        // Mark that the first loop has completed, allowing turret movement
+        firstLoopComplete = true;
     }
     public void aimingLoop() {
         // Calculate elevation angle for launch
@@ -370,10 +419,13 @@ public class MainDriveOpmode extends OpMode {
             azimuthServo.setPIDCoefficients(MDOConstants.AzimuthPIDFConstants);
 
             // Set Azimuth Servos with mapped value (-1 to 1)
-            if (MDOConstants.EnableTurret) {
-                azimuthServo.setPosition(-servoPosition);
-            } else {
-                azimuthServo.setPosition(0.0);
+            // Only update position after first loop to prevent initial spin
+            if (firstLoopComplete) {
+                if (MDOConstants.EnableTurret) {
+                    azimuthServo.setPosition(-servoPosition);
+                } else {
+                    azimuthServo.setPosition(0.0);
+                }
             }// First ratio is 96:20
             // Second ratio is 25:120
             // Combined ratio is 96*25 : 20*120 = 2400 : 2400 = 1:1

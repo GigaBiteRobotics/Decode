@@ -30,5 +30,5 @@ public class MDOConstants {
     // Scale is 180 degrees, so these values are tuned for degree-based error
     // Reduced P to prevent always-max power and allow proportional control
     // Example: 45° error × 2.0 P = 90, divided by 180 scale = 0.5 power
-    public static double[] AzimuthPIDFConstants = new double[]{5.0, 0.0, 1.0, 0.0};
+    public static double[] AzimuthPIDFConstants = new double[]{5.0, 0.0, 0.0, 0.0};
 }

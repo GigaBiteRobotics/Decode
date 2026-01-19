@@ -34,14 +34,23 @@ public class CustomThreads {
         this.azimuthServo = azimuthServo;
     }
     public void startDrawingThread() {
+        // Prevent starting multiple threads
+        if (drawingThreadRunning) {
+            return;
+        }
+
         drawingThreadRunning = true;
         drawingThread = new Thread(() -> {
             while (drawingThreadRunning) {
-                robotCoreCustom.drawCurrentAndHistory(follower);
                 try {
+                    robotCoreCustom.drawCurrentAndHistory(follower);
                     Thread.sleep(10); // Adjust the sleep time as needed
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception e) {
+                    // Log error but don't crash the thread
+                    System.err.println("Error in drawing thread: " + e.getMessage());
                 }
             }
         });
@@ -58,16 +67,25 @@ public class CustomThreads {
         }
     }
     public void startCPUMonThread() {
+        // Prevent starting multiple threads
+        if (CPUThreadRunning) {
+            return;
+        }
+
         CPUThreadRunning = true;
         CpuMonitor cpuMonitor = new CpuMonitor();
         CPUThread = new Thread(() -> {
             while (CPUThreadRunning) {
-                cpuUsage = cpuMonitor.getCpuUsage();
-                cpuTemp = cpuMonitor.getCpuTemp();
                 try {
+                    cpuUsage = cpuMonitor.getCpuUsage();
+                    cpuTemp = cpuMonitor.getCpuTemp();
                     Thread.sleep(1000); // Update every second
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception e) {
+                    // Log error but don't crash the thread
+                    System.err.println("Error in CPU monitor thread: " + e.getMessage());
                 }
             }
         });
@@ -98,14 +116,29 @@ public class CustomThreads {
         if (azimuthServo == null) {
             throw new IllegalStateException("Azimuth servo controller must be set before starting PID thread. Call setAzimuthServo() first.");
         }
+
+        // Prevent starting multiple threads
+        if (azimuthPIDThreadRunning) {
+            return;
+        }
+
         azimuthPIDThreadRunning = true;
         azimuthPIDThread = new Thread(() -> {
             while (azimuthPIDThreadRunning) {
-                azimuthServo.servoPidLoop();
                 try {
+                    // Only run PID loop if turret is enabled in MDOConstants
+                    if (MDOConstants.EnableTurret) {
+                        azimuthServo.servoPidLoop();
+                    } else {
+                        azimuthServo.stopServo();
+                    }
                     Thread.sleep(5); // Run PID loop every 5ms for responsive control
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception e) {
+                    // Log error but don't crash the thread
+                    System.err.println("Error in azimuth PID loop: " + e.getMessage());
                 }
             }
         });
