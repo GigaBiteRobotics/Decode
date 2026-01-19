@@ -534,85 +534,153 @@ public class RobotCoreCustom {
 		}
 
 	}
+	/**
+	 * CustomAxonServoController - A smart controller for servo motors with position feedback
+	 * 
+	 * WHAT THIS DOES:
+	 * This controller manages one or more servo motors that can rotate. It can control them in two ways:
+	 * 1. Simple Mode: Tell the servo where to go (like moving a dial)
+	 * 2. Smart Mode: Uses a sensor to know exactly where the servo is and automatically corrects its position
+	 * 
+	 * WHY IT'S USEFUL:
+	 * - Controls multiple servos at once as a group
+	 * - Can track rotations beyond 180 degrees (keeps counting as it spins)
+	 * - Automatically adjusts if the servo drifts from its target position
+	 * - Handles servos that are mounted backwards or upside-down
+	 */
 	public static class CustomAxonServoController {
+		// CONFIGURATION: Names of all the servos we're controlling
 		private final String[] servoGroup;
+		
+		// HARDWARE: The actual servo objects we send commands to
 		HashMap<String, Servo> servo;
+		
+		// SENSOR: Reads the servo's actual position (only used in smart mode)
 		AnalogInput aPosition;
+		
+		// SETTINGS: Whether we're using the smart mode with position sensor
 		boolean useAnalog;
+		
+		// SETTINGS: Which servos are mounted backwards (true = reversed)
 		boolean[] reverseMap;
-		boolean invertServoDirection; // If true, inverts PID output (when sensor direction is opposite to servo)
+		
+		// SETTINGS: If the sensor reads backwards compared to servo movement, flip the correction
+		boolean invertServoDirection;
+		
+		// PID TUNING: Numbers that control how aggressively the servo corrects its position
+		// (Think of it like a thermostat - how quickly it reacts to being off-target)
 		double[] pidCoefficients;
 		CustomPIDFController pidController;
+		
+		// TARGET: Where we want the servo to be (in degrees, 0-180)
 		private volatile double targetPosition;
 
-		// Wrap-around tracking for 180-degree sensors
-		private static final double WRAP_THRESHOLD = 180.0; // Degrees where wrap occurs
-		private volatile double lastRawPosition = 0.0; // Last raw reading in degrees
-		private volatile int wrapCount = 0; // Number of full rotations
-		private volatile double accumulatedPosition = 0.0; // Total position including wraps
-		private volatile double lastAppliedPower = 0.0; // The actual power sent to servos after all transformations
+		// POSITION TRACKING: These variables help us track continuous rotation beyond 180 degrees
+		// A servo sensor only reads 0-180 degrees, but we want to know if it's done multiple rotations
+		
+		// The maximum reading from the sensor (180 degrees = half circle)
+		private static final double WRAP_THRESHOLD = 180.0;
+		
+		// The last position we read from the sensor (0-180 degrees)
+		private volatile double lastRawPosition = 0.0;
+		
+		// How many times the servo has completed a full rotation (can be positive or negative)
+		private volatile int wrapCount = 0;
+		
+		// The true position including all full rotations (can be > 180 degrees)
+		// Example: 540 degrees = 3 full rotations
+		private volatile double accumulatedPosition = 0.0;
+		
+		// The last power level we sent to the servos (-1 to 1, where 0 is stopped)
+		private volatile double lastAppliedPower = 0.0;
 
-		// Lock object for thread safety
+		// THREAD SAFETY: Prevents conflicts when multiple parts of code try to use the servo at once
 		private final Object lock = new Object();
 
 		/**
-		 *
-		 * @param hardwareMap HardwareMap to get servos and analog inputs
-		 * @param servoGroup Array of servo names in the group
-		 * @param reverseMap Array of booleans indicating if each servo is reversed
-		 * @param useAnalogPositionSensors Whether to use analog position sensors for feedback
-		 * @param pidCoefficients PID coefficients for position control (if using analog sensors) - p, i, d, f, range
-		 * @param analogPositionName Name of the analog position sensor
+		 * CONSTRUCTOR (SIMPLE VERSION) - Sets up the servo controller
+		 * 
+		 * HOW TO USE THIS:
+		 * Create a new servo controller by providing:
+		 * 
+		 * @param hardwareMap - The robot's hardware map (list of all connected devices)
+		 * @param servoGroup - Names of servos to control together (e.g., ["leftServo", "rightServo"])
+		 * @param reverseMap - Which servos are mounted backwards (e.g., [false, true] means second servo is reversed)
+		 * @param useAnalogPositionSensors - true = use smart mode with sensor, false = simple mode
+		 * @param pidCoefficients - Tuning numbers for smart mode [p, i, d] - controls how aggressively it corrects
+		 *                          Higher numbers = faster corrections but might overshoot
+		 * @param analogPositionName - Name of the position sensor in the hardware map
+		 * 
+		 * EXAMPLE:
+		 * new CustomAxonServoController(hardwareMap, new String[]{"arm"}, new boolean[]{false}, true, new double[]{0.01, 0, 0}, "armSensor")
 		 */
 		public CustomAxonServoController(HardwareMap hardwareMap, String[] servoGroup, boolean[] reverseMap, boolean useAnalogPositionSensors, double[] pidCoefficients, String analogPositionName) {
 			this(hardwareMap, servoGroup, reverseMap, useAnalogPositionSensors, pidCoefficients, analogPositionName, false);
 		}
 
 		/**
-		 * Full constructor with servo direction inversion option
-		 * @param hardwareMap HardwareMap to get servos and analog inputs
-		 * @param servoGroup Array of servo names in the group
-		 * @param reverseMap Array of booleans indicating if each servo is reversed
-		 * @param useAnalogPositionSensors Whether to use analog position sensors for feedback
-		 * @param pidCoefficients PID coefficients for position control (if using analog sensors) - p, i, d, f, range
-		 * @param analogPositionName Name of the analog position sensor
-		 * @param invertServoDirection If true, inverts the PID output (use when sensor reads opposite to servo movement)
+		 * CONSTRUCTOR (ADVANCED VERSION) - Sets up the servo controller with direction inversion
+		 * 
+		 * This is the same as the simple version, but adds one more option:
+		 * 
+		 * @param hardwareMap - The robot's hardware map (list of all connected devices)
+		 * @param servoGroup - Names of servos to control together
+		 * @param reverseMap - Which servos are mounted backwards
+		 * @param useAnalogPositionSensors - true = smart mode with sensor, false = simple mode
+		 * @param pidCoefficients - Tuning numbers for smart mode [p, i, d]
+		 * @param analogPositionName - Name of the position sensor
+		 * @param invertServoDirection - If true, flips the correction direction
+		 *                               (Use this when sensor reads opposite to servo movement)
 		 */
 		public CustomAxonServoController(HardwareMap hardwareMap, String[] servoGroup, boolean[] reverseMap, boolean useAnalogPositionSensors, double[] pidCoefficients, String analogPositionName, boolean invertServoDirection) {
+			// STEP 1: Store all the settings we'll need later
 			this.pidCoefficients = pidCoefficients;
 			this.useAnalog = useAnalogPositionSensors;
 			this.servo = new HashMap<>();
 			this.servoGroup = servoGroup;
 			this.reverseMap = reverseMap;
 			this.invertServoDirection = invertServoDirection;
+			
+			// STEP 2: Create the PID controller (the "brain" that corrects position errors)
 			this.pidController = new CustomPIDFController(pidCoefficients[0], pidCoefficients[1], pidCoefficients[2], 0.0);
 
-			// Initialize analog position sensor if using analog feedback
+			// STEP 3: If using smart mode, connect to the position sensor
 			if (useAnalogPositionSensors) {
 				try {
 					this.aPosition = hardwareMap.get(AnalogInput.class, analogPositionName);
 				} catch (Exception e) {
+					// If the sensor name is wrong or sensor isn't connected, show an error
 					throw new IllegalArgumentException("Analog input with name " + analogPositionName + " not found in hardware map.");
 				}
 			}
 
+			// STEP 4: Connect to all the servo motors in the group
 			for (String servoName : servoGroup) {
 				try {
 					this.servo.put(servoName, hardwareMap.get(Servo.class, servoName));
 				} catch (Exception e) {
+					// If a servo name is wrong or servo isn't connected, show an error
 					throw new IllegalArgumentException("Servo with name " + servoName + " not found in hardware map.");
 				}
 			}
 
-			// Initialize position tracking if using analog sensors
+			// STEP 5: If using smart mode, read the starting position from the sensor
+			// This sets our "zero point" so we know where we're starting from
 			if (useAnalogPositionSensors && aPosition != null) {
 				try {
+					// Read the sensor and convert voltage to degrees (0-180)
 					lastRawPosition = voltageToDegrees(aPosition.getVoltage());
+					
+					// Set starting position (no rotations yet, so it's the same as raw position)
 					accumulatedPosition = lastRawPosition;
-					targetPosition = lastRawPosition; // Start with target at current position
+					
+					// Set our target to current position (don't move yet)
+					targetPosition = lastRawPosition;
+					
+					// We haven't completed any full rotations yet
 					wrapCount = 0;
 				} catch (Exception e) {
-					// If sensor initialization fails, default to safe values
+					// If sensor reading fails, start at safe zero position
 					lastRawPosition = 0.0;
 					accumulatedPosition = 0.0;
 					targetPosition = 0.0;
@@ -623,16 +691,33 @@ public class RobotCoreCustom {
 
 
 		/**
-		 * Sets the position of all servos in the group.
-		 * @param position Desired position in range [-1, 1] - Unlike standard servo position [0, 1]
+		 * COMMAND: Tell the servo(s) to move to a specific position
+		 * 
+		 * HOW IT WORKS:
+		 * - In Simple Mode: Directly moves the servo to the position you specify
+		 * - In Smart Mode: Sets a target position, and the servo will automatically correct itself to reach it
+		 * 
+		 * @param position - Where you want the servo to go
+		 *                   Range: -1 (full left) to +1 (full right)
+		 *                   Example: 0 = center, -0.5 = halfway left, 1 = all the way right
+		 * 
+		 * WHAT HAPPENS:
+		 * - The position value (-1 to 1) gets converted to degrees (0 to 180)
+		 * - If servos are reversed, the controller automatically flips their direction
+		 * - In smart mode, this just sets the target - the servo will move there on its own
 		 */
-
 		public void setPosition(double position) {
 			synchronized (lock) {
 				if (!useAnalog) {
-					// Map input range [-1, 1] to servo range [0, 1]
+					// SIMPLE MODE: Just tell the servo where to go
+					
+					// Convert from our range [-1, 1] to servo's native range [0, 1]
 					double mapped = (position + 1.0) / 2.0;
-					mapped = Math.max(0.0, Math.min(1.0, mapped)); // clamp to [0,1]
+					
+					// Make sure we don't go outside the valid range
+					mapped = Math.max(0.0, Math.min(1.0, mapped));
+					
+					// Send the command to each servo in the group
 					for (String servoName : servoGroup) {
 						Servo s = this.servo.get(servoName);
 						if (s != null) {
@@ -640,75 +725,134 @@ public class RobotCoreCustom {
 						}
 					}
 				} else {
-					// Map [-1, 1] to degrees range [0, 180]
+					// SMART MODE: Set the target position (the PID loop will move the servo there)
+					
+					// Convert from our range [-1, 1] to degrees [0, 180]
 					targetPosition = (position + 1.0) / 2.0 * WRAP_THRESHOLD;
 				}
 			}
 		}
+		/**
+		 * COMMAND: Stop the servo and hold it at its current position
+		 * 
+		 * WHAT IT DOES:
+		 * - Tells all servos in the group to stay exactly where they are
+		 * - Like pressing "pause" - the servo won't move until you give it a new command
+		 * 
+		 * WHEN TO USE:
+		 * - When you want to freeze the servo in place
+		 * - During an emergency stop
+		 * - When switching between different control modes
+		 */
 		 public void stopServo() {
 			synchronized (lock) {
 				for (String servoName : servoGroup) {
 					Servo s = this.servo.get(servoName);
 					if (s != null) {
-						s.setPosition(s.getPosition()); // Hold current position
+						// Tell the servo to hold its current position
+						s.setPosition(s.getPosition());
 					}
 				}
 			}
 		 }
+		/**
+		 * UPDATE LOOP: This is the "brain" that makes smart mode work
+		 * 
+		 * WHAT IT DOES:
+		 * 1. Reads where the servo actually is (from the sensor)
+		 * 2. Compares it to where you want it to be (the target)
+		 * 3. Calculates how much power to apply to get there
+		 * 4. Sends that power to the servos
+		 * 
+		 * HOW TO USE:
+		 * - Call this repeatedly in a loop (many times per second)
+		 * - Only needed when using smart mode (useAnalog = true)
+		 * - The more often you call it, the smoother the servo moves
+		 * 
+		 * SPECIAL FEATURE - WRAP TRACKING:
+		 * The sensor can only read 0-180 degrees, but this method tracks when the servo
+		 * crosses from 180 back to 0 (or vice versa), so it knows if you've done multiple rotations.
+		 * Think of it like a car's odometer - it keeps counting even after going around the dial.
+		 */
 		public void servoPidLoop() {
+			// Only run this if we're in smart mode with a position sensor
 			if (useAnalog && aPosition != null) {
 				synchronized (lock) {
 					try {
-						// Get raw sensor reading and convert to degrees (0-180)
+						// STEP 1: Read the sensor and convert voltage to degrees (0-180)
 						double rawDegrees = voltageToDegrees(aPosition.getVoltage());
 
-						// Detect wrap-around
+						// STEP 2: Detect if we've wrapped around (crossed from 180 to 0 or 0 to 180)
 						double delta = rawDegrees - lastRawPosition;
 
-						// If we jumped from near 180 to near 0, we wrapped forward
+						// If we jumped from near 180 to near 0, we wrapped forward (completed a rotation)
 						if (delta < -WRAP_THRESHOLD / 2) {
-							wrapCount++;
+							wrapCount++; // Add one full rotation to our count
 						}
-						// If we jumped from near 0 to near 180, we wrapped backward
+						// If we jumped from near 0 to near 180, we wrapped backward (rotated backwards)
 						else if (delta > WRAP_THRESHOLD / 2) {
-							wrapCount--;
+							wrapCount--; // Subtract one full rotation from our count
 						}
 
-						// Calculate accumulated position (includes wrap count)
+						// STEP 3: Calculate total position including all the full rotations we've done
+						// Example: If wrapCount = 2 and rawDegrees = 90, total = 450 degrees (2.5 rotations)
 						accumulatedPosition = rawDegrees + (wrapCount * WRAP_THRESHOLD);
+						
+						// Remember this reading for next time (so we can detect wraps)
 						lastRawPosition = rawDegrees;
 
-
-						// Use accumulated position for PID control with scale of 180 for degrees
+						// STEP 4: Use the PID controller to calculate how much power we need
+						// It looks at: where we are, where we want to be, and figures out the correction
 						double power = pidController.calculate(targetPosition, accumulatedPosition, 0, 2, WRAP_THRESHOLD);
 
-						power = Math.max(-1.0, Math.min(1.0, power)); // Clamp power to [-1, 1]
+						// STEP 5: Make sure power stays within safe limits (-1 to 1)
+						power = Math.max(-1.0, Math.min(1.0, power));
 
-						// Invert power if sensor direction is opposite to servo direction
+						// STEP 6: If sensor direction is backwards, flip the power direction
 						if (invertServoDirection) {
 							power = -power;
 						}
 
-						// Store the power being applied (before per-servo reversal)
+						// Remember what power we applied (useful for debugging)
 						lastAppliedPower = power;
 
+						// STEP 7: Send power to each servo in the group
 						for (int i = 0; i < servoGroup.length; i++) {
 							String servoName = servoGroup[i];
 							Servo s = this.servo.get(servoName);
 							if (s != null) {
+								// If this specific servo is reversed, flip its power
 								double finalPower = reverseMap[i] ? -power : power;
+								
+								// Convert power from [-1, 1] to servo range [0, 1]
 								double mapped = (finalPower + 1.0) / 2.0;
-								mapped = Math.max(0.0, Math.min(1.0, mapped)); // clamp to [0,1]
+								mapped = Math.max(0.0, Math.min(1.0, mapped)); // Safety clamp
+								
+								// Send the command to the servo
 								s.setPosition(mapped);
 							}
 						}
 					} catch (Exception e) {
-						// Silently handle sensor errors to prevent crashes
+						// If anything goes wrong (sensor error, etc.), don't crash - just print error
 						System.err.println("Error in servo PID loop: " + e.getMessage());
 					}
 				}
 			}
 		}
+		/**
+		 * READ: Get the servo's total position (including all rotations)
+		 * 
+		 * WHAT IT RETURNS:
+		 * The total angle in degrees that the servo has moved, including multiple rotations
+		 * 
+		 * EXAMPLES:
+		 * - 90 degrees = quarter turn
+		 * - 180 degrees = half turn
+		 * - 360 degrees = one full rotation
+		 * - 540 degrees = one and a half rotations
+		 * 
+		 * NOTE: Only works in smart mode (when useAnalog is true)
+		 */
 		public double getPosition() {
 			synchronized (lock) {
 				if (useAnalog) {
@@ -721,7 +865,14 @@ public class RobotCoreCustom {
 		}
 
 		/**
-		 * Helper method to convert analog voltage to degrees (0-180 range)
+		 * HELPER METHOD: Converts sensor voltage to degrees
+		 * 
+		 * HOW IT WORKS:
+		 * The position sensor outputs a voltage that represents the servo's angle.
+		 * This method does the math to convert that voltage into degrees (0-180).
+		 * 
+		 * Think of it like a thermometer - it reads a voltage and converts it to a temperature,
+		 * but here we're converting to an angle instead.
 		 */
 		private double voltageToDegrees(double voltage) {
 			// Assuming voltage maps linearly from 0V=0° to maxVoltage=180°
@@ -729,7 +880,15 @@ public class RobotCoreCustom {
 		}
 
 		/**
-		 * Get the raw position (0-180 degrees) without accumulated wraps
+		 * READ: Get the raw sensor reading (without accumulated rotations)
+		 * 
+		 * WHAT IT RETURNS:
+		 * Just the current sensor reading from 0-180 degrees, ignoring how many
+		 * full rotations you've done.
+		 * 
+		 * DIFFERENCE FROM getPosition():
+		 * - getPosition() might return 540 degrees (3 rotations)
+		 * - getRawPosition() would return just 0 degrees (the current sensor reading)
 		 */
 		public double getRawPosition() {
 			synchronized (lock) {
@@ -742,7 +901,17 @@ public class RobotCoreCustom {
 		}
 
 		/**
-		 * Reset the wrap counter and accumulated position
+		 * RESET: Clear the rotation counter and start fresh
+		 * 
+		 * WHAT IT DOES:
+		 * - Resets the wrap counter to zero
+		 * - Reads the current position from the sensor
+		 * - Treats this as the new "starting point"
+		 * 
+		 * WHEN TO USE:
+		 * - When you want to start counting rotations from the current position
+		 * - After the servo has been manually moved
+		 * - At the beginning of a new task or routine
 		 */
 		public void resetPosition() {
 			synchronized (lock) {
@@ -751,32 +920,120 @@ public class RobotCoreCustom {
 				lastRawPosition = accumulatedPosition;
 			}
 		}
+	/**
+	 * DEBUG INFO: Get the power being sent to servos by the PID controller
+	 * 
+	 * WHAT IT RETURNS:
+	 * The last power value calculated by the smart controller (-1 to 1)
+	 * - Positive values = servo moving in one direction
+	 * - Negative values = servo moving in opposite direction
+	 * - Near 0 = servo is close to target or stopped
+	 * 
+	 * USE THIS FOR:
+	 * - Debugging why the servo isn't moving as expected
+	 * - Checking if the PID controller is working properly
+	 */
 	public double getPIDTargetPower() {
 		return lastAppliedPower;  // volatile read is atomic
 	}
+	
+	/**
+	 * DEBUG INFO: Get the current error between target and actual position
+	 * 
+	 * WHAT IT RETURNS:
+	 * How far off the servo is from where you want it to be (in degrees)
+	 * - 0 = perfectly on target
+	 * - Positive = servo needs to move forward to reach target
+	 * - Negative = servo needs to move backward to reach target
+	 * 
+	 * EXAMPLE:
+	 * If target is 90 degrees and actual is 85 degrees, error is 5 degrees
+	 */
 	public double getPIDError() {
 		synchronized (lock) {
 			return pidController.error;
 		}
 	}
+	
+	/**
+	 * READ: Get where you've told the servo to go
+	 * 
+	 * WHAT IT RETURNS:
+	 * The target position in degrees (0-180) that you set with setPosition()
+	 * This is where the servo is TRYING to reach, not where it currently is
+	 */
 	public double getTargetPosition() {
 		return targetPosition;  // volatile read is atomic
 	}
+	
+	/**
+	 * READ: Get the servo's total accumulated position
+	 * 
+	 * WHAT IT RETURNS:
+	 * Same as getPosition() - the total angle including multiple rotations
+	 * (This is just another way to access the same information)
+	 */
 	public double getAccumulatedPosition() {
 		return accumulatedPosition;  // volatile read is atomic
 	}
+	
+	/**
+	 * DEBUG INFO: Get the raw voltage from the position sensor
+	 * 
+	 * WHAT IT RETURNS:
+	 * The actual voltage reading from the sensor (usually 0-3.3V or 0-5V)
+	 * 
+	 * USE THIS FOR:
+	 * - Checking if the sensor is connected and working
+	 * - Diagnosing sensor problems
+	 * - Calibrating the sensor
+	 */
 	public double getAnalogVoltage() {
 		if (useAnalog && aPosition != null) {
 			return aPosition.getVoltage();
 		}
 		return 0.0;
 	}
+	
+	/**
+	 * DEBUG INFO: Get the maximum voltage the sensor can output
+	 * 
+	 * WHAT IT RETURNS:
+	 * The highest voltage the sensor will ever read (usually 3.3V or 5V)
+	 * Used for converting voltage to degrees
+	 */
 	public double getMaxVoltage() {
 		if (useAnalog && aPosition != null) {
 			return aPosition.getMaxVoltage();
 		}
 		return 0.0;
 	}
+	
+	/**
+	 * TUNING: Change the PID controller settings
+	 * 
+	 * WHAT IT DOES:
+	 * Updates the numbers that control how aggressively the servo corrects its position
+	 * 
+	 * @param pidCoefficients - Array of 3 numbers [P, I, D]:
+	 *   P (Proportional): How strongly it reacts to current error
+	 *      - Higher = faster response but might overshoot
+	 *      - Lower = slower, gentler movement
+	 *   
+	 *   I (Integral): How it corrects for persistent errors over time
+	 *      - Higher = fixes stubborn errors faster but can cause oscillation
+	 *      - Lower = more stable but might not fully reach target
+	 *   
+	 *   D (Derivative): How it dampens/slows down to prevent overshooting
+	 *      - Higher = smoother approach but slower response
+	 *      - Lower = faster but might oscillate
+	 * 
+	 * WHEN TO USE:
+	 * - When the servo is moving too slowly or too fast
+	 * - When the servo overshoots the target
+	 * - When the servo oscillates back and forth
+	 * - During testing and tuning
+	 */
 	public void setPIDCoefficients(double[] pidCoefficients) {
 		synchronized (lock) {
 			if (pidCoefficients.length < 3) {

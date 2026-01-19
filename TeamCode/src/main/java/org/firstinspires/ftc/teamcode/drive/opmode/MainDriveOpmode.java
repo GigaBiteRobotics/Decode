@@ -59,9 +59,6 @@ public class MainDriveOpmode extends OpMode {
     Double azimuthIMUOffset;
     Double finalAzimuthDeg;
 
-    // Flag to prevent turret movement on first loop iteration
-    private boolean firstLoopComplete = false;
-
     static TelemetryManager telemetryM;
 
     // Telemetry throttling to reduce overhead
@@ -106,7 +103,6 @@ public class MainDriveOpmode extends OpMode {
                 MDOConstants.AzimuthPIDFConstants,
                 "azimuthPosition"
         );
-
         localizer.initAprilTag(hardwareMap, "Webcam 1");
 
         launcherMotors = new RobotCoreCustom.CustomMotorController(
@@ -329,6 +325,7 @@ public class MainDriveOpmode extends OpMode {
                 telemetryC.addData("Final Azimuth (deg)", finalAzimuthDeg);
                 telemetryC.addData("Servo Position (-1-1)", finalAzimuthDeg != null ? finalAzimuthDeg / 360.0 : "N/A");
                 telemetryC.addData("Servo Pos (deg)", servoPosition);
+                telemetryC.addData("Servo Target (deg)", servoTarget);
             } else {
                 telemetryC.addData("Launch Vectors", "Target Unreachable");
             }
@@ -370,9 +367,6 @@ public class MainDriveOpmode extends OpMode {
 
         timeTelemetry = sectionTimer.milliseconds();
         loopTimeMs = loopTimer.milliseconds();
-
-        // Mark that the first loop has completed, allowing turret movement
-        firstLoopComplete = true;
     }
     public void aimingLoop() {
         // Calculate elevation angle for launch
@@ -419,13 +413,10 @@ public class MainDriveOpmode extends OpMode {
             azimuthServo.setPIDCoefficients(MDOConstants.AzimuthPIDFConstants);
 
             // Set Azimuth Servos with mapped value (-1 to 1)
-            // Only update position after first loop to prevent initial spin
-            if (firstLoopComplete) {
-                if (MDOConstants.EnableTurret) {
-                    azimuthServo.setPosition(-servoPosition);
-                } else {
-                    azimuthServo.setPosition(0.0);
-                }
+            if (MDOConstants.EnableTurret) {
+                azimuthServo.setPosition(-servoPosition);
+            } else {
+                azimuthServo.setPosition(0.0);
             }// First ratio is 96:20
             // Second ratio is 25:120
             // Combined ratio is 96*25 : 20*120 = 2400 : 2400 = 1:1
