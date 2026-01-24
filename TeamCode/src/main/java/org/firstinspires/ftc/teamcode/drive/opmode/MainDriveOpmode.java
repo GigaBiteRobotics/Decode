@@ -29,7 +29,7 @@ public class MainDriveOpmode extends OpMode {
     RobotCoreCustom.CustomAxonServoController azimuthServo;
     Double launchElevationDeg = 0.0;
     double elevationServoTarget = 0.0;
-    RobotCoreCustom.CustomMotorController launcherMotors;
+    RobotCoreCustom.CustomMotorController launcherMotors, intakeMotor;
     RobotCoreCustom.CustomMotor drawbridgeMotor;
     Double[] lastAprilLocalization = null;
     double targetPower = 0.0;
@@ -46,20 +46,21 @@ public class MainDriveOpmode extends OpMode {
     }
 
     Team team = Team.BLUE;
+     ElapsedTime lifterAutoLaunchTimer = new ElapsedTime();
      ElapsedTime aprilSlowdownTimer = new ElapsedTime();
      ElapsedTime loopTimer = new ElapsedTime();
+     ElapsedTime intakeInputTimer = new ElapsedTime();
     double loopTimeMs = 0;
     ElapsedTime sectionTimer = new ElapsedTime();
     double timeCaching = 0, timeUpdate = 0, timeSorter = 0, timeDrive = 0;
-    double timeAprilTag = 0, timeServo = 0, timeLauncher = 0, timeTelemetry = 0;
+    double timeAprilTag = 0, timeServo = 0, timeLauncher = 0, timeIntake = 0, timeTelemetry = 0;
 
     Double launchAzimuthDeg = null;
     Double fieldRelativeAzimuthDeg;
     Double robotFieldRelativeAzimuthDeg;
-    Double azimuthIMUOffset;
     Double finalAzimuthDeg;
-
     static TelemetryManager telemetryM;
+    boolean intakeRunning = false;
 
     // Telemetry throttling to reduce overhead
     private int telemetryLoopCounter = 0;
@@ -113,7 +114,16 @@ public class MainDriveOpmode extends OpMode {
                 28.0, // ticks per rev
                 MDOConstants.launcherPIDF
         );
+        intakeMotor = new RobotCoreCustom.CustomMotorController(
+                hardwareMap,
+                new String[]{"intake"},
+                new boolean[]{true},
+                false,
+                28.0,
+                new CustomPIDFController(0, 0, 0, 0)
+        );
         drawbridgeMotor = new RobotCoreCustom.CustomMotor(hardwareMap, "drawBridge", false, 67, new CustomPIDFController(0, 0, 0, 0));
+
         follower = Constants.createFollower(hardwareMap);
 
         // Use pose from auto if available, otherwise use default
@@ -130,6 +140,8 @@ public class MainDriveOpmode extends OpMode {
         follower.startTeleopDrive();
         gamepadTimer.reset();
         aprilSlowdownTimer.reset();
+        lifterAutoLaunchTimer.reset();
+        intakeInputTimer.reset();
         customThreads = new CustomThreads(robotCoreCustom, follower);
         customThreads.setAzimuthServo(azimuthServo);
 
@@ -270,7 +282,7 @@ public class MainDriveOpmode extends OpMode {
                 if (usePIDFLauncher) {
                     targetRPM = 5000;
                 } else {
-                    targetPower = 1;
+                    targetPower = MDOConstants.launchPower;
                 }
                 launcherSpinning = true;
             } else {
@@ -280,17 +292,19 @@ public class MainDriveOpmode extends OpMode {
             }
         }
 
-        if (gamepad2.right_bumper) { // launch purple
+        if (gamepad2.right_bumper && lifterAutoLaunchTimer.milliseconds() > 500) { // launch purple
+            lifterAutoLaunchTimer.reset();
             sorterController.launch(RobotCoreCustom.CustomSorterController.CustomColor.PURPLE);
         }
-        if (gamepad2.left_bumper) {
+        if (gamepad2.left_bumper && lifterAutoLaunchTimer.milliseconds() > 500) {
+            lifterAutoLaunchTimer.reset();
             sorterController.launch(RobotCoreCustom.CustomSorterController.CustomColor.GREEN);
         }
 
         if (usePIDFLauncher) {
             launcherMotors.setRPM(targetRPM);
         } else {
-            launcherMotors.setPower(targetPower);
+            launcherMotors.setPower(launcherSpinning ? MDOConstants.launchPower : 0);
         }
 
         // Clamp target power
@@ -298,13 +312,29 @@ public class MainDriveOpmode extends OpMode {
 
         timeLauncher = sectionTimer.milliseconds();
 
+        // ===== INTAKE CONTROL =====
+        sectionTimer.reset();
+         if (gamepad2.a && intakeInputTimer.milliseconds() > 300 && !intakeRunning) {
+             intakeInputTimer.reset();
+             intakeRunning = true;
+         } else if (gamepad2.a && intakeInputTimer.milliseconds() > 300 && intakeRunning) {
+             intakeInputTimer.reset();
+             intakeRunning = false;
+         }
+            if (intakeRunning) {
+                intakeMotor.setPower(1);
+            } else {
+                intakeMotor.setPower(0);
+            }
+        timeIntake = sectionTimer.milliseconds();
+
         // ===== TELEMETRY BLOCK - Throttled to reduce overhead =====
         sectionTimer.reset();
 
         telemetryLoopCounter++;
         if (telemetryLoopCounter >= TELEMETRY_UPDATE_INTERVAL) {
             telemetryLoopCounter = 0; // Reset counter
-
+            telemetryC.addData("Team", team.toString());
             telemetryC.addData("External Heading (deg)", robotHeadingRad);
             telemetryC.addData("Pose X", poseX);
             telemetryC.addData("Pose Y", poseY);
@@ -318,7 +348,8 @@ public class MainDriveOpmode extends OpMode {
             }
 
             if (launchVectors != null) {
-                telemetryC.addData("Launch Elevation (deg)", elevationServoTarget);
+                telemetryC.addData("Launch Elevation (deg)", launchElevationDeg);
+                telemetryC.addData("Elevation Servo Pos", elevationServoTarget);
                 telemetryC.addData("Launch Azimuth (deg)", launchAzimuthDeg);
                 telemetryC.addData("Robot Field Azimuth (deg)", robotFieldRelativeAzimuthDeg);
                 telemetryC.addData("Field Relative Azimuth (deg)", fieldRelativeAzimuthDeg);
@@ -332,6 +363,7 @@ public class MainDriveOpmode extends OpMode {
 
             telemetryC.addData("Launcher RPM", launcherRPM);
             telemetryC.addData("Launcher Power", targetPower);
+            telemetryC.addData("intakeRunning", intakeRunning);
 
 
 
@@ -360,6 +392,7 @@ public class MainDriveOpmode extends OpMode {
             telemetryC.addData("Total Tracked", String.format("%.2f ms", totalTrackedTime));
             telemetryC.addData("Unaccounted Time", String.format("%.2f ms (%.1f%%)",
                 unaccountedTime, (unaccountedTime / loopTimeMs) * 100));
+            telemetryC.addData("lifterTimer", lifterAutoLaunchTimer.milliseconds());
 
             // Update Telemetry
             telemetryC.update();
@@ -373,7 +406,15 @@ public class MainDriveOpmode extends OpMode {
         // start off with IMU offset
         // Pre-calculate launch vector conversions if available
 
-        launchAzimuthDeg = launchVectors != null ? Math.toDegrees(Math.atan2(launchVectors[1], launchVectors[0])) : launchAzimuthDeg;
+        if (launchVectors != null) {
+            launchAzimuthDeg = Math.toDegrees(launchVectors[1]);
+            launchElevationDeg = Math.toDegrees(launchVectors[0]);
+        }
+
+        if (launchElevationDeg != null) {
+            elevationServoTarget = (launchElevationDeg + MDOConstants.ElevationOffset) * MDOConstants.ElevationMultiplier;
+            elevationServo.setPosition(Math.max(0.0, Math.min(1.0, elevationServoTarget)));
+        }
 
         // Wrap-around for launchAzimuthDeg: Normalize to 0-360 degree range
         if (launchAzimuthDeg != null) {

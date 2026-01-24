@@ -26,10 +26,10 @@ public class Constants {
             .rightRearMotorDirection(DcMotorSimple.Direction.FORWARD);
 
     public static TwoWheelConstants localizerConstants = new TwoWheelConstants()
-            .forwardEncoder_HardwareMapName("rr")
+            .forwardEncoder_HardwareMapName("rf")
             .forwardPodY(3.29)
             .forwardTicksToInches(1/505.3*(1-0.0019707))
-            .strafeEncoder_HardwareMapName("rf")
+            .strafeEncoder_HardwareMapName("lf")
             .strafePodX(-6.5)
             .strafeTicksToInches(1/505.3*(1+0.004156277))
             .IMU_HardwareMapName("imuEX")

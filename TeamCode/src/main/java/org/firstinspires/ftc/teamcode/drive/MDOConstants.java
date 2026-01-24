@@ -4,17 +4,18 @@ import com.bylazar.configurables.annotations.Configurable;
 
 @Configurable
 public class MDOConstants {
+    public static double launchPower = 0.68;
     public static boolean usePIDFLauncher = false;
     public static boolean useAprilTags = true;
     public static Double[] redTargetLocation = new Double[]{-70.0, 70.0, 40.0};
     public static Double[] blueTargetLocation = new Double[]{70.0, 70.0, 40.0};
     public static CustomPIDFController launcherPIDF = new CustomPIDFController(1.5, 0.0, 0.2, 0.0);
     public static Double[] launcherCalcConstants = new Double[]{280.00, 386.09};
-    public static Double maxTurretAzimuthRotations = 1.5;
-    public static Double LifterPositionHigh = 0.0;
+    public static Double LifterPositionHigh = 0.8;
     public static Double LifterPositionLow = 0.0;
+    public static boolean[] LifterReverseMap = new boolean[]{true, false, false};
     public static int LifterWaitToTopTimerMillis = 200;
-    public static Double AzimuthIMUOffset = 0.0;
+    public static Double AzimuthIMUOffset = 70.0;
     public static boolean EnableTurretIMUCorrection = true;
     public static boolean UseBothAzimuthServos = true;
     public static Double AzimuthMultiplier = 1.0;
@@ -22,6 +23,8 @@ public class MDOConstants {
     public static boolean ReverseOneAzimuthServo = false;
     public static boolean EnableLauncherCalcAzimuth = true;
     public static boolean ReversePIDFAzimuthOutput = false;
+    public static Double ElevationOffset = 0.0;
+    public static Double ElevationMultiplier = 0.4;
     // Azimuth PID Constants: {P, I, D, F}
     // P: Proportional gain - higher = stronger response to error
     // I: Integral gain - corrects steady-state error over time
@@ -29,6 +32,7 @@ public class MDOConstants {
     // F: Feedforward - not typically used for position control
     // Scale is 180 degrees, so these values are tuned for degree-based error
     // Reduced P to prevent always-max power and allow proportional control
-    // Example: 45° error × 2.0 P = 90, divided by 180 scale = 0.5 power
-    public static double[] AzimuthPIDFConstants = new double[]{5.0, 0.0, 0.0, 0.0};
+    // Added D term to dampen oscillation and reduce jitter
+    // Example: 45° error × 3.0 P = 135, divided by 180 scale = 0.75 power
+    public static double[] AzimuthPIDFConstants = new double[]{4.0, 0.1, 0.0, 0.0};
 }

@@ -442,15 +442,18 @@ public class RobotCoreCustom {
 		}
 
 		public void launch(CustomColor color) {
+			boolean isLaunched = false;
 			if (color == CustomColor.NULL) {
 				for (int i = 0; i < 3; i++) {
-					if (getColor(i) == CustomColor.NULL) {
+					if (getColor(i) != CustomColor.NULL && !isLaunched) {
+						isLaunched = true;
 						lifterState[i] = 1;
 					}
 				}
 			} else {
 				for (int i = 0; i < 3; i++) {
-					if (getColor(i) == color) {
+					if (getColor(i) == color && !isLaunched) {
+						isLaunched = true;
 						lifterState[i] = 1;
 					}
 				}
@@ -458,17 +461,19 @@ public class RobotCoreCustom {
 		}
 		public void lifterUpdater() {
 				for (int i = 0; i < 3; i++) {
+					// Reverse Map for lifters
+					boolean[] reverseMap = MDOConstants.LifterReverseMap;
 					if (lifterState[i] == 1) {
 						lifterState[i] = 2;
 						lifterTimer.reset();
-						lifter[i].setPosition(MDOConstants.LifterPositionHigh);
+						lifter[i].setPosition(reverseMap[i] ? 1 - MDOConstants.LifterPositionHigh : MDOConstants.LifterPositionHigh); // reversed Boolean ? flipped 0 to 1 range: normal
 					}
-					if (lifterState[i] == 2 && lifterTimer.milliseconds() > MDOConstants.LifterWaitToTopTimerMillis) {
+					else if (lifterState[i] == 2 && lifterTimer.milliseconds() > MDOConstants.LifterWaitToTopTimerMillis) {
 						lifterState[i] = 0;
-						lifter[i].setPosition(MDOConstants.LifterPositionLow);
+						lifter[i].setPosition(reverseMap[i] ? 1 - MDOConstants.LifterPositionLow : MDOConstants.LifterPositionLow); // reversed Boolean ? flipped 0 to 1 range: normal
 					}
-					if (lifterState[i] != 0) {
-						lifter[i].setPosition(MDOConstants.LifterPositionLow);
+					else if (lifterState[i] == 0) {
+						lifter[i].setPosition(reverseMap[i] ? 1 - MDOConstants.LifterPositionLow : MDOConstants.LifterPositionLow); // reversed Boolean ? flipped 0 to 1 range: normal
 					}
 				}
 		}
@@ -572,25 +577,18 @@ public class RobotCoreCustom {
 		double[] pidCoefficients;
 		CustomPIDFController pidController;
 		
-		// TARGET: Where we want the servo to be (in degrees, 0-180)
+		// TARGET: Where we want the servo to be (in degrees, 0-360)
 		private volatile double targetPosition;
 
-		// POSITION TRACKING: These variables help us track continuous rotation beyond 180 degrees
-		// A servo sensor only reads 0-180 degrees, but we want to know if it's done multiple rotations
-		
-		// The maximum reading from the sensor (180 degrees = half circle)
-		private static final double WRAP_THRESHOLD = 180.0;
-		
-		// The last position we read from the sensor (0-180 degrees)
-		private volatile double lastRawPosition = 0.0;
-		
-		// How many times the servo has completed a full rotation (can be positive or negative)
-		private volatile int wrapCount = 0;
-		
-		// The true position including all full rotations (can be > 180 degrees)
-		// Example: 540 degrees = 3 full rotations
-		private volatile double accumulatedPosition = 0.0;
-		
+		// POSITION TRACKING: The servo position wraps at 360 degrees (full circle)
+		// This prevents cord tangling by not tracking multiple rotations
+
+		// The maximum reading from the sensor (360 degrees = full circle)
+		private static final double WRAP_THRESHOLD = 360.0;
+
+		// The current position we read from the sensor (0-360 degrees)
+		private volatile double currentPosition = 0.0;
+
 		// The last power level we sent to the servos (-1 to 1, where 0 is stopped)
 		private volatile double lastAppliedPower = 0.0;
 
@@ -668,23 +666,15 @@ public class RobotCoreCustom {
 			// This sets our "zero point" so we know where we're starting from
 			if (useAnalogPositionSensors && aPosition != null) {
 				try {
-					// Read the sensor and convert voltage to degrees (0-180)
-					lastRawPosition = voltageToDegrees(aPosition.getVoltage());
-					
-					// Set starting position (no rotations yet, so it's the same as raw position)
-					accumulatedPosition = lastRawPosition;
-					
+					// Read the sensor and convert voltage to degrees (0-360)
+					currentPosition = voltageToDegrees(aPosition.getVoltage());
+
 					// Set our target to current position (don't move yet)
-					targetPosition = lastRawPosition;
-					
-					// We haven't completed any full rotations yet
-					wrapCount = 0;
+					targetPosition = currentPosition;
 				} catch (Exception e) {
 					// If sensor reading fails, start at safe zero position
-					lastRawPosition = 0.0;
-					accumulatedPosition = 0.0;
+					currentPosition = 0.0;
 					targetPosition = 0.0;
-					wrapCount = 0;
 				}
 			}
 		}
@@ -769,46 +759,30 @@ public class RobotCoreCustom {
 		 * - Only needed when using smart mode (useAnalog = true)
 		 * - The more often you call it, the smoother the servo moves
 		 * 
-		 * SPECIAL FEATURE - WRAP TRACKING:
-		 * The sensor can only read 0-180 degrees, but this method tracks when the servo
-		 * crosses from 180 back to 0 (or vice versa), so it knows if you've done multiple rotations.
-		 * Think of it like a car's odometer - it keeps counting even after going around the dial.
+		 * BOUNDARY PROTECTION:
+		 * The servo position is strictly kept between 0-360 degrees.
+		 * The controller will NEVER cross the 0/360 boundary to reach a target.
+		 * This prevents cord tangling by ensuring the servo always unwinds
+		 * rather than spinning continuously in one direction.
 		 */
 		public void servoPidLoop() {
 			// Only run this if we're in smart mode with a position sensor
 			if (useAnalog && aPosition != null) {
 				synchronized (lock) {
 					try {
-						// STEP 1: Read the sensor and convert voltage to degrees (0-180)
-						double rawDegrees = voltageToDegrees(aPosition.getVoltage());
+						// STEP 1: Read the sensor and convert voltage to degrees (0-360)
+						currentPosition = voltageToDegrees(aPosition.getVoltage());
 
-						// STEP 2: Detect if we've wrapped around (crossed from 180 to 0 or 0 to 180)
-						double delta = rawDegrees - lastRawPosition;
+						// STEP 2: Use the PID controller to calculate how much power we need
+						// We pass a large scale (WRAP_THRESHOLD + 100) to disable the PID's built-in
+						// shortest-path logic. This ensures the servo respects the 0 and 360 boundaries
+						// and doesn't cross the "gap" which could tangle wires.
+						double power = pidController.calculate(targetPosition, currentPosition, 0, 2, WRAP_THRESHOLD + 100.0);
 
-						// If we jumped from near 180 to near 0, we wrapped forward (completed a rotation)
-						if (delta < -WRAP_THRESHOLD / 2) {
-							wrapCount++; // Add one full rotation to our count
-						}
-						// If we jumped from near 0 to near 180, we wrapped backward (rotated backwards)
-						else if (delta > WRAP_THRESHOLD / 2) {
-							wrapCount--; // Subtract one full rotation from our count
-						}
-
-						// STEP 3: Calculate total position including all the full rotations we've done
-						// Example: If wrapCount = 2 and rawDegrees = 90, total = 450 degrees (2.5 rotations)
-						accumulatedPosition = rawDegrees + (wrapCount * WRAP_THRESHOLD);
-						
-						// Remember this reading for next time (so we can detect wraps)
-						lastRawPosition = rawDegrees;
-
-						// STEP 4: Use the PID controller to calculate how much power we need
-						// It looks at: where we are, where we want to be, and figures out the correction
-						double power = pidController.calculate(targetPosition, accumulatedPosition, 0, 2, WRAP_THRESHOLD);
-
-						// STEP 5: Make sure power stays within safe limits (-1 to 1)
+						// STEP 4: Make sure power stays within safe limits (-1 to 1)
 						power = Math.max(-1.0, Math.min(1.0, power));
 
-						// STEP 6: If sensor direction is backwards, flip the power direction
+						// STEP 5: If sensor direction is backwards, flip the power direction
 						if (invertServoDirection) {
 							power = -power;
 						}
@@ -816,7 +790,7 @@ public class RobotCoreCustom {
 						// Remember what power we applied (useful for debugging)
 						lastAppliedPower = power;
 
-						// STEP 7: Send power to each servo in the group
+						// STEP 6: Send power to each servo in the group
 						for (int i = 0; i < servoGroup.length; i++) {
 							String servoName = servoGroup[i];
 							Servo s = this.servo.get(servoName);
@@ -827,7 +801,7 @@ public class RobotCoreCustom {
 								// Convert power from [-1, 1] to servo range [0, 1]
 								double mapped = (finalPower + 1.0) / 2.0;
 								mapped = Math.max(0.0, Math.min(1.0, mapped)); // Safety clamp
-								
+
 								// Send the command to the servo
 								s.setPosition(mapped);
 							}
@@ -840,24 +814,24 @@ public class RobotCoreCustom {
 			}
 		}
 		/**
-		 * READ: Get the servo's total position (including all rotations)
-		 * 
+		 * READ: Get the servo's current position (0-360 degrees)
+		 *
 		 * WHAT IT RETURNS:
-		 * The total angle in degrees that the servo has moved, including multiple rotations
-		 * 
+		 * The current angle in degrees (always between 0 and 360)
+		 *
 		 * EXAMPLES:
 		 * - 90 degrees = quarter turn
 		 * - 180 degrees = half turn
-		 * - 360 degrees = one full rotation
-		 * - 540 degrees = one and a half rotations
-		 * 
+		 * - 270 degrees = three-quarter turn
+		 * - 360 degrees loops back to 0
+		 *
 		 * NOTE: Only works in smart mode (when useAnalog is true)
 		 */
 		public double getPosition() {
 			synchronized (lock) {
 				if (useAnalog) {
-					// Return accumulated position (can be > 180 degrees)
-					return accumulatedPosition;
+					// Return current position (0-360 degrees, no accumulation)
+					return currentPosition;
 				} else {
 					throw new IllegalStateException("Analog position sensors are not enabled for this servo group.");
 				}
@@ -869,13 +843,13 @@ public class RobotCoreCustom {
 		 * 
 		 * HOW IT WORKS:
 		 * The position sensor outputs a voltage that represents the servo's angle.
-		 * This method does the math to convert that voltage into degrees (0-180).
-		 * 
+		 * This method does the math to convert that voltage into degrees (0-360).
+		 *
 		 * Think of it like a thermometer - it reads a voltage and converts it to a temperature,
 		 * but here we're converting to an angle instead.
 		 */
 		private double voltageToDegrees(double voltage) {
-			// Assuming voltage maps linearly from 0V=0° to maxVoltage=180°
+			// Assuming voltage maps linearly from 0V=0° to maxVoltage=360°
 			return (voltage / aPosition.getMaxVoltage()) * WRAP_THRESHOLD;
 		}
 
@@ -883,17 +857,14 @@ public class RobotCoreCustom {
 		 * READ: Get the raw sensor reading (without accumulated rotations)
 		 * 
 		 * WHAT IT RETURNS:
-		 * Just the current sensor reading from 0-180 degrees, ignoring how many
-		 * full rotations you've done.
-		 * 
-		 * DIFFERENCE FROM getPosition():
-		 * - getPosition() might return 540 degrees (3 rotations)
-		 * - getRawPosition() would return just 0 degrees (the current sensor reading)
+		 * Just the current sensor reading from 0-360 degrees.
+		 *
+		 * NOTE: With wrap-around removed, this returns the same as getPosition()
 		 */
 		public double getRawPosition() {
 			synchronized (lock) {
 				if (useAnalog) {
-					return lastRawPosition;
+					return currentPosition;
 				} else {
 					throw new IllegalStateException("Analog position sensors are not enabled for this servo group.");
 				}
@@ -901,23 +872,20 @@ public class RobotCoreCustom {
 		}
 
 		/**
-		 * RESET: Clear the rotation counter and start fresh
-		 * 
+		 * RESET: Reset the position tracking
+		 *
 		 * WHAT IT DOES:
-		 * - Resets the wrap counter to zero
 		 * - Reads the current position from the sensor
-		 * - Treats this as the new "starting point"
-		 * 
+		 * - Updates internal tracking
+		 *
 		 * WHEN TO USE:
-		 * - When you want to start counting rotations from the current position
 		 * - After the servo has been manually moved
 		 * - At the beginning of a new task or routine
 		 */
 		public void resetPosition() {
 			synchronized (lock) {
-				wrapCount = 0;
-				accumulatedPosition = voltageToDegrees(aPosition.getVoltage());
-				lastRawPosition = accumulatedPosition;
+				currentPosition = voltageToDegrees(aPosition.getVoltage());
+				targetPosition = currentPosition;
 			}
 		}
 	/**
@@ -959,24 +927,14 @@ public class RobotCoreCustom {
 	 * READ: Get where you've told the servo to go
 	 * 
 	 * WHAT IT RETURNS:
-	 * The target position in degrees (0-180) that you set with setPosition()
+	 * The target position in degrees (0-360) that you set with setPosition()
 	 * This is where the servo is TRYING to reach, not where it currently is
 	 */
 	public double getTargetPosition() {
 		return targetPosition;  // volatile read is atomic
 	}
 	
-	/**
-	 * READ: Get the servo's total accumulated position
-	 * 
-	 * WHAT IT RETURNS:
-	 * Same as getPosition() - the total angle including multiple rotations
-	 * (This is just another way to access the same information)
-	 */
-	public double getAccumulatedPosition() {
-		return accumulatedPosition;  // volatile read is atomic
-	}
-	
+
 	/**
 	 * DEBUG INFO: Get the raw voltage from the position sensor
 	 * 

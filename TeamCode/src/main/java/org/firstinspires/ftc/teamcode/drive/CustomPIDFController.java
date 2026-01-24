@@ -44,39 +44,87 @@ public class CustomPIDFController {
 	 * @return Calculated motor power (range: -1.0 to 1.0).
 	 */
 	public synchronized double calculate(double targetPosition, double currentPosition, double targetVelocity, double range, double scale) {
-		// Calculate error
+		// Calculate error with wrap-around handling for angular positions
+		// When scale is 180 (degrees), handle wrap-around to find shortest path
 		error = targetPosition - currentPosition;
+
+		// Wrap-around correction for angular positions (when scale is small like 180)
+		if (scale <= 360.0) {  // Likely an angular measurement
+			// Normalize error to [-scale/2, scale/2] to find shortest path
+			while (error > scale / 2.0) {
+				error -= scale;
+			}
+			while (error < -scale / 2.0) {
+				error += scale;
+			}
+		}
 
 		// Calculate time delta
 		long currentTime = System.currentTimeMillis();
 		double deltaTime = (currentTime - lastTime) / 1000.0; // Convert to seconds
 
+		// Prevent division by zero or negative time
+		if (deltaTime <= 0.0) {
+			deltaTime = 0.001; // 1ms minimum
+		}
+
+		// Deadzone: if error is very small, set output to zero to prevent jitter
+		double deadzone = range * 0.5; // Deadzone is half the tolerance range
+		if (Math.abs(error) < deadzone) {
+			errorSum = 0; // Clear integral when in deadzone
+			lastError = error;
+			lastTime = currentTime;
+			lastOutput = 0.0;
+			return 0.0;
+		}
+
 		// Proportional term
 		double pTerm = kP * error;
 
-		// Integral term
+		// Integral term with anti-windup
 		errorSum += error * deltaTime;
 		double iTerm = kI * errorSum;
+
+		// Reset integral when within range or if integral is too large (anti-windup)
 		if (currentPosition > targetPosition-range && currentPosition < targetPosition+range){
 			errorSum = 0;
 			iTerm = 0;
 		}
-		// Derivative term
+		// Integral windup protection: clamp accumulated error
+		double maxIntegral = scale * 0.5; // Max integral contribution
+		if (Math.abs(errorSum) > maxIntegral) {
+			errorSum = Math.signum(errorSum) * maxIntegral;
+			iTerm = kI * errorSum;
+		}
+
+		// Derivative term with smoothing to reduce noise
 		double derivative = (error - lastError) / deltaTime;
-		double dTerm = kD * derivative;
+
+		// Low-pass filter on derivative to reduce noise-induced jitter
+		// This averages the current derivative with previous one
+		double filteredDerivative = derivative * 0.7 + (lastError / deltaTime) * 0.3;
+		double dTerm = kD * filteredDerivative;
 
 		// Feedforward term
 		double fTerm = kF * targetVelocity;
 
-		// Save current state for next calculation
-		lastError = error;
-		lastTime = currentTime;
-
 		// Calculate total output
 		double output = pTerm + iTerm + dTerm + fTerm;
 
-		// Clamp output to valid motor power range
-		lastOutput = Math.min(1, Math.max(output/scale, -1)); // Scale and clamp
+		// Apply output filtering to smooth rapid changes (exponential moving average)
+		// This reduces jitter caused by sudden power changes
+		double alpha = 0.7; // Smoothing factor (0 = no smoothing, 1 = no filtering)
+		output = alpha * output + (1 - alpha) * lastOutput * scale; // Blend with last output
+
+		// Scale and clamp output to valid power range
+		double scaledOutput = output / scale;
+		scaledOutput = Math.min(1.0, Math.max(scaledOutput, -1.0));
+
+		// Save current state for next calculation
+		lastError = error;
+		lastTime = currentTime;
+		lastOutput = scaledOutput;
+
 		return lastOutput;
 	}
 
