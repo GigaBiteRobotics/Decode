@@ -368,6 +368,10 @@ public class RobotCoreCustom {
 		private final Servo[] lifter = new Servo[3];
 		private final ColorSensor[] colorSensor = new ColorSensor[6];
 		private CustomRGBController RGBPrism;
+		// Cache for colors and ball count
+		private volatile CustomColor[] cachedColors = {CustomColor.NULL, CustomColor.NULL, CustomColor.NULL};
+		private volatile int cachedBallCount = 0;
+
 		public CustomSorterController(HardwareMap hardwareMap) {
 			lifter[0] = hardwareMap.get(Servo.class, "lifter0");
 			lifter[1] = hardwareMap.get(Servo.class, "lifter1");
@@ -382,7 +386,81 @@ public class RobotCoreCustom {
 			lifterTimer = new ElapsedTime();
 		}
 
+		/**
+		 * Updates the cached color values from sensors.
+		 * This involves I2C reads and should be called from a separate thread.
+		 */
+		public void updateSensors() {
+			int ballCount = 0;
+			CustomColor[] newColors = new CustomColor[3];
+
+			for (int i = 0; i < 3; i++) {
+				int sensorIndex0, sensorIndex1;
+
+				switch (i) {
+					case 0:
+						sensorIndex0 = 0;
+						sensorIndex1 = 1;
+						break;
+					case 1:
+						sensorIndex0 = 4;
+						sensorIndex1 = 5;
+						break;
+					case 2:
+						sensorIndex0 = 2;
+						sensorIndex1 = 3;
+						break;
+					default:
+						// Should not happen for 0-2
+						continue;
+				}
+
+				// Check first sensor
+				int colorARGB0 = colorSensor[sensorIndex0].argb();
+				CustomColor color = calcColor(colorARGB0);
+
+				// If first sensor fails, check second sensor
+				if (color == CustomColor.NULL) {
+					int colorARGB1 = colorSensor[sensorIndex1].argb();
+					color = calcColor(colorARGB1);
+				}
+
+				newColors[i] = color;
+				if (color != CustomColor.NULL) {
+					ballCount++;
+				}
+			}
+
+			cachedColors = newColors;
+			cachedBallCount = ballCount;
+		}
+
+		/**
+		 * Get cached color for a pit.
+		 * Non-blocking, returns immediately.
+		 */
+		public CustomColor getCachedColor(int pitSelector) {
+			if (pitSelector >= 0 && pitSelector < 3) {
+				return cachedColors[pitSelector];
+			}
+			return CustomColor.NULL;
+		}
+
+		/**
+		 * Get cached total ball count.
+		 * Non-blocking.
+		 */
+		public int getCachedBallCount() {
+			return cachedBallCount;
+		}
+
+		/* Original blocking method kept for reference or direct use if needed */
+		public CustomColor getDirectColor(int pitSelector) {
+			return getColor(pitSelector);
+		}
+
 		public CustomColor getColor(int pitSelector) {
+
 			int sensorIndex0, sensorIndex1;
 
 			switch (pitSelector) {
@@ -453,6 +531,28 @@ public class RobotCoreCustom {
 			} else {
 				for (int i = 0; i < 3; i++) {
 					if (getColor(i) == color && !isLaunched) {
+						isLaunched = true;
+						lifterState[i] = 1;
+					}
+				}
+			}
+		}
+		/**
+		 * Launch command extended to use cached values if desired or fallback.
+		 * To use cached values, ensure updateSensors() is being called periodically.
+		 */
+		public void launchCached(CustomColor color) {
+			boolean isLaunched = false;
+			if (color == CustomColor.NULL) {
+				for (int i = 0; i < 3; i++) {
+					if (getCachedColor(i) != CustomColor.NULL && !isLaunched) {
+						isLaunched = true;
+						lifterState[i] = 1;
+					}
+				}
+			} else {
+				for (int i = 0; i < 3; i++) {
+					if (getCachedColor(i) == color && !isLaunched) {
 						isLaunched = true;
 						lifterState[i] = 1;
 					}

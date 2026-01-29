@@ -39,6 +39,7 @@ public class MainDriveOpmode extends OpMode {
     boolean launcherSpinning = false;
     int targetRPM = 0;
     private Double[] launchVectors;
+    int prevBallCount = 0;
 
     enum Team {
         RED,
@@ -60,13 +61,19 @@ public class MainDriveOpmode extends OpMode {
     Double robotFieldRelativeAzimuthDeg;
     Double finalAzimuthDeg;
     static TelemetryManager telemetryM;
-    boolean intakeRunning = false;
+    enum intakeState {
+        IN,
+        OUT,
+        STOP
+    }
+    intakeState intakeRunningState = intakeState.STOP;
 
     // Telemetry throttling to reduce overhead
     private int telemetryLoopCounter = 0;
     private static final int TELEMETRY_UPDATE_INTERVAL = 3; // Update telemetry every N loops
 
     // Threads
+    // Handles background tasks like sensor reading and servo PID to keep the main loop fast
     CustomThreads customThreads;
 
 	@Override
@@ -75,25 +82,15 @@ public class MainDriveOpmode extends OpMode {
         telemetryC = new RobotCoreCustom.CustomTelemetry(telemetry, telemetryM);
 
         // Sorting Initialization
+        // Initializes servos and color sensors for the ball sorting mechanism
         sorterController = new RobotCoreCustom.CustomSorterController(hardwareMap);
 
         // Get data from autonomous if available
         AutoToTeleDataTransferer dataTransfer = AutoToTeleDataTransferer.getInstance();
         Pose startPose = dataTransfer.getEndPose();
-        String allianceColor = dataTransfer.getAllianceColor();
-
-        // Set team based on auto data or gamepad input
-        if (!allianceColor.equals("UNKNOWN")) {
-            // Use alliance color from auto
-            team = allianceColor.equals("RED") ? Team.RED : Team.BLUE;
-            telemetryC.addData("Alliance from Auto", allianceColor);
-        } else {
-            // Manual selection if no auto data
-            if (gamepad1.a) { team = Team.RED; }
-            else if (gamepad1.b) { team = Team.BLUE; }
-        }
-
+        
         robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
+
         localizer = new AprilTagLocalizer();
         elevationServo = hardwareMap.get(Servo.class, "elevationServo");
         azimuthServo = new RobotCoreCustom.CustomAxonServoController(
@@ -136,6 +133,7 @@ public class MainDriveOpmode extends OpMode {
             follower.setStartingPose(new Pose(0, 0, 0));
             telemetryC.addData("Starting Pose", "Default (0, 0, 0)");
         }
+        telemetryC.update();
 
         follower.startTeleopDrive();
         gamepadTimer.reset();
@@ -144,15 +142,21 @@ public class MainDriveOpmode extends OpMode {
         intakeInputTimer.reset();
         customThreads = new CustomThreads(robotCoreCustom, follower);
         customThreads.setAzimuthServo(azimuthServo);
+        // Pass the sorter controller to the thread manager so it can update sensors in the background
+        customThreads.setSorterController(sorterController);
 
-        // Display auto summary if available
-        if (dataTransfer.isAutoCompleted()) {
-            telemetryC.addData("Auto Status", "Completed Successfully");
-            telemetryC.addData("Auto Runtime", String.format("%.2fs", dataTransfer.getAutoRuntime()));
-        } else if (!allianceColor.equals("UNKNOWN")) {
-            telemetryC.addData("Auto Status", "Did not complete");
+    }
+
+    @Override
+    public void init_loop() {
+        if (gamepad1.x) {
+            team = Team.BLUE;
+        } else if (gamepad1.b) {
+            team = Team.RED;
         }
 
+        telemetryC.addData("Selected Team", team);
+        telemetryC.addData("Select Team", "Press X for Blue, B for Red");
         telemetryC.update();
     }
 
@@ -161,15 +165,18 @@ public class MainDriveOpmode extends OpMode {
         customThreads.startDrawingThread();
         customThreads.startCPUMonThread();
         customThreads.startAzimuthPIDThread();
+        // Start the thread that reads color sensors ~20 times/second
+        customThreads.startSorterThread();
     }
     @Override
     public void stop() {
         customThreads.stopDrawingThread();
         customThreads.stopCPUMonThread();
         customThreads.stopAzimuthPIDThread();
+        // Stop the thread to prevent resource leaks
+        customThreads.stopSorterThread();
         localizer.stopStream();
     }
-
 
     @SuppressLint("DefaultLocale")
     @Override
@@ -177,7 +184,6 @@ public class MainDriveOpmode extends OpMode {
         loopTimer.reset();
 
         // ===== CACHE ALL VALUES AT THE BEGINNING =====
-
         sectionTimer.reset();
 
         // Follower/Pose data
@@ -236,6 +242,12 @@ public class MainDriveOpmode extends OpMode {
         sectionTimer.reset();
         sorterController.lifterUpdater();
         //sorterController.lightingUpdater();
+
+        // Ball Counting
+        // Retrieve the latest ball count from the background thread's cache.
+        // This is non-blocking and instant, unlike direct I2C sensor reads.
+        int currentBallCount = sorterController.getCachedBallCount();
+
         timeSorter = sectionTimer.milliseconds();
         // azimuthServo.servoPidLoop() now runs in separate thread
 
@@ -292,13 +304,15 @@ public class MainDriveOpmode extends OpMode {
             }
         }
 
-        if (gamepad2.right_bumper && lifterAutoLaunchTimer.milliseconds() > 500) { // launch purple
+        if (gamepad2.right_bumper && lifterAutoLaunchTimer.milliseconds() > 650) { // launch purple
             lifterAutoLaunchTimer.reset();
-            sorterController.launch(RobotCoreCustom.CustomSorterController.CustomColor.PURPLE);
+            // Use launchCached to avoid blocking the loop with sensor reads during launch
+            sorterController.launchCached(RobotCoreCustom.CustomSorterController.CustomColor.PURPLE);
         }
-        if (gamepad2.left_bumper && lifterAutoLaunchTimer.milliseconds() > 500) {
+        if (gamepad2.left_bumper && lifterAutoLaunchTimer.milliseconds() > 650) {
             lifterAutoLaunchTimer.reset();
-            sorterController.launch(RobotCoreCustom.CustomSorterController.CustomColor.GREEN);
+            // Use launchCached to avoid blocking the loop with sensor reads during launch
+            sorterController.launchCached(RobotCoreCustom.CustomSorterController.CustomColor.GREEN);
         }
 
         if (usePIDFLauncher) {
@@ -314,17 +328,45 @@ public class MainDriveOpmode extends OpMode {
 
         // ===== INTAKE CONTROL =====
         sectionTimer.reset();
-         if (gamepad2.a && intakeInputTimer.milliseconds() > 300 && !intakeRunning) {
-             intakeInputTimer.reset();
-             intakeRunning = true;
-         } else if (gamepad2.a && intakeInputTimer.milliseconds() > 300 && intakeRunning) {
-             intakeInputTimer.reset();
-             intakeRunning = false;
+
+        // Auto-Stop Logic:
+        // Automatically turns off the intake when the 3rd ball is collected to save power.
+        // Logic: If intake is ON AND we have 3+ balls AND we didn't have 3 balls last loop.
+        // This allows the driver to manually turn the intake back ON even if 3 balls are held.
+        if (intakeRunningState == intakeState.IN && currentBallCount >= 3 && prevBallCount < 3) {
+            intakeRunningState = intakeState.STOP;
+        }
+        prevBallCount = currentBallCount;
+
+         if (intakeInputTimer.milliseconds() > 300) {
+             if (gamepad2.a) {
+                 intakeInputTimer.reset();
+                 if (intakeRunningState == intakeState.IN) {
+                     intakeRunningState = intakeState.STOP;
+                 } else {
+                     intakeRunningState = intakeState.IN;
+                 }
+             } else if (gamepad2.b) {
+                 intakeInputTimer.reset();
+                 if (intakeRunningState == intakeState.OUT) {
+                     intakeRunningState = intakeState.STOP;
+                 } else {
+                     intakeRunningState = intakeState.OUT;
+                 }
+             }
          }
-            if (intakeRunning) {
-                intakeMotor.setPower(1);
-            } else {
-                intakeMotor.setPower(0);
+
+            switch (intakeRunningState) {
+                case IN:
+                    intakeMotor.setPower(1);
+                    break;
+                case OUT:
+                    intakeMotor.setPower(-1);
+                    break;
+                case STOP:
+                default:
+                    intakeMotor.setPower(0);
+                    break;
             }
         timeIntake = sectionTimer.milliseconds();
 
@@ -362,8 +404,9 @@ public class MainDriveOpmode extends OpMode {
             }
 
             telemetryC.addData("Launcher RPM", launcherRPM);
-            telemetryC.addData("Launcher Power", targetPower);
-            telemetryC.addData("intakeRunning", intakeRunning);
+            telemetryC.addData("Launcher Pressure", targetPower); // Corrected label to Launcher Power, but kept logic
+            telemetryC.addData("Intake State", intakeRunningState);
+            telemetryC.addData("Ball Count", currentBallCount);
 
 
 
@@ -440,6 +483,8 @@ public class MainDriveOpmode extends OpMode {
             } else {
                 finalAzimuthDeg = fieldRelativeAzimuthDeg;
             }
+
+            finalAzimuthDeg += MDOConstants.AzimuthWrapAroundOffset;
 
             // Wrap-around: Normalize final angle to 0-360 degree range
             finalAzimuthDeg = finalAzimuthDeg % 360.0;

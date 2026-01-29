@@ -20,6 +20,10 @@ public class CustomThreads {
     private volatile boolean azimuthPIDThreadRunning = false;
     private RobotCoreCustom.CustomAxonServoController azimuthServo;
 
+    private Thread sorterThread;
+    private volatile boolean sorterThreadRunning = false;
+    private RobotCoreCustom.CustomSorterController sorterController;
+
 
     public CustomThreads(RobotCoreCustom robotCoreCustom, Follower follower) {
         this.robotCoreCustom = robotCoreCustom;
@@ -33,6 +37,15 @@ public class CustomThreads {
     public void setAzimuthServo(RobotCoreCustom.CustomAxonServoController azimuthServo) {
         this.azimuthServo = azimuthServo;
     }
+
+    /**
+     * Sets the sorter controller to be managed by the thread
+     * @param sorterController The CustomSorterController
+     */
+    public void setSorterController(RobotCoreCustom.CustomSorterController sorterController) {
+        this.sorterController = sorterController;
+    }
+
     public void startDrawingThread() {
         // Prevent starting multiple threads
         if (drawingThreadRunning) {
@@ -153,6 +166,46 @@ public class CustomThreads {
         if (azimuthPIDThread != null) {
             try {
                 azimuthPIDThread.join(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    public void startSorterThread() {
+        if (sorterThreadRunning || sorterController == null) {
+            return;
+        }
+
+        sorterThreadRunning = true;
+        sorterThread = new Thread(() -> {
+            while (sorterThreadRunning) {
+                try {
+                    // This is the heavy I2C operation
+                    sorterController.updateSensors();
+
+                    // We can also run lifter updater here if desired,
+                    // but it's lightweight (servos) so main thread is fine too.
+
+                    // Sleep to yield and prevent CPU hogging,
+                    // but small enough to be responsive
+                    Thread.sleep(50);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception e) {
+                    System.err.println("Error in sorter thread: " + e.getMessage());
+                }
+            }
+        });
+        sorterThread.start();
+    }
+
+    public void stopSorterThread() {
+        sorterThreadRunning = false;
+        if (sorterThread != null) {
+            try {
+                sorterThread.join(100);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
