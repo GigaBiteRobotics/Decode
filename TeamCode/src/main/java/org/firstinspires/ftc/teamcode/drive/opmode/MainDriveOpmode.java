@@ -9,7 +9,6 @@ import com.pedropathing.geometry.Pose;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.ColorSensor;
-import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
 import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
@@ -25,7 +24,7 @@ public class MainDriveOpmode extends OpMode {
     //IMU imuEX;
     RobotCoreCustom robotCoreCustom;
     Follower follower;
-    Servo elevationServo;
+    RobotCoreCustom.CustomAxonServoController elevationServo;
     RobotCoreCustom.CustomAxonServoController azimuthServo;
     Double launchElevationDeg = 0.0;
     double elevationServoTarget = 0.0;
@@ -33,11 +32,11 @@ public class MainDriveOpmode extends OpMode {
     RobotCoreCustom.CustomMotor drawbridgeMotor;
     Double[] lastAprilLocalization = null;
     double targetPower = 0.0;
+    double elevationServoFinal = 0;
     ElapsedTime gamepadTimer = new ElapsedTime();
     RobotCoreCustom.CustomTelemetry telemetryC;
     RobotCoreCustom.CustomSorterController sorterController;
     boolean launcherSpinning = false;
-    int targetRPM = 0;
     private Double[] launchVectors;
     int prevBallCount = 0;
 
@@ -92,7 +91,14 @@ public class MainDriveOpmode extends OpMode {
         robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
 
         localizer = new AprilTagLocalizer();
-        elevationServo = hardwareMap.get(Servo.class, "elevationServo");
+        elevationServo = new RobotCoreCustom.CustomAxonServoController(
+                hardwareMap,
+                new String[]{"elevationServo"},
+                new boolean[]{false},
+                false,
+                new double[]{0, 0, 0},
+                null
+        );
         azimuthServo = new RobotCoreCustom.CustomAxonServoController(
                 hardwareMap,
                 new String[] {"azimuthServo0", "azimuthServo1"},
@@ -109,7 +115,7 @@ public class MainDriveOpmode extends OpMode {
                 new boolean[]{false, true}, // launcher1 is reversed
                 true, // has encoders
                 28.0, // ticks per rev
-                MDOConstants.launcherPIDF
+                new CustomPIDFController(0, 0, 0, 0)
         );
         intakeMotor = new RobotCoreCustom.CustomMotorController(
                 hardwareMap,
@@ -142,6 +148,7 @@ public class MainDriveOpmode extends OpMode {
         intakeInputTimer.reset();
         customThreads = new CustomThreads(robotCoreCustom, follower);
         customThreads.setAzimuthServo(azimuthServo);
+        customThreads.setLauncherMotors(launcherMotors);
         // Pass the sorter controller to the thread manager so it can update sensors in the background
         customThreads.setSorterController(sorterController);
 
@@ -211,10 +218,6 @@ public class MainDriveOpmode extends OpMode {
         // Timer values
         double gamepadTimerMs = gamepadTimer.milliseconds();
 
-        // Constants used multiple times
-        CustomPIDFController pidfConstant = MDOConstants.launcherPIDF;
-        boolean usePIDFLauncher = MDOConstants.usePIDFLauncher;
-
         // Cache azimuth servo data ONCE to avoid hardware I/O in telemetry
         double servoPosition = azimuthServo.getPosition();
         double servoTarget = azimuthServo.getTargetPosition();
@@ -229,11 +232,6 @@ public class MainDriveOpmode extends OpMode {
 
         // ===== MAIN LOOP LOGIC =====
         sectionTimer.reset();
-
-        if (MDOConstants.usePIDFLauncher) {
-            launcherMotors.updateRPMPID();
-            launcherMotors.setPIDFController(pidfConstant);
-        }
 
         follower.update();
         timeUpdate = sectionTimer.milliseconds();
@@ -291,15 +289,10 @@ public class MainDriveOpmode extends OpMode {
         if (gamepad2.dpad_down && gamepadTimerMs > 300) {
             gamepadTimer.reset();
             if (!launcherSpinning) {
-                if (usePIDFLauncher) {
-                    targetRPM = 5000;
-                } else {
-                    targetPower = MDOConstants.launchPower;
-                }
+                targetPower = MDOConstants.launchPower;
                 launcherSpinning = true;
             } else {
                 targetPower = 0;
-                targetRPM = 0;
                 launcherSpinning = false;
             }
         }
@@ -315,11 +308,7 @@ public class MainDriveOpmode extends OpMode {
             sorterController.launchCached(RobotCoreCustom.CustomSorterController.CustomColor.GREEN);
         }
 
-        if (usePIDFLauncher) {
-            launcherMotors.setRPM(targetRPM);
-        } else {
-            launcherMotors.setPower(launcherSpinning ? MDOConstants.launchPower : 0);
-        }
+        launcherMotors.setPower(launcherSpinning ? MDOConstants.launchPower : 0);
 
         // Clamp target power
         targetPower = Math.max(-1.0, Math.min(1.0, targetPower));
@@ -391,12 +380,11 @@ public class MainDriveOpmode extends OpMode {
 
             if (launchVectors != null) {
                 telemetryC.addData("Launch Elevation (deg)", launchElevationDeg);
-                telemetryC.addData("Elevation Servo Pos", elevationServoTarget);
+                telemetryC.addData("Elevation Servo Pos", elevationServoFinal);
                 telemetryC.addData("Launch Azimuth (deg)", launchAzimuthDeg);
                 telemetryC.addData("Robot Field Azimuth (deg)", robotFieldRelativeAzimuthDeg);
                 telemetryC.addData("Field Relative Azimuth (deg)", fieldRelativeAzimuthDeg);
                 telemetryC.addData("Final Azimuth (deg)", finalAzimuthDeg);
-                telemetryC.addData("Servo Position (-1-1)", finalAzimuthDeg != null ? finalAzimuthDeg / 360.0 : "N/A");
                 telemetryC.addData("Servo Pos (deg)", servoPosition);
                 telemetryC.addData("Servo Target (deg)", servoTarget);
             } else {
@@ -408,6 +396,10 @@ public class MainDriveOpmode extends OpMode {
             telemetryC.addData("Intake State", intakeRunningState);
             telemetryC.addData("Ball Count", currentBallCount);
 
+            // Cached color sensor data (updated in background thread)
+            telemetryC.addData("Color 0", sorterController.getCachedColor(0));
+            telemetryC.addData("Color 1", sorterController.getCachedColor(1));
+            telemetryC.addData("Color 2", sorterController.getCachedColor(2));
 
 
             // ===== CPU USAGE/TEMP TELEMETRY =====
@@ -456,7 +448,8 @@ public class MainDriveOpmode extends OpMode {
 
         if (launchElevationDeg != null) {
             elevationServoTarget = (launchElevationDeg + MDOConstants.ElevationOffset) * MDOConstants.ElevationMultiplier;
-            elevationServo.setPosition(Math.max(0.0, Math.min(1.0, elevationServoTarget)));
+            elevationServoFinal = Math.max(Math.min(elevationServoTarget, -0.4), 1);
+            elevationServo.setPosition(elevationServoFinal);
         }
 
         // Wrap-around for launchAzimuthDeg: Normalize to 0-360 degree range

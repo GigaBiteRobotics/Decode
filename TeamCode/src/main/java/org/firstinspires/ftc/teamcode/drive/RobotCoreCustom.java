@@ -15,6 +15,8 @@ import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.hardware.PIDCoefficients;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
+import com.qualcomm.hardware.lynx.LynxModule;
+import java.util.List;
 
 import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
@@ -37,6 +39,10 @@ public class RobotCoreCustom {
 	Follower follower;
 
 	public RobotCoreCustom(HardwareMap hardwareMap, Follower follower) {
+		List<LynxModule> allHubs = hardwareMap.getAll(LynxModule.class);
+		for (LynxModule module : allHubs) {
+			module.setBulkCachingMode(LynxModule.BulkCachingMode.AUTO);
+		}
 		imuEX = hardwareMap.get(IMU.class, "imuEX");
 		imuEX.initialize(parameters);
 		this.follower = follower;
@@ -244,15 +250,17 @@ public class RobotCoreCustom {
 	}
 
 	public static class CustomMotor {
-		private final DcMotor motor;
+		private final com.qualcomm.robotcore.hardware.DcMotorEx motor; // Changed to DcMotorEx
 		private final double TICKS_PER_REV;
 		private final boolean hasEncoder;
 		private boolean isRPMMode = false;
 		private int targetRPM = 0;
-		private int lastTicks = 0;
-		private double lastValidRPM = 0.0;
-		private long lastTime = 0;
-		private static final double MIN_DELTA_TIME = 0.1; // minimum 100ms between readings
+		private double lastAppliedPower = 123456.0; // Impossible initial value
+
+		// Thread-safe caching for RPM
+		private volatile double cachedRPM = 0.0;
+		private volatile long lastRPMUpdateTime = 0;
+		private static final long RPM_CACHE_TTL_MS = 20; // Cache valid for 20ms
 
 		// PID coefficients
 		private CustomPIDFController pidfController = new CustomPIDFController(0.1, 0.01, 0.005, 0.0);
@@ -261,9 +269,10 @@ public class RobotCoreCustom {
 			this.TICKS_PER_REV = ticksPerRev;
 			this.pidfController = pidfController;
 			try {
-				this.motor = hardwareMap.get(DcMotor.class, motorName);
+				// Get as DcMotorEx directly
+				this.motor = hardwareMap.get(com.qualcomm.robotcore.hardware.DcMotorEx.class, motorName);
 			} catch (Exception e) {
-				throw new IllegalArgumentException("Motor with name " + motorName + " not found in hardware map.");
+				throw new IllegalArgumentException("Motor with name " + motorName + " not found or is not a DcMotorEx.");
 			}
 			if (hasEncoder) {
 				this.motor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
@@ -274,40 +283,41 @@ public class RobotCoreCustom {
 			}
 		}
 
+		/**
+		 * Get RPM using native Expansion Hub velocity calculation.
+		 * Reads from hardware if cache is expired, otherwise returns cached value.
+		 */
 		public Double getRPM() {
 			if (!hasEncoder) {
 				throw new IllegalStateException("Encoder disabled for this motor: " + motor.getDeviceName());
 			}
 
-			int currentTicks = motor.getCurrentPosition();
-			long currentTime = System.nanoTime();
-
-			// Initialize on first call
-			if (lastTime == 0) {
-				lastTicks = currentTicks;
-				lastTime = currentTime;
-				return lastValidRPM; // Will be 0.0 initially
+			long currentTime = System.currentTimeMillis();
+			// If cache is fresh, return it (avoids hardware read)
+			if (currentTime - lastRPMUpdateTime < RPM_CACHE_TTL_MS) {
+				return cachedRPM;
 			}
 
-			double deltaTime = (currentTime - lastTime) / 1e9; // seconds
+			// Read from hardware (this is a USB read unless in BULK AUTO/MANUAL mode)
+			double velocityTPS = motor.getVelocity(); // Ticks Per Second
+			double rpm = (velocityTPS / TICKS_PER_REV) * 60.0;
 
-			// Only calculate if enough time has passed
-			if (deltaTime < MIN_DELTA_TIME) {
-				return lastValidRPM; // Return last valid reading
-			}
+			cachedRPM = rpm;
+			lastRPMUpdateTime = currentTime;
 
-			double deltaTicks = currentTicks - lastTicks;
+			return rpm;
+		}
 
-			// Update stored values for next call
-			lastTicks = currentTicks;
-			lastTime = currentTime;
-
-			// Calculate RPM
-			double revs = deltaTicks / TICKS_PER_REV;
-			double revsPerSec = revs / deltaTime;
-			lastValidRPM = revsPerSec * 60.0;
-
-			return lastValidRPM;
+		/**
+		 * Force a fresh read of RPM from hardware
+		 */
+		public Double updateAndGetRPM() {
+			if (!hasEncoder) return 0.0;
+			double velocityTPS = motor.getVelocity();
+			double rpm = (velocityTPS / TICKS_PER_REV) * 60.0;
+			cachedRPM = rpm;
+			lastRPMUpdateTime = System.currentTimeMillis();
+			return rpm;
 		}
 
 		public void setRPM(int rpm) {
@@ -320,16 +330,26 @@ public class RobotCoreCustom {
 
 		public void updateRPMPID() {
 			if (isRPMMode) {
-				double currentRPM = getRPM();
-				double power = pidfController.calculate(targetRPM, currentRPM, 0, 5);
+				// Force update for PID loop
+				double currentRPM = updateAndGetRPM();
+				double power = pidfController.calculate(targetRPM, currentRPM, 0, 50);
 				power = Math.max(-1.0, Math.min(1.0, power)); // Clamp power to [-1, 1]
-				motor.setPower(power);
+
+				// Write cache checking
+				if (Math.abs(power - lastAppliedPower) > 0.005 || (power == 0 && lastAppliedPower != 0) || (power != 0 && lastAppliedPower == 0)) {
+					motor.setPower(power);
+					lastAppliedPower = power;
+				}
 			}
 
 		}
 
 		public void setPower(double power) {
-			motor.setPower(power);
+			// Write cache checking
+			if (Math.abs(power - lastAppliedPower) > 0.005 || (power == 0 && lastAppliedPower != 0) || (power != 0 && lastAppliedPower == 0)) {
+				motor.setPower(power);
+				lastAppliedPower = power;
+			}
 			this.isRPMMode = false;
 		}
 
@@ -384,6 +404,12 @@ public class RobotCoreCustom {
 			colorSensor[5] = hardwareMap.get(ColorSensor.class, "colorSensor2-1");
 			RGBPrism = new CustomRGBController(hardwareMap, 6);
 			lifterTimer = new ElapsedTime();
+
+			// Initialize lifters to low position
+			boolean[] reverseMap = MDOConstants.LifterReverseMap;
+			for (int i = 0; i < 3; i++) {
+				lifter[i].setPosition(reverseMap[i] ? 1 - MDOConstants.LifterPositionLow : MDOConstants.LifterPositionLow);
+			}
 		}
 
 		/**
@@ -572,14 +598,11 @@ public class RobotCoreCustom {
 						lifterState[i] = 0;
 						lifter[i].setPosition(reverseMap[i] ? 1 - MDOConstants.LifterPositionLow : MDOConstants.LifterPositionLow); // reversed Boolean ? flipped 0 to 1 range: normal
 					}
-					else if (lifterState[i] == 0) {
-						lifter[i].setPosition(reverseMap[i] ? 1 - MDOConstants.LifterPositionLow : MDOConstants.LifterPositionLow); // reversed Boolean ? flipped 0 to 1 range: normal
-					}
 				}
 		}
 		public void lightingUpdater() {
 			for (int i = 0; i < 3; i++) {
-				CustomColor color = calcColor(colorSensor[i].argb());
+				CustomColor color = getCachedColor(i);
 				switch (color) {
 					case GREEN:
 						//RGBPrism.setThird(i, new int[]{0, 255, 0});
@@ -691,6 +714,8 @@ public class RobotCoreCustom {
 
 		// The last power level we sent to the servos (-1 to 1, where 0 is stopped)
 		private volatile double lastAppliedPower = 0.0;
+		// Cached simple mode position to prevent duplicate writes
+		private volatile double lastSimplePosition = Double.NaN;
 
 		// THREAD SAFETY: Prevents conflicts when multiple parts of code try to use the servo at once
 		private final Object lock = new Object();
@@ -799,14 +824,18 @@ public class RobotCoreCustom {
 		public void setPosition(double position) {
 			synchronized (lock) {
 				if (!useAnalog) {
-					// SIMPLE MODE: Just tell the servo where to go
-					
+					// SIMPLE MODE: Only write if position changed significantly
+					if (Math.abs(position - lastSimplePosition) < 0.001) {
+						return;
+					}
+					lastSimplePosition = position;
+
 					// Convert from our range [-1, 1] to servo's native range [0, 1]
 					double mapped = (position + 1.0) / 2.0;
-					
+
 					// Make sure we don't go outside the valid range
 					mapped = Math.max(0.0, Math.min(1.0, mapped));
-					
+
 					// Send the command to each servo in the group
 					for (String servoName : servoGroup) {
 						Servo s = this.servo.get(servoName);
@@ -1096,6 +1125,14 @@ public class RobotCoreCustom {
 		synchronized (lock) {
 			if (pidCoefficients.length < 3) {
 				throw new IllegalArgumentException("PID coefficients array must have at least 3 elements: p, i, d.");
+			}
+
+			// Only update if constants changed
+			if (this.pidCoefficients != null &&
+				Math.abs(this.pidCoefficients[0] - pidCoefficients[0]) < 0.0001 &&
+				Math.abs(this.pidCoefficients[1] - pidCoefficients[1]) < 0.0001 &&
+				Math.abs(this.pidCoefficients[2] - pidCoefficients[2]) < 0.0001) {
+				return;
 			}
 
 			this.pidCoefficients = pidCoefficients;

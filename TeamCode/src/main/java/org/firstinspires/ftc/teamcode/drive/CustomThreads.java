@@ -24,6 +24,10 @@ public class CustomThreads {
     private volatile boolean sorterThreadRunning = false;
     private RobotCoreCustom.CustomSorterController sorterController;
 
+    private Thread launcherPIDThread;
+    private volatile boolean launcherPIDThreadRunning = false;
+    private RobotCoreCustom.CustomMotorController launcherMotors;
+
 
     public CustomThreads(RobotCoreCustom robotCoreCustom, Follower follower) {
         this.robotCoreCustom = robotCoreCustom;
@@ -44,6 +48,14 @@ public class CustomThreads {
      */
     public void setSorterController(RobotCoreCustom.CustomSorterController sorterController) {
         this.sorterController = sorterController;
+    }
+
+    /**
+     * Sets the launcher motor controller for the PID thread
+     * @param launcherMotors The CustomMotorController to run PID on
+     */
+    public void setLauncherMotors(RobotCoreCustom.CustomMotorController launcherMotors) {
+        this.launcherMotors = launcherMotors;
     }
 
     public void startDrawingThread() {
@@ -206,6 +218,47 @@ public class CustomThreads {
         if (sorterThread != null) {
             try {
                 sorterThread.join(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    public void startLauncherPIDThread() {
+        if (launcherMotors == null) {
+            throw new IllegalStateException("Launcher motors must be set before starting PID thread. Call setLauncherMotors() first.");
+        }
+
+        if (launcherPIDThreadRunning) {
+            return;
+        }
+
+        launcherPIDThreadRunning = true;
+        launcherPIDThread = new Thread(() -> {
+            while (launcherPIDThreadRunning) {
+                try {
+                    // Update PID for launcher motors (reads encoders, calculates power, sets power)
+                    // This offloads hardware I/O and control math from the main loop
+                    launcherMotors.updateRPMPID();
+
+                    // Run at ~50Hz (20ms)
+                    Thread.sleep(20);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception e) {
+                    System.err.println("Error in launcher PID thread: " + e.getMessage());
+                }
+            }
+        });
+        launcherPIDThread.start();
+    }
+
+    public void stopLauncherPIDThread() {
+        launcherPIDThreadRunning = false;
+        if (launcherPIDThread != null) {
+            try {
+                launcherPIDThread.join(100);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
