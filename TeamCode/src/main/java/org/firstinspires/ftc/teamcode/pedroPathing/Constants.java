@@ -27,10 +27,10 @@ public class Constants {
 
     public static TwoWheelConstants localizerConstants = new TwoWheelConstants()
             .forwardEncoder_HardwareMapName("rr")
-            .forwardPodY(5.295)
+            .forwardPodY(-5.295)
             .forwardTicksToInches(-1/505.3*(1-0.0019707))
             .strafeEncoder_HardwareMapName("lf")
-            .strafePodX(5.37)
+            .strafePodX(-5.37)
             .strafeTicksToInches(1/505.3*(1+0.004156277))
             .IMU_HardwareMapName("imuEX")
             .IMU_Orientation(

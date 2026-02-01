@@ -10,6 +10,8 @@ import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.ColorSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
+import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.Position;
 import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
 import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
 import org.firstinspires.ftc.teamcode.drive.CustomPIDFController;
@@ -91,6 +93,11 @@ public class MainDriveOpmode extends OpMode {
         robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
 
         localizer = new AprilTagLocalizer();
+
+        // Apply initial value
+        localizer.cameraPosition = new Position(DistanceUnit.INCH,
+                MDOConstants.CameraOffset[0], MDOConstants.CameraOffset[1], MDOConstants.CameraOffset[2], 0);
+
         elevationServo = new RobotCoreCustom.CustomAxonServoController(
                 hardwareMap,
                 new String[]{"elevationServo"},
@@ -263,6 +270,13 @@ public class MainDriveOpmode extends OpMode {
 
         // ===== APRILTAG LOCALIZATION =====
         sectionTimer.reset();
+
+        // Update Camera Offset from MDOConstants (allows for live tuning)
+        if (localizer != null) {
+            localizer.setCameraPose(new Position(DistanceUnit.INCH,
+                    MDOConstants.CameraOffset[0], MDOConstants.CameraOffset[1], MDOConstants.CameraOffset[2], 0),
+                    localizer.cameraOrientation);
+        }
 
         if (aprilPose != null) {
             if (MDOConstants.useAprilTags &&
@@ -443,12 +457,14 @@ public class MainDriveOpmode extends OpMode {
 
         if (launchVectors != null) {
             launchAzimuthDeg = Math.toDegrees(launchVectors[1]);
-            launchElevationDeg = Math.toDegrees(launchVectors[0]);
+            // Elevation is already calculated as servo position in LocalizationAutoAim, not radians
+            launchElevationDeg = launchVectors[0];
         }
 
         if (launchElevationDeg != null) {
             elevationServoTarget = (launchElevationDeg + MDOConstants.ElevationOffset) * MDOConstants.ElevationMultiplier;
-            elevationServoFinal = Math.max(Math.min(elevationServoTarget, -0.4), 1);
+            // Fix clamp logic to correctly bound between -0.4 and 1.0
+            elevationServoFinal = Math.max(-0.4, Math.min(1.0, elevationServoTarget));
             elevationServo.setPosition(elevationServoFinal);
         }
 

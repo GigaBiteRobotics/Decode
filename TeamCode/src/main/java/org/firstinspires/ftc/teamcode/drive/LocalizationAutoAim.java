@@ -27,7 +27,7 @@ public class LocalizationAutoAim {
 
 		double horizontalDist = Math.hypot(dx, dy);
 
-		Double elevation = calculateLaunchElevation(horizontalDist, dz, v, g);
+		Double elevation = calculateLaunchElevation(horizontalDist);
 		if (elevation == null) {
 			return null; // Target unreachable
 		}
@@ -36,38 +36,34 @@ public class LocalizationAutoAim {
 		return new Double[]{elevation, azimuth};
 	}
 
-	/**
-	 * Calculates the required launch elevation angle.
-	 *
-	 * Formula: theta = arctan( (v^2 ± sqrt(v^4 - g(gx^2 + 2yv^2))) / (gx) )
-	 *
-	 * @param x Horizontal distance
-	 * @param y Vertical distance (height of target relative to launch)
-	 * @param v Launch velocity
-	 * @param g Gravity
-	 * @return Angle in radians (smaller of two solutions), or null if unreachable
-	 */
-	public static Double calculateLaunchElevation(Double x, Double y, Double v, Double g) {
-		if (x <= 1e-6) return null; // Avoid division by zero close to launcher
+	public static Double calculateLaunchElevation(double horizontalDist) {
+		// get MDOConstants max and min
+		Double maxElevation = MDOConstants.ElevationMax;
+		Double maxElevationFT = MDOConstants.ElevationMaxIN;
+		Double minElevation = MDOConstants.ElevationMin;
+		Double minElevationFT = MDOConstants.ElevationMinIN;
+		// map max elevation ft to max elevation, min elevation ft to min elevation
+		// Convert horizontalDist (Inches) to Feet for calculation
+		double horizontalDistFeet = horizontalDist / 12.0;
 
-		double v2 = Math.pow(v, 2);
-        double v4 = Math.pow(v, 4);
-        double gx = g * x;
-
-        // standard projectile motion discriminant: v^4 - g * (g*x^2 + 2*y*v^2)
-        double discriminant = v4 - g * (g * x * x + 2 * y * v2);
-
-		if (discriminant < 0) {
-			return null; // Target unreachable (out of range)
+		double elevationRange = maxElevation - minElevation;
+		double ftRange = maxElevationFT - minElevationFT;
+		double elevation = minElevation + (horizontalDistFeet - minElevationFT) * elevationRange / ftRange;
+		// clamp elevation to max and min
+		if (elevation > maxElevation) {
+			elevation = maxElevation;
+		} else if (elevation < minElevation) {
+			elevation = minElevation;
 		}
-
-		double sqrtDisc = Math.sqrt(discriminant);
-
-		// Calculate both possible ballistic trajectories
-		double angle1 = Math.atan((v2 + sqrtDisc) / gx); // High arc (mortar)
-		double angle2 = Math.atan((v2 - sqrtDisc) / gx); // Low arc (direct)
-
-		// Return the lower angle (direct shot)
-		return Math.min(angle1, angle2);
+		return elevation;
+	}
+	public static double getDistance(Double[] pos1, Double[] pos2) {
+		if (pos1 == null || pos2 == null || pos1.length < 3 || pos2.length < 3) {
+			return 0.0; // Invalid input
+		}
+		double dx = pos2[0] - pos1[0];
+		double dy = pos2[1] - pos1[1];
+		double dz = pos2[2] - pos1[2];
+		return Math.sqrt(dx * dx + dy * dy + dz * dz);
 	}
 }

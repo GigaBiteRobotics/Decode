@@ -168,17 +168,72 @@ public class AprilTagLocalizer {
 		//visionPortal.setProcessorEnabled(aprilTag, true);
 
 	}   // end method initAprilTag()
+
+	private java.lang.reflect.Method setCameraPoseMethod = null;
+	private boolean setCameraPoseMethodInitialized = false;
+
+	/**
+	 * Updates the camera pose (position and orientation) for the AprilTag processor.
+	 * This allows for runtime adjustments of the camera offset.
+	 *
+	 * @param position    The new position of the camera relative to the robot center.
+	 * @param orientation The new orientation of the camera.
+	 */
+	public void setCameraPose(Position position, YawPitchRollAngles orientation) {
+		this.cameraPosition = position;
+		this.cameraOrientation = orientation;
+		if (aprilTag != null) {
+			try {
+				if (!setCameraPoseMethodInitialized) {
+					try {
+						// Use reflection to call setCameraPose since it might not be exposed in the interface
+						setCameraPoseMethod = aprilTag.getClass().getMethod("setCameraPose", Position.class, YawPitchRollAngles.class);
+					} catch (NoSuchMethodException e) {
+						setCameraPoseMethod = null;
+					}
+					setCameraPoseMethodInitialized = true;
+				}
+
+				if (setCameraPoseMethod != null) {
+					setCameraPoseMethod.invoke(aprilTag, position, orientation);
+				}
+			} catch (Exception e) {
+				// invoke failed, ignore
+			}
+		}
+	}
+
 	public Double[] getPosition() {
 		try {
 			List<AprilTagDetection> currentDetections = aprilTag.getDetections();
 			for (AprilTagDetection detection : currentDetections) {
 				if (detection != null) {
 					if (!detection.metadata.name.contains("Obelisk")) {
+						// Filter by maximum distance if specified using ftcPose.range
+						if (detection.ftcPose != null && detection.ftcPose.range > MDOConstants.AprilTagMaxDistance) {
+							continue;
+						}
+
+						// Get the camera's pose (since we initialized processor with 0 offset)
+						double camX = detection.robotPose.getPosition().x;
+						double camY = detection.robotPose.getPosition().y;
+						double camZ = detection.robotPose.getPosition().z;
+						double yaw = detection.robotPose.getOrientation().getYaw(AngleUnit.RADIANS);
+
+						// Calculate robot position by subtracting the rotated camera offset
+						// x' = x*cos(theta) - y*sin(theta)
+						// y' = x*sin(theta) + y*cos(theta)
+						double xOffset = cameraPosition.x;
+						double yOffset = cameraPosition.y;
+
+						double xRotated = xOffset * Math.cos(yaw) - yOffset * Math.sin(yaw);
+						double yRotated = xOffset * Math.sin(yaw) + yOffset * Math.cos(yaw);
+
 						return new Double[]{
-								detection.robotPose.getPosition().x,
-								detection.robotPose.getPosition().y,
-								detection.robotPose.getPosition().z,
-								detection.robotPose.getOrientation().getYaw(AngleUnit.RADIANS)
+								camX - xRotated,
+								camY - yRotated,
+								camZ - cameraPosition.z,
+								yaw
 						};
 					}
 				}
