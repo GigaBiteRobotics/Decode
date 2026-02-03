@@ -28,6 +28,18 @@ public class CustomThreads {
     private volatile boolean launcherPIDThreadRunning = false;
     private RobotCoreCustom.CustomMotorController launcherMotors;
 
+    private Thread driveThread;
+    private volatile boolean driveThreadRunning = false;
+    private volatile double driveY = 0.0;
+    private volatile double driveX = 0.0;
+    private volatile double driveRotation = 0.0;
+    private volatile boolean driveFieldCentric = true;
+
+    private Thread aprilTagThread;
+    private volatile boolean aprilTagThreadRunning = false;
+    private volatile Double[] cachedAprilPose = null;
+    private AprilTagLocalizer aprilTagLocalizer;
+
 
     public CustomThreads(RobotCoreCustom robotCoreCustom, Follower follower) {
         this.robotCoreCustom = robotCoreCustom;
@@ -56,6 +68,22 @@ public class CustomThreads {
      */
     public void setLauncherMotors(RobotCoreCustom.CustomMotorController launcherMotors) {
         this.launcherMotors = launcherMotors;
+    }
+
+    /**
+     * Sets the AprilTag localizer for the AprilTag thread
+     * @param localizer The AprilTagLocalizer to process in background
+     */
+    public void setAprilTagLocalizer(AprilTagLocalizer localizer) {
+        this.aprilTagLocalizer = localizer;
+    }
+
+    /**
+     * Gets the cached AprilTag pose from the background thread
+     * @return The cached pose array or null if no tag detected
+     */
+    public Double[] getCachedAprilPose() {
+        return cachedAprilPose;
     }
 
     public void startDrawingThread() {
@@ -259,6 +287,107 @@ public class CustomThreads {
         if (launcherPIDThread != null) {
             try {
                 launcherPIDThread.join(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    /**
+     * Sets the drive inputs for the drive thread to process
+     * @param y Forward/backward input (-1 to 1)
+     * @param x Strafe left/right input (-1 to 1)
+     * @param rotation Rotation input (-1 to 1)
+     * @param fieldCentric Whether to use field-centric drive
+     */
+    public void setDriveInputs(double y, double x, double rotation, boolean fieldCentric) {
+        this.driveY = y;
+        this.driveX = x;
+        this.driveRotation = rotation;
+        this.driveFieldCentric = fieldCentric;
+    }
+
+    /**
+     * Starts the drive control thread
+     * Processes gamepad inputs and updates follower at high frequency
+     */
+    public void startDriveThread() {
+        if (driveThreadRunning) {
+            return;
+        }
+
+        driveThreadRunning = true;
+        driveThread = new Thread(() -> {
+            while (driveThreadRunning) {
+                try {
+                    // Update follower with current drive inputs
+                    follower.setTeleOpDrive(driveY, driveX, driveRotation, driveFieldCentric);
+
+                    // Run at high frequency for responsive driving (~200Hz)
+                    Thread.sleep(5);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception e) {
+                    System.err.println("Error in drive thread: " + e.getMessage());
+                }
+            }
+        });
+        driveThread.start();
+    }
+
+    /**
+     * Stops the drive control thread
+     */
+    public void stopDriveThread() {
+        driveThreadRunning = false;
+        if (driveThread != null) {
+            try {
+                driveThread.join(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    /**
+     * Starts the AprilTag processing thread
+     * Processes AprilTag detections in background at configurable frequency
+     */
+    public void startAprilTagThread() {
+        if (aprilTagThreadRunning || aprilTagLocalizer == null) {
+            return;
+        }
+
+        aprilTagThreadRunning = true;
+        aprilTagThread = new Thread(() -> {
+            while (aprilTagThreadRunning) {
+                try {
+                    // Get AprilTag position (this is the expensive operation)
+                    cachedAprilPose = aprilTagLocalizer.getPosition();
+
+                    // Sleep based on configured update interval
+                    // Higher interval = less CPU usage but less frequent updates
+                    Thread.sleep(MDOConstants.AprilTagUpdateIntervalMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception e) {
+                    System.err.println("Error in AprilTag thread: " + e.getMessage());
+                }
+            }
+        });
+        aprilTagThread.start();
+    }
+
+    /**
+     * Stops the AprilTag processing thread
+     */
+    public void stopAprilTagThread() {
+        aprilTagThreadRunning = false;
+        if (aprilTagThread != null) {
+            try {
+                aprilTagThread.join(100);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }

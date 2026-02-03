@@ -71,4 +71,12 @@ public class MDOConstants {
     public static double[] CameraOffset = new double[]{-4.2, -7.5, -12.7}; // {x, y, z} offsets of the camera from robot center in inches
     // Maximum distance from an AprilTag to use it for localization (in inches)
     public static double AprilTagMaxDistance = 60.0;
+
+    // Enable threaded drive control for more responsive driving
+    public static boolean EnableThreadedDrive = true;
+
+    // AprilTag update frequency in milliseconds (higher = less CPU usage, lower = more responsive)
+    public static int AprilTagUpdateIntervalMs = 100;
+	public static int LauncherRPM = 3600;
+	public static CustomPIDFController LauncherPIDF = new CustomPIDFController(3, 0, 0, 2);
 }

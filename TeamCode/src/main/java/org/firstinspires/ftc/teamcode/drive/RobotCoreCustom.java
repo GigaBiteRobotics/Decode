@@ -93,6 +93,7 @@ public class RobotCoreCustom {
 		private final String[] motorGroup;
 		HashMap<String, CustomMotor> motors;
 		boolean[] reverseMap;
+		boolean[] encoderReverseMap;
 		private volatile int targetRPM = 0;
 		private volatile double targetPower = 0.0;
 		private boolean isRPMMode = false;
@@ -110,17 +111,37 @@ public class RobotCoreCustom {
 		 * @param pidfController PID controller for RPM mode
 		 */
 		public CustomMotorController(HardwareMap hardwareMap, String[] motorGroup, boolean[] reverseMap, boolean hasEncoder, double ticksPerRev, CustomPIDFController pidfController) {
+			this(hardwareMap, motorGroup, reverseMap, null, hasEncoder, ticksPerRev, pidfController);
+		}
+
+		/**
+		 * Constructor for motor group controller with encoder reverse map
+		 * @param hardwareMap HardwareMap to get motors
+		 * @param motorGroup Array of motor names in the group
+		 * @param reverseMap Array of booleans indicating if each motor is reversed
+		 * @param encoderReverseMap Array of booleans indicating if each motor's encoder is reversed (null = no reversal)
+		 * @param hasEncoder Whether motors have encoders (applies to all motors in group)
+		 * @param ticksPerRev Ticks per revolution for the motors
+		 * @param pidfController PID controller for RPM mode
+		 */
+		public CustomMotorController(HardwareMap hardwareMap, String[] motorGroup, boolean[] reverseMap, boolean[] encoderReverseMap, boolean hasEncoder, double ticksPerRev, CustomPIDFController pidfController) {
 			this.motorGroup = motorGroup;
 			this.reverseMap = reverseMap;
+			this.encoderReverseMap = encoderReverseMap;
 			this.motors = new HashMap<>();
 
 			if (motorGroup.length != reverseMap.length) {
 				throw new IllegalArgumentException("Motor group and reverse map must have the same length.");
 			}
+			if (encoderReverseMap != null && motorGroup.length != encoderReverseMap.length) {
+				throw new IllegalArgumentException("Motor group and encoder reverse map must have the same length.");
+			}
 
-			for (String motorName : motorGroup) {
+			for (int i = 0; i < motorGroup.length; i++) {
+				String motorName = motorGroup[i];
+				boolean reverseEnc = (encoderReverseMap != null) ? encoderReverseMap[i] : false;
 				try {
-					CustomMotor motor = new CustomMotor(hardwareMap, motorName, hasEncoder, ticksPerRev, pidfController);
+					CustomMotor motor = new CustomMotor(hardwareMap, motorName, hasEncoder, ticksPerRev, pidfController, reverseEnc);
 					this.motors.put(motorName, motor);
 				} catch (Exception e) {
 					throw new IllegalArgumentException("Failed to initialize motor: " + motorName + " - " + e.getMessage());
@@ -253,6 +274,7 @@ public class RobotCoreCustom {
 		private final com.qualcomm.robotcore.hardware.DcMotorEx motor; // Changed to DcMotorEx
 		private final double TICKS_PER_REV;
 		private final boolean hasEncoder;
+		private boolean reverseEncoder = false;
 		private boolean isRPMMode = false;
 		private int targetRPM = 0;
 		private double lastAppliedPower = 123456.0; // Impossible initial value
@@ -266,8 +288,13 @@ public class RobotCoreCustom {
 		private CustomPIDFController pidfController = new CustomPIDFController(0.1, 0.01, 0.005, 0.0);
 
 		public CustomMotor(HardwareMap hardwareMap, String motorName, Boolean hasEncoder, double ticksPerRev, CustomPIDFController pidfController) {
+			this(hardwareMap, motorName, hasEncoder, ticksPerRev, pidfController, false);
+		}
+
+		public CustomMotor(HardwareMap hardwareMap, String motorName, Boolean hasEncoder, double ticksPerRev, CustomPIDFController pidfController, boolean reverseEncoder) {
 			this.TICKS_PER_REV = ticksPerRev;
 			this.pidfController = pidfController;
+			this.reverseEncoder = reverseEncoder;
 			try {
 				// Get as DcMotorEx directly
 				this.motor = hardwareMap.get(com.qualcomm.robotcore.hardware.DcMotorEx.class, motorName);
@@ -281,6 +308,14 @@ public class RobotCoreCustom {
 			} else {
 				this.hasEncoder = false;
 			}
+		}
+
+		/**
+		 * Set the encoder reverse flag
+		 * @param reverse true to reverse encoder readings
+		 */
+		public void setReverseEncoder(boolean reverse) {
+			this.reverseEncoder = reverse;
 		}
 
 		/**
@@ -301,6 +336,7 @@ public class RobotCoreCustom {
 			// Read from hardware (this is a USB read unless in BULK AUTO/MANUAL mode)
 			double velocityTPS = motor.getVelocity(); // Ticks Per Second
 			double rpm = (velocityTPS / TICKS_PER_REV) * 60.0;
+			if (reverseEncoder) rpm = -rpm;
 
 			cachedRPM = rpm;
 			lastRPMUpdateTime = currentTime;
@@ -315,6 +351,7 @@ public class RobotCoreCustom {
 			if (!hasEncoder) return 0.0;
 			double velocityTPS = motor.getVelocity();
 			double rpm = (velocityTPS / TICKS_PER_REV) * 60.0;
+			if (reverseEncoder) rpm = -rpm;
 			cachedRPM = rpm;
 			lastRPMUpdateTime = System.currentTimeMillis();
 			return rpm;

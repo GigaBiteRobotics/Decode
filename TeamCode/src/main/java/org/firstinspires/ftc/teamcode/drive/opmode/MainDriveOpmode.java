@@ -71,7 +71,7 @@ public class MainDriveOpmode extends OpMode {
 
     // Telemetry throttling to reduce overhead
     private int telemetryLoopCounter = 0;
-    private static final int TELEMETRY_UPDATE_INTERVAL = 3; // Update telemetry every N loops
+    private static final int TELEMETRY_UPDATE_INTERVAL = 5; // Update telemetry every N loops (higher = less lag)
 
     // Threads
     // Handles background tasks like sensor reading and servo PID to keep the main loop fast
@@ -120,6 +120,7 @@ public class MainDriveOpmode extends OpMode {
                 hardwareMap,
                 new String[]{"launcher0", "launcher1"},
                 new boolean[]{false, true}, // launcher1 is reversed
+                new boolean[]{false, true}, // encoder reverse map: launcher1 encoder is reversed
                 true, // has encoders
                 28.0, // ticks per rev
                 new CustomPIDFController(0, 0, 0, 0)
@@ -158,6 +159,8 @@ public class MainDriveOpmode extends OpMode {
         customThreads.setLauncherMotors(launcherMotors);
         // Pass the sorter controller to the thread manager so it can update sensors in the background
         customThreads.setSorterController(sorterController);
+        // Pass the AprilTag localizer to process detections in background
+        customThreads.setAprilTagLocalizer(localizer);
 
     }
 
@@ -181,6 +184,14 @@ public class MainDriveOpmode extends OpMode {
         customThreads.startAzimuthPIDThread();
         // Start the thread that reads color sensors ~20 times/second
         customThreads.startSorterThread();
+        // Start the drive thread for more responsive driving
+        if (MDOConstants.EnableThreadedDrive) {
+            customThreads.startDriveThread();
+        }
+        // Start the AprilTag processing thread to offload vision processing
+        customThreads.startAprilTagThread();
+        // Start the launcher PIDF thread for RPM control
+        customThreads.startLauncherPIDThread();
     }
     @Override
     public void stop() {
@@ -189,6 +200,14 @@ public class MainDriveOpmode extends OpMode {
         customThreads.stopAzimuthPIDThread();
         // Stop the thread to prevent resource leaks
         customThreads.stopSorterThread();
+        // Stop the drive thread
+        if (MDOConstants.EnableThreadedDrive) {
+            customThreads.stopDriveThread();
+        }
+        // Stop the AprilTag thread
+        customThreads.stopAprilTagThread();
+        // Stop the launcher PID thread
+        customThreads.stopLauncherPIDThread();
         localizer.stopStream();
     }
 
@@ -233,8 +252,8 @@ public class MainDriveOpmode extends OpMode {
         double cpuUsage = customThreads.getCpuUsage();
         double cpuTemp = customThreads.getCpuTemp();
 
-        // Cache AprilTag position ONCE to avoid multiple blocking calls
-        Double[] aprilPose = localizer.getPosition();
+        // Cache AprilTag position from the background thread (non-blocking)
+        Double[] aprilPose = customThreads.getCachedAprilPose();
         timeCaching = sectionTimer.milliseconds();
 
         // ===== MAIN LOOP LOGIC =====
@@ -259,12 +278,24 @@ public class MainDriveOpmode extends OpMode {
         // ===== DRIVE CONTROL =====
         sectionTimer.reset();
 
-        follower.setTeleOpDrive(
-                -gamepad1LeftStickY,
-                -gamepad1LeftStickX,
-                gamepad1RightStickX * -0.75,
-                true
-        );
+        if (MDOConstants.EnableThreadedDrive) {
+            // Use threaded drive for maximum responsiveness
+            // The drive thread runs at ~200Hz independently of this loop
+            customThreads.setDriveInputs(
+                    -gamepad1LeftStickY,
+                    -gamepad1LeftStickX,
+                    gamepad1RightStickX * -0.75,
+                    true
+            );
+        } else {
+            // Direct drive control (old method)
+            follower.setTeleOpDrive(
+                    -gamepad1LeftStickY,
+                    -gamepad1LeftStickX,
+                    gamepad1RightStickX * -0.75,
+                    true
+            );
+        }
 
         timeDrive = sectionTimer.milliseconds();
 
@@ -278,11 +309,11 @@ public class MainDriveOpmode extends OpMode {
                     localizer.cameraOrientation);
         }
 
-        if (aprilPose != null) {
-            if (MDOConstants.useAprilTags &&
-                    aprilSlowdownTimer.milliseconds() > 100 &&
-                    localizer.getDecisionMargin() > 0.8) {
-
+        // AprilTag pose is cached in background thread at configurable frequency
+        // Only update follower pose if we have a valid tag and good confidence
+        if (aprilPose != null && MDOConstants.useAprilTags && localizer != null) {
+            double decisionMargin = localizer.getDecisionMargin();
+            if (decisionMargin > 0.8 && aprilSlowdownTimer.milliseconds() > 100) {
                 follower.setPose(new Pose(aprilPose[0], aprilPose[1], aprilPose[3] + Math.toRadians(90.0)));
                 aprilSlowdownTimer.reset();
             }
@@ -322,10 +353,12 @@ public class MainDriveOpmode extends OpMode {
             sorterController.launchCached(RobotCoreCustom.CustomSorterController.CustomColor.GREEN);
         }
 
-        launcherMotors.setPower(launcherSpinning ? MDOConstants.launchPower : 0);
+        //launcherMotors.setPower(launcherSpinning ? MDOConstants.launchPower : 0);
 
         // Clamp target power
         targetPower = Math.max(-1.0, Math.min(1.0, targetPower));
+		launcherMotors.setRPM(launcherSpinning ? MDOConstants.LauncherRPM : 0);
+		launcherMotors.setPIDFController(MDOConstants.LauncherPIDF);
 
         timeLauncher = sectionTimer.milliseconds();
 
@@ -361,7 +394,7 @@ public class MainDriveOpmode extends OpMode {
 
             switch (intakeRunningState) {
                 case IN:
-                    intakeMotor.setPower(1);
+                    intakeMotor.setPower(0.8);
                     break;
                 case OUT:
                     intakeMotor.setPower(-1);
@@ -407,6 +440,7 @@ public class MainDriveOpmode extends OpMode {
 
             telemetryC.addData("Launcher RPM", launcherRPM);
             telemetryC.addData("Launcher Pressure", targetPower); // Corrected label to Launcher Power, but kept logic
+	        telemetryC.addData("launcherRunning", launcherSpinning);
             telemetryC.addData("Intake State", intakeRunningState);
             telemetryC.addData("Ball Count", currentBallCount);
 
