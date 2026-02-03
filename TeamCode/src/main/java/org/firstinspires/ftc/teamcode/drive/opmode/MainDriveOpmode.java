@@ -493,6 +493,8 @@ public class MainDriveOpmode extends OpMode {
                 finalAzimuthDeg = fieldRelativeAzimuthDeg;
             }
 
+            // Apply wrap-around offset before normalization, then remove it after
+            // This shifts WHERE the wrap-around occurs without changing the main offset
             finalAzimuthDeg += MDOConstants.AzimuthWrapAroundOffset;
 
             // Wrap-around: Normalize final angle to 0-360 degree range
@@ -500,6 +502,9 @@ public class MainDriveOpmode extends OpMode {
             if (finalAzimuthDeg < 0) {
                 finalAzimuthDeg += 360.0;
             }
+
+            // Remove the wrap-around offset so it only affects where wrapping occurs
+            finalAzimuthDeg -= MDOConstants.AzimuthWrapAroundOffset;
 
             // Map 0-360 degrees to -1 to 1 range for servo position
             double servoPosition = (finalAzimuthDeg / 180.0) - 1.0;
