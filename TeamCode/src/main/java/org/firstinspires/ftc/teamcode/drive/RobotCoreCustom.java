@@ -98,6 +98,10 @@ public class RobotCoreCustom {
 		private volatile double targetPower = 0.0;
 		private boolean isRPMMode = false;
 
+		// Single shared PIDF controller for group-level RPM control
+		private CustomPIDFController groupPidfController;
+		private double lastAppliedGroupPower = 123456.0; // Impossible initial value for caching
+
 		// Lock object for thread safety
 		private final Object lock = new Object();
 
@@ -108,7 +112,7 @@ public class RobotCoreCustom {
 		 * @param reverseMap Array of booleans indicating if each motor is reversed
 		 * @param hasEncoder Whether motors have encoders (applies to all motors in group)
 		 * @param ticksPerRev Ticks per revolution for the motors
-		 * @param pidfController PID controller for RPM mode
+		 * @param pidfController PID controller for RPM mode (shared across all motors)
 		 */
 		public CustomMotorController(HardwareMap hardwareMap, String[] motorGroup, boolean[] reverseMap, boolean hasEncoder, double ticksPerRev, CustomPIDFController pidfController) {
 			this(hardwareMap, motorGroup, reverseMap, null, hasEncoder, ticksPerRev, pidfController);
@@ -122,13 +126,14 @@ public class RobotCoreCustom {
 		 * @param encoderReverseMap Array of booleans indicating if each motor's encoder is reversed (null = no reversal)
 		 * @param hasEncoder Whether motors have encoders (applies to all motors in group)
 		 * @param ticksPerRev Ticks per revolution for the motors
-		 * @param pidfController PID controller for RPM mode
+		 * @param pidfController PID controller for RPM mode (shared across all motors)
 		 */
 		public CustomMotorController(HardwareMap hardwareMap, String[] motorGroup, boolean[] reverseMap, boolean[] encoderReverseMap, boolean hasEncoder, double ticksPerRev, CustomPIDFController pidfController) {
 			this.motorGroup = motorGroup;
 			this.reverseMap = reverseMap;
 			this.encoderReverseMap = encoderReverseMap;
 			this.motors = new HashMap<>();
+			this.groupPidfController = pidfController;
 
 			if (motorGroup.length != reverseMap.length) {
 				throw new IllegalArgumentException("Motor group and reverse map must have the same length.");
@@ -141,7 +146,8 @@ public class RobotCoreCustom {
 				String motorName = motorGroup[i];
 				boolean reverseEnc = (encoderReverseMap != null) ? encoderReverseMap[i] : false;
 				try {
-					CustomMotor motor = new CustomMotor(hardwareMap, motorName, hasEncoder, ticksPerRev, pidfController, reverseEnc);
+					// Motors don't need individual PIDF controllers - group controller handles PID
+					CustomMotor motor = new CustomMotor(hardwareMap, motorName, hasEncoder, ticksPerRev, null, reverseEnc);
 					this.motors.put(motorName, motor);
 				} catch (Exception e) {
 					throw new IllegalArgumentException("Failed to initialize motor: " + motorName + " - " + e.getMessage());
@@ -157,14 +163,6 @@ public class RobotCoreCustom {
 			synchronized (lock) {
 				this.targetRPM = rpm;
 				this.isRPMMode = true;
-				for (int i = 0; i < motorGroup.length; i++) {
-					String motorName = motorGroup[i];
-					CustomMotor motor = motors.get(motorName);
-					if (motor != null) {
-						int finalRPM = reverseMap[i] ? -rpm : rpm;
-						motor.setRPM(finalRPM);
-					}
-				}
 			}
 		}
 
@@ -188,16 +186,48 @@ public class RobotCoreCustom {
 		}
 
 		/**
-		 * Update RPM PID for all motors in the group - call this in a loop
+		 * Update RPM PID for all motors in the group - call this in a loop.
+		 * Uses a single PIDF calculation based on average RPM, then applies the SAME power to all motors.
 		 */
 		public void updateRPMPID() {
 			synchronized (lock) {
-				if (isRPMMode) {
-					for (CustomMotor motor : motors.values()) {
-						motor.updateRPMPID();
+				if (isRPMMode && groupPidfController != null) {
+					// Get average RPM from all motors (with encoder reversal already applied)
+					double currentRPM = getAverageRPMInternal();
+
+					// Single PIDF calculation for the group
+					double power = groupPidfController.calculate(targetRPM, currentRPM, 0, 50);
+					power = Math.max(-1.0, Math.min(1.0, power)); // Clamp power to [-1, 1]
+
+					// Apply the SAME power to all motors (with direction reversal for motor orientation)
+					if (Math.abs(power - lastAppliedGroupPower) > 0.005 || (power == 0 && lastAppliedGroupPower != 0) || (power != 0 && lastAppliedGroupPower == 0)) {
+						for (int i = 0; i < motorGroup.length; i++) {
+							String motorName = motorGroup[i];
+							CustomMotor motor = motors.get(motorName);
+							if (motor != null) {
+								double finalPower = reverseMap[i] ? -power : power;
+								motor.setRawPower(finalPower);
+							}
+						}
+						lastAppliedGroupPower = power;
 					}
 				}
 			}
+		}
+
+		/**
+		 * Internal method to get average RPM without locking (caller must hold lock)
+		 */
+		private double getAverageRPMInternal() {
+			double sum = 0.0;
+			int count = 0;
+			for (CustomMotor motor : motors.values()) {
+				if (motor.hasEncoder) {
+					sum += motor.updateAndGetRPM(); // Force fresh read for PID
+					count++;
+				}
+			}
+			return count > 0 ? sum / count : 0.0;
 		}
 
 		/**
@@ -234,14 +264,12 @@ public class RobotCoreCustom {
 		}
 
 		/**
-		 * Set PIDF controller for all motors in the group
-		 * @param pidfController New PIDF controller
+		 * Set PIDF controller for group-level RPM control
+		 * @param pidfController New PIDF controller (shared across all motors)
 		 */
 		public void setPIDFController(CustomPIDFController pidfController) {
 			synchronized (lock) {
-				for (CustomMotor motor : motors.values()) {
-					motor.setPIDFController(pidfController);
-				}
+				this.groupPidfController = pidfController;
 			}
 		}
 
@@ -388,6 +416,16 @@ public class RobotCoreCustom {
 				lastAppliedPower = power;
 			}
 			this.isRPMMode = false;
+		}
+
+		/**
+		 * Set power directly without affecting RPM mode state.
+		 * Used by CustomMotorController for group-level PID control.
+		 * @param power Power to set [-1, 1]
+		 */
+		public void setRawPower(double power) {
+			motor.setPower(power);
+			lastAppliedPower = power;
 		}
 
 		public void setPIDFController(CustomPIDFController pidfController) {

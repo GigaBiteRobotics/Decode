@@ -69,7 +69,9 @@ public class CustomPIDFController {
 		}
 
 		// Deadzone: if error is very small, set output to zero to prevent jitter
-		double deadzone = range * 0.5; // Deadzone is half the tolerance range
+		// Use configurable deadzone from MDOConstants for azimuth (when scale <= 360), otherwise use default 0.1
+		double deadzonePercent = (scale <= 360.0) ? MDOConstants.AzimuthPIDDeadzonePercent : 0.1;
+		double deadzone = range * deadzonePercent;
 		if (Math.abs(error) < deadzone) {
 			errorSum = 0; // Clear integral when in deadzone
 			lastError = error;
@@ -130,5 +132,14 @@ public class CustomPIDFController {
 
 	public double getLastOutput() {
 		return lastOutput;
+	}
+
+	/**
+	 * Creates a copy of this PIDF controller with the same coefficients but fresh state.
+	 * Useful when multiple motors need independent PID control with the same tuning.
+	 * @return A new CustomPIDFController with the same kP, kI, kD, kF values.
+	 */
+	public CustomPIDFController copy() {
+		return new CustomPIDFController(kP, kI, kD, kF);
 	}
 }

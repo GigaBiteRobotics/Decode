@@ -40,6 +40,9 @@ public class CustomThreads {
     private volatile Double[] cachedAprilPose = null;
     private AprilTagLocalizer aprilTagLocalizer;
 
+    private Thread followerUpdateThread;
+    private volatile boolean followerUpdateThreadRunning = false;
+
 
     public CustomThreads(RobotCoreCustom robotCoreCustom, Follower follower) {
         this.robotCoreCustom = robotCoreCustom;
@@ -388,6 +391,50 @@ public class CustomThreads {
         if (aprilTagThread != null) {
             try {
                 aprilTagThread.join(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    /**
+     * Starts the follower update thread
+     * This offloads follower.update() to run continuously in background
+     * This is the KEY to improving loop performance - follower.update() is expensive
+     */
+    public void startFollowerUpdateThread() {
+        if (followerUpdateThreadRunning) {
+            return;
+        }
+
+        followerUpdateThreadRunning = true;
+        followerUpdateThread = new Thread(() -> {
+            while (followerUpdateThreadRunning) {
+                try {
+                    // This is the expensive operation that updates odometry, path following, etc.
+                    follower.update();
+
+                    // Run at high frequency for accurate odometry (~200Hz)
+                    Thread.sleep(5);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception e) {
+                    System.err.println("Error in follower update thread: " + e.getMessage());
+                }
+            }
+        });
+        followerUpdateThread.start();
+    }
+
+    /**
+     * Stops the follower update thread
+     */
+    public void stopFollowerUpdateThread() {
+        followerUpdateThreadRunning = false;
+        if (followerUpdateThread != null) {
+            try {
+                followerUpdateThread.join(100);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }

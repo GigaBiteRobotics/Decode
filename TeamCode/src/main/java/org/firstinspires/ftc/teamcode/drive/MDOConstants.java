@@ -65,15 +65,29 @@ public class MDOConstants {
     public static Double ElevationMax = 0.9;
 
     // Offset applied to handle azimuth wrap-around logic
-    public static Double AzimuthWrapAroundOffset = 0.0;
+    public static Double AzimuthWrapAroundOffset = 100.0;
     // PIDF constants for controlling the azimuth servos {kP, kI, kD, kF}
     public static double[] AzimuthPIDFConstants = new double[]{4.0, 0.2, 0.0, 0.0};
+
+    // PID deadzone as a percentage of the tolerance range (0.0 to 1.0)
+    // Lower values = more responsive but may cause jitter; Higher values = less jitter but less precise
+    // Default is 0.1 (10% of range), set lower like 0.05 (5%) for tighter control
+    public static double AzimuthPIDDeadzonePercent = 0.05;
     public static double[] CameraOffset = new double[]{-4.2, -7.5, -12.7}; // {x, y, z} offsets of the camera from robot center in inches
     // Maximum distance from an AprilTag to use it for localization (in inches)
     public static double AprilTagMaxDistance = 60.0;
 
     // Enable threaded drive control for more responsive driving
     public static boolean EnableThreadedDrive = true;
+
+    // Enable field-centric drive (true) or robot-centric drive (false)
+    // Field-centric: Forward on stick always moves robot forward relative to field
+    // Robot-centric: Forward on stick moves robot in direction it's facing
+    public static boolean EnableFieldCentricDrive = true;
+
+    // Enable threaded follower.update() to offload odometry calculations from main loop
+    // This is the KEY performance optimization - follower.update() is very expensive
+    public static boolean EnableThreadedFollowerUpdate = true;
 
     // AprilTag update frequency in milliseconds (higher = less CPU usage, lower = more responsive)
     public static int AprilTagUpdateIntervalMs = 100;

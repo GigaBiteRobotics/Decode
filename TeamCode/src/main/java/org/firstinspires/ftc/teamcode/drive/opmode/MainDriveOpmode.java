@@ -120,7 +120,7 @@ public class MainDriveOpmode extends OpMode {
                 hardwareMap,
                 new String[]{"launcher0", "launcher1"},
                 new boolean[]{false, true}, // launcher1 is reversed
-                new boolean[]{false, true}, // encoder reverse map: launcher1 encoder is reversed
+                new boolean[]{true, false}, // encoder reverse map: launcher1 encoder is reversed
                 true, // has encoders
                 28.0, // ticks per rev
                 new CustomPIDFController(0, 0, 0, 0)
@@ -188,6 +188,11 @@ public class MainDriveOpmode extends OpMode {
         if (MDOConstants.EnableThreadedDrive) {
             customThreads.startDriveThread();
         }
+        // Start the follower update thread - this is KEY for performance!
+        // follower.update() is expensive (odometry, path following, motor control)
+        if (MDOConstants.EnableThreadedFollowerUpdate) {
+            customThreads.startFollowerUpdateThread();
+        }
         // Start the AprilTag processing thread to offload vision processing
         customThreads.startAprilTagThread();
         // Start the launcher PIDF thread for RPM control
@@ -203,6 +208,10 @@ public class MainDriveOpmode extends OpMode {
         // Stop the drive thread
         if (MDOConstants.EnableThreadedDrive) {
             customThreads.stopDriveThread();
+        }
+        // Stop the follower update thread
+        if (MDOConstants.EnableThreadedFollowerUpdate) {
+            customThreads.stopFollowerUpdateThread();
         }
         // Stop the AprilTag thread
         customThreads.stopAprilTagThread();
@@ -259,7 +268,10 @@ public class MainDriveOpmode extends OpMode {
         // ===== MAIN LOOP LOGIC =====
         sectionTimer.reset();
 
-        follower.update();
+        // Only update follower in main thread if threaded update is disabled
+        if (!MDOConstants.EnableThreadedFollowerUpdate) {
+            follower.update();
+        }
         timeUpdate = sectionTimer.milliseconds();
 
         // ===== SORTER CONTROLLER UPDATES =====
@@ -285,7 +297,7 @@ public class MainDriveOpmode extends OpMode {
                     -gamepad1LeftStickY,
                     -gamepad1LeftStickX,
                     gamepad1RightStickX * -0.75,
-                    true
+                    MDOConstants.EnableFieldCentricDrive
             );
         } else {
             // Direct drive control (old method)
@@ -293,7 +305,7 @@ public class MainDriveOpmode extends OpMode {
                     -gamepad1LeftStickY,
                     -gamepad1LeftStickX,
                     gamepad1RightStickX * -0.75,
-                    true
+                    MDOConstants.EnableFieldCentricDrive
             );
         }
 
@@ -394,7 +406,7 @@ public class MainDriveOpmode extends OpMode {
 
             switch (intakeRunningState) {
                 case IN:
-                    intakeMotor.setPower(0.8);
+                    intakeMotor.setPower(1);
                     break;
                 case OUT:
                     intakeMotor.setPower(-1);
@@ -430,7 +442,6 @@ public class MainDriveOpmode extends OpMode {
                 telemetryC.addData("Elevation Servo Pos", elevationServoFinal);
                 telemetryC.addData("Launch Azimuth (deg)", launchAzimuthDeg);
                 telemetryC.addData("Robot Field Azimuth (deg)", robotFieldRelativeAzimuthDeg);
-                telemetryC.addData("Field Relative Azimuth (deg)", fieldRelativeAzimuthDeg);
                 telemetryC.addData("Final Azimuth (deg)", finalAzimuthDeg);
                 telemetryC.addData("Servo Pos (deg)", servoPosition);
                 telemetryC.addData("Servo Target (deg)", servoTarget);
