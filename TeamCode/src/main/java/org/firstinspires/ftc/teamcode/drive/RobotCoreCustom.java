@@ -57,10 +57,16 @@ public class RobotCoreCustom {
 	}
 
 	public static Double[] localizerLauncherCalc(Follower follower, Double[] target) {
+		return localizerLauncherCalc(follower, target, true); // Default to red side
+	}
+
+	public static Double[] localizerLauncherCalc(Follower follower, Double[] target, boolean isRedSide) {
 		if (follower == null || target == null || target.length < 3) {
 			return null;
 		}
 		Double[] pose = {follower.getPose().getX(), follower.getPose().getY(), follower.getPose().getHeading()};
+		// Use alliance-specific launcher constants
+		Double[] launcherConstants = isRedSide ? MDOConstants.RedLauncherCalcConstants : MDOConstants.BlueLauncherCalcConstants;
 		// launch position (x, y, z)
 		// target position (x, y, z)
 		// launch velocity (in/s)
@@ -68,8 +74,8 @@ public class RobotCoreCustom {
 		return LocalizationAutoAim.calculateLaunchAngle(
 				new Double[]{pose[0], pose[1], 10.0}, // launch position (x, y, z)
 				new Double[]{target[0], target[1], target[2]}, // target position (x, y, z)
-				MDOConstants.launcherCalcConstants[0], // launch velocity (in/s)
-				MDOConstants.launcherCalcConstants[1] // gravity (in/s^2)
+				launcherConstants[0], // launch velocity (in/s)
+				launcherConstants[1] // gravity (in/s^2)
 		);
 	}
 
@@ -80,14 +86,29 @@ public class RobotCoreCustom {
 	 * @return RPM value based on distance zones, or static LauncherRPM if zones disabled
 	 */
 	public static int calculateLauncherRPM(Follower follower, Double[] target) {
+		return calculateLauncherRPM(follower, target, true); // Default to red side
+	}
+
+	/**
+	 * Calculate the appropriate launcher RPM based on distance to target with alliance-specific tuning
+	 * @param follower Robot follower for position
+	 * @param target Target position [x, y, z]
+	 * @param isRedSide true for red alliance, false for blue alliance
+	 * @return RPM value based on distance zones, or static LauncherRPM if zones disabled
+	 */
+	public static int calculateLauncherRPM(Follower follower, Double[] target, boolean isRedSide) {
+		// Get alliance-specific values
+		int staticRPM = isRedSide ? MDOConstants.RedLauncherRPM : MDOConstants.BlueLauncherRPM;
+		double[][] rpmZones = isRedSide ? MDOConstants.RedLauncherRPMZones : MDOConstants.BlueLauncherRPMZones;
+
 		// If zones are disabled, return static RPM
 		if (!MDOConstants.EnableLauncherRPMZones) {
-			return MDOConstants.LauncherRPM;
+			return staticRPM;
 		}
 
 		// Calculate distance to target
 		if (follower == null || target == null || target.length < 3) {
-			return MDOConstants.LauncherRPM; // Fallback to default
+			return staticRPM; // Fallback to default
 		}
 
 		Double[] robotPos = {follower.getPose().getX(), follower.getPose().getY(), 10.0};
@@ -95,11 +116,11 @@ public class RobotCoreCustom {
 
 		// Find appropriate RPM zone based on distance
 		// Zones are ordered by distance threshold, find the first one that matches
-		int rpm = MDOConstants.LauncherRPM; // Default fallback
+		int rpm = staticRPM; // Default fallback
 
-		for (int i = MDOConstants.LauncherRPMZones.length - 1; i >= 0; i--) {
-			if (distance >= MDOConstants.LauncherRPMZones[i][0]) {
-				rpm = (int) MDOConstants.LauncherRPMZones[i][1];
+		for (int i = rpmZones.length - 1; i >= 0; i--) {
+			if (distance >= rpmZones[i][0]) {
+				rpm = (int) rpmZones[i][1];
 				break;
 			}
 		}

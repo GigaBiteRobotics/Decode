@@ -36,7 +36,9 @@ public class MainDriveOpmode extends OpMode {
     Double[] lastAprilLocalization = null;
     double targetPower = 0.0;
     double elevationServoFinal = 0;
+    double manualAzimuthOffset = 0.0; // Manual azimuth adjustment via D-pad
     ElapsedTime gamepadTimer = new ElapsedTime();
+    ElapsedTime azimuthAdjustTimer = new ElapsedTime(); // Timer for D-pad azimuth adjustment
     RobotCoreCustom.CustomTelemetry telemetryC;
     RobotCoreCustom.CustomSorterController sorterController;
     boolean launcherSpinning = false;
@@ -294,13 +296,14 @@ public class MainDriveOpmode extends OpMode {
         robotFieldRelativeAzimuthDeg = Math.toDegrees(robotHeadingRad);
 
 
-        // Launch calculations
+        // Launch calculations - pass alliance side for side-specific tuning
+        boolean isRedSide = (team == Team.RED);
         launchVectors = RobotCoreCustom.localizerLauncherCalc(follower, (team == Team.RED) ?
-                MDOConstants.redTargetLocation : MDOConstants.blueTargetLocation);
+                MDOConstants.redTargetLocation : MDOConstants.blueTargetLocation, isRedSide);
 
         // Current target and dynamic RPM calculation
         Double[] currentTarget = (team == Team.RED) ? MDOConstants.redTargetLocation : MDOConstants.blueTargetLocation;
-        int dynamicRPM = RobotCoreCustom.calculateLauncherRPM(follower, currentTarget);
+        int dynamicRPM = RobotCoreCustom.calculateLauncherRPM(follower, currentTarget, isRedSide);
 
         // Launcher data
         double launcherRPM = launcherMotors.getAverageRPM();
@@ -399,8 +402,10 @@ public class MainDriveOpmode extends OpMode {
         // Only update follower pose if we have a valid tag and good confidence
         if (aprilPose != null && MDOConstants.useAprilTags && localizer != null) {
             double decisionMargin = localizer.getDecisionMargin();
+            // Use alliance-specific AprilTag heading offset
+            double aprilTagHeadingOffset = (team == Team.RED) ? MDOConstants.RedAprilTagHeadingOffset : MDOConstants.BlueAprilTagHeadingOffset;
             if (decisionMargin > 0.8 && aprilSlowdownTimer.milliseconds() > 100) {
-                follower.setPose(new Pose(aprilPose[0], aprilPose[1], aprilPose[3] + Math.toRadians(MDOConstants.AprilTagHeadingOffset)));
+                follower.setPose(new Pose(aprilPose[0], aprilPose[1], aprilPose[3] + Math.toRadians(aprilTagHeadingOffset)));
                 aprilSlowdownTimer.reset();
             }
         }
@@ -425,6 +430,23 @@ public class MainDriveOpmode extends OpMode {
             } else {
                 targetPower = 0;
                 launcherSpinning = false;
+            }
+        }
+
+        // Manual azimuth offset adjustment using D-pad left/right
+        // Adjusts in small increments (1 degree) with a 150ms delay between adjustments
+        if (azimuthAdjustTimer.milliseconds() > 150) {
+            if (gamepad2.dpad_right) {
+                manualAzimuthOffset += 1.0; // Increase azimuth offset by 1 degree
+                azimuthAdjustTimer.reset();
+            } else if (gamepad2.dpad_left) {
+                manualAzimuthOffset -= 1.0; // Decrease azimuth offset by 1 degree
+                azimuthAdjustTimer.reset();
+            }
+            // Reset manual offset with Y button
+            if (gamepad2.y) {
+                manualAzimuthOffset = 0.0;
+                azimuthAdjustTimer.reset();
             }
         }
 
@@ -499,6 +521,10 @@ public class MainDriveOpmode extends OpMode {
         if (telemetryLoopCounter >= TELEMETRY_UPDATE_INTERVAL) {
             telemetryLoopCounter = 0; // Reset counter
             telemetryC.addData("Team", team.toString());
+            // Show which alliance-specific values are being used (isRedSide already defined above)
+            telemetryC.addData("Active Azimuth Adj", isRedSide ? MDOConstants.RedAzimuthFineAdjustment : MDOConstants.BlueAzimuthFineAdjustment);
+            telemetryC.addData("Active Elevation Offset", isRedSide ? MDOConstants.RedElevationOffset : MDOConstants.BlueElevationOffset);
+            telemetryC.addData("Active AprilTag Offset", isRedSide ? MDOConstants.RedAprilTagHeadingOffset : MDOConstants.BlueAprilTagHeadingOffset);
             telemetryC.addData("External Heading (deg)", robotHeadingRad);
             telemetryC.addData("Pose X", poseX);
             telemetryC.addData("Pose Y", poseY);
@@ -520,6 +546,7 @@ public class MainDriveOpmode extends OpMode {
                 telemetryC.addData("Launch Azimuth (deg)", launchAzimuthDeg);
                 telemetryC.addData("Robot Field Azimuth (deg)", robotFieldRelativeAzimuthDeg);
                 telemetryC.addData("Final Azimuth (deg)", finalAzimuthDeg);
+                telemetryC.addData("Manual Azimuth Offset", manualAzimuthOffset);
                 telemetryC.addData("Servo Pos (deg)", servoPosition);
                 telemetryC.addData("Servo Target (deg)", servoTarget);
             } else {
@@ -594,6 +621,11 @@ public class MainDriveOpmode extends OpMode {
         // Pre-calculate launch vector conversions if available
         boolean hasValidLaunchVectors = (launchVectors != null);
 
+        // Get alliance-specific offsets
+        boolean isRedSide = (team == Team.RED);
+        double elevationOffset = isRedSide ? MDOConstants.RedElevationOffset : MDOConstants.BlueElevationOffset;
+        double azimuthFineAdjust = isRedSide ? MDOConstants.RedAzimuthFineAdjustment : MDOConstants.BlueAzimuthFineAdjustment;
+
         if (hasValidLaunchVectors) {
             launchAzimuthDeg = Math.toDegrees(launchVectors[1]);
             // Elevation is already calculated as servo position in LocalizationAutoAim, not radians
@@ -601,7 +633,8 @@ public class MainDriveOpmode extends OpMode {
         }
 
         if (launchElevationDeg != null) {
-            elevationServoTarget = (launchElevationDeg + MDOConstants.ElevationOffset) * MDOConstants.ElevationMultiplier;
+            // Use alliance-specific elevation offset combined with shared offset
+            elevationServoTarget = (launchElevationDeg + MDOConstants.ElevationOffset + elevationOffset) * MDOConstants.ElevationMultiplier;
             // Fix clamp logic to correctly bound between -0.4 and 1.0
             elevationServoFinal = Math.max(-0.4, Math.min(1.0, elevationServoTarget));
             elevationServo.setPosition(elevationServoFinal);
@@ -628,11 +661,14 @@ public class MainDriveOpmode extends OpMode {
                 // To aim the turret at the target, we need: robotHeading - targetAngle (reversed direction)
                 // This gives us the robot-relative angle to the target
                 // Then add the mechanical offset (AzimuthIMUOffset) to calibrate the turret's zero position
-                finalAzimuthDeg = robotHeadingDeg - launchAzimuthDeg + MDOConstants.AzimuthIMUOffset + MDOConstants.AzimuthFineAdjustment;
+                // Use alliance-specific azimuth fine adjustment combined with shared adjustment
+                // Also add manual offset from D-pad left/right controls
+                finalAzimuthDeg = robotHeadingDeg - launchAzimuthDeg + MDOConstants.AzimuthIMUOffset + MDOConstants.AzimuthFineAdjustment + azimuthFineAdjust + manualAzimuthOffset;
             } else {
                 // When not using launcher calc, just maintain heading-based orientation
                 // Apply the AzimuthIMUOffset to set the turret's "forward" position
-                finalAzimuthDeg = (robotHeadingDeg + MDOConstants.AzimuthIMUOffset) * MDOConstants.AzimuthMultiplier;
+                // Also add manual offset from D-pad left/right controls
+                finalAzimuthDeg = (robotHeadingDeg + MDOConstants.AzimuthIMUOffset + manualAzimuthOffset) * MDOConstants.AzimuthMultiplier;
             }
 
             // Apply wrap-around offset before normalization, then remove it after

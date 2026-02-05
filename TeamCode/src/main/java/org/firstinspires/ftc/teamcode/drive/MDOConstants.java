@@ -19,6 +19,57 @@ public class MDOConstants {
     // Calibration constants for launcher trajectory calculations {velocity, gravity}
     public static Double[] launcherCalcConstants = new Double[]{280.00, 386.09};
 
+    // ===== RED SIDE CONFIGURATIONS =====
+    // Fine-tuned constants specifically for red alliance side
+
+    // Red side azimuth fine adjustment offset (in degrees)
+    public static Double RedAzimuthFineAdjustment = -6.0;
+
+    // Red side elevation offset
+    public static Double RedElevationOffset = 0.0;
+
+    // Red side launcher calibration constants {velocity, gravity}
+    public static Double[] RedLauncherCalcConstants = new Double[]{280.00, 386.09};
+
+    // Red side launcher RPM
+    public static int RedLauncherRPM = 2300;
+
+    // Red side RPM zones
+    public static double[][] RedLauncherRPMZones = new double[][]{
+            {0.0, 2000},    // 0-120 inches: close range, lower RPM
+            {120.0, 2500},  // 120+ inches: far range, higher RPM
+    };
+
+    // Red side AprilTag heading offset (in degrees)
+    public static double RedAprilTagHeadingOffset = 90.0;
+
+    // ===== BLUE SIDE CONFIGURATIONS =====
+    // Fine-tuned constants specifically for blue alliance side
+
+    // Blue side azimuth fine adjustment offset (in degrees)
+    public static Double BlueAzimuthFineAdjustment = 0.0;
+
+    // Blue side elevation offset
+    public static Double BlueElevationOffset = 0.0;
+
+    // Blue side launcher calibration constants {velocity, gravity}
+    public static Double[] BlueLauncherCalcConstants = new Double[]{280.00, 386.09};
+
+    // Blue side launcher RPM
+    public static int BlueLauncherRPM = 2300;
+
+    // Blue side RPM zones
+    public static double[][] BlueLauncherRPMZones = new double[][]{
+            {0.0, 2000},    // 0-120 inches: close range, lower RPM
+            {120.0, 2500},  // 120+ inches: far range, higher RPM
+    };
+
+    // Blue side AprilTag heading offset (in degrees)
+    public static double BlueAprilTagHeadingOffset = 90.0;
+
+    // ===== SHARED/DEFAULT CONFIGURATIONS =====
+    // These are used as fallbacks or when side-specific values aren't needed
+
     // Servo position for the lifter when raised
     public static Double LifterPositionHigh = 0.8;
 
@@ -68,8 +119,8 @@ public class MDOConstants {
     // Maximum physical servo position for elevation
     public static Double ElevationMax = 0.9;
 
-    // Offset applied to handle azimuth wrap-around logic
-    public static Double AzimuthWrapAroundOffset = 100.0;
+    // Offset applied to handle azimuth wrap-around logic (180.0 = 1 full rotation max)
+    public static Double AzimuthWrapAroundOffset = 180.0;
     // PIDF constants for controlling the azimuth servos {kP, kI, kD, kF}
     public static double[] AzimuthPIDFConstants = new double[]{4.0, 0.2, 0.0, 0.0};
 
