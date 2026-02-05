@@ -73,6 +73,40 @@ public class RobotCoreCustom {
 		);
 	}
 
+	/**
+	 * Calculate the appropriate launcher RPM based on distance to target
+	 * @param follower Robot follower for position
+	 * @param target Target position [x, y, z]
+	 * @return RPM value based on distance zones, or static LauncherRPM if zones disabled
+	 */
+	public static int calculateLauncherRPM(Follower follower, Double[] target) {
+		// If zones are disabled, return static RPM
+		if (!MDOConstants.EnableLauncherRPMZones) {
+			return MDOConstants.LauncherRPM;
+		}
+
+		// Calculate distance to target
+		if (follower == null || target == null || target.length < 3) {
+			return MDOConstants.LauncherRPM; // Fallback to default
+		}
+
+		Double[] robotPos = {follower.getPose().getX(), follower.getPose().getY(), 10.0};
+		double distance = LocalizationAutoAim.getDistance(robotPos, target);
+
+		// Find appropriate RPM zone based on distance
+		// Zones are ordered by distance threshold, find the first one that matches
+		int rpm = MDOConstants.LauncherRPM; // Default fallback
+
+		for (int i = MDOConstants.LauncherRPMZones.length - 1; i >= 0; i--) {
+			if (distance >= MDOConstants.LauncherRPMZones[i][0]) {
+				rpm = (int) MDOConstants.LauncherRPMZones[i][1];
+				break;
+			}
+		}
+
+		return rpm;
+	}
+
 	public void drawCurrent(Follower follower) {
 		try {
 			Drawing.drawRobot(follower.getPose());
@@ -977,11 +1011,21 @@ public class RobotCoreCustom {
 						// STEP 1: Read the sensor and convert voltage to degrees (0-360)
 						currentPosition = voltageToDegrees(aPosition.getVoltage());
 
-						// STEP 2: Use the PID controller to calculate how much power we need
-						// We pass a large scale (WRAP_THRESHOLD + 100) to disable the PID's built-in
-						// shortest-path logic. This ensures the servo respects the 0 and 360 boundaries
-						// and doesn't cross the "gap" which could tangle wires.
-						double power = pidController.calculate(targetPosition, currentPosition, 0, 2, WRAP_THRESHOLD + 100.0);
+						// STEP 2: Calculate error with wrap-around handling
+						// Find the shortest path to the target (handles 0/360 boundary)
+						double error = targetPosition - currentPosition;
+
+						// Normalize error to [-180, 180] to find shortest path
+						while (error > 180.0) {
+							error -= 360.0;
+						}
+						while (error < -180.0) {
+							error += 360.0;
+						}
+
+						// STEP 3: Use the PID controller to calculate power
+						// Pass the error directly to avoid the PID's wrap-around logic issues
+						double power = pidController.calculate(currentPosition + error, currentPosition, 0, 2, WRAP_THRESHOLD + 100.0);
 
 						// STEP 4: Make sure power stays within safe limits (-1 to 1)
 						power = Math.max(-1.0, Math.min(1.0, power));
@@ -1003,7 +1047,8 @@ public class RobotCoreCustom {
 								double finalPower = reverseMap[i] ? -power : power;
 								
 								// Convert power from [-1, 1] to servo range [0, 1]
-								double mapped = (finalPower + 1.0) / 2.0;
+								// Add center offset to correct for asymmetric dead band in continuous rotation servos
+								double mapped = (finalPower + 1.0) / 2.0 + MDOConstants.AzimuthServoCenterOffset;
 								mapped = Math.max(0.0, Math.min(1.0, mapped)); // Safety clamp
 
 								// Send the command to the servo

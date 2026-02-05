@@ -11,6 +11,7 @@ public class CustomPIDFController {
 	// Internal state variables
 	private double errorSum = 0;    // Integral term accumulator
 	private double lastError = 0;  // For derivative term
+	private double lastDerivative = 0; // For derivative filtering
 	private long lastTime = System.currentTimeMillis(); // Time tracking
 	private double lastOutput = 0; // Last calculated output
 
@@ -84,11 +85,18 @@ public class CustomPIDFController {
 		double pTerm = kP * error;
 
 		// Integral term with anti-windup
+		// Reset integral if error direction changed (crossed target = overshoot, or reversed direction)
+		boolean errorDirectionChanged = (error > 0 && lastError < 0) || (error < 0 && lastError > 0);
+		if (errorDirectionChanged) {
+			errorSum = 0;  // Reset integral on any zero-crossing to prevent overshoot
+			lastDerivative = 0; // Also reset derivative filter on direction change
+		}
+
 		errorSum += error * deltaTime;
 		double iTerm = kI * errorSum;
 
-		// Reset integral when within range or if integral is too large (anti-windup)
-		if (currentPosition > targetPosition-range && currentPosition < targetPosition+range){
+		// Reset integral when within range
+		if (Math.abs(error) < range) {
 			errorSum = 0;
 			iTerm = 0;
 		}
@@ -100,11 +108,25 @@ public class CustomPIDFController {
 		}
 
 		// Derivative term with smoothing to reduce noise
-		double derivative = (error - lastError) / deltaTime;
+		// Calculate error change, handling wrap-around for angular positions
+		double errorChange = error - lastError;
+
+		// For angular measurements, normalize the error change to prevent spikes at wrap-around
+		if (scale <= 360.0) {
+			while (errorChange > scale / 2.0) {
+				errorChange -= scale;
+			}
+			while (errorChange < -scale / 2.0) {
+				errorChange += scale;
+			}
+		}
+
+		double derivative = errorChange / deltaTime;
 
 		// Low-pass filter on derivative to reduce noise-induced jitter
-		// This averages the current derivative with previous one
-		double filteredDerivative = derivative * 0.7 + (lastError / deltaTime) * 0.3;
+		// This blends the current derivative with the previous one
+		double filteredDerivative = derivative * 0.7 + lastDerivative * 0.3;
+		lastDerivative = filteredDerivative; // Store for next iteration
 		double dTerm = kD * filteredDerivative;
 
 		// Feedforward term
@@ -113,13 +135,10 @@ public class CustomPIDFController {
 		// Calculate total output
 		double output = pTerm + iTerm + dTerm + fTerm;
 
-		// Apply output filtering to smooth rapid changes (exponential moving average)
-		// This reduces jitter caused by sudden power changes
-		double alpha = 0.7; // Smoothing factor (0 = no smoothing, 1 = no filtering)
-		output = alpha * output + (1 - alpha) * lastOutput * scale; // Blend with last output
-
-		// Scale and clamp output to valid power range
+		// Scale output to valid power range
 		double scaledOutput = output / scale;
+
+		// Clamp to valid power range
 		scaledOutput = Math.min(1.0, Math.max(scaledOutput, -1.0));
 
 		// Save current state for next calculation

@@ -32,7 +32,7 @@ public class MDOConstants {
     public static int LifterWaitToTopTimerMillis = 200;
 
     // Offset in degrees for the turret azimuth relative to the robot's IMU zero
-    public static Double AzimuthIMUOffset = -80.0;
+    public static Double AzimuthIMUOffset = -5.0;
 
     // Enable correction of turret angle based on robot heading (IMU)
     public static boolean EnableTurretIMUCorrection = true;
@@ -45,6 +45,10 @@ public class MDOConstants {
 
     // Allow the launcher calculator to automatically control the azimuth angle
     public static boolean EnableLauncherCalcAzimuth = true;
+
+    // Fine adjustment offset for azimuth aiming (in degrees)
+    // Positive values rotate turret clockwise, negative counter-clockwise
+    public static Double AzimuthFineAdjustment = 0.0;
 
     // Mechanical offset for the elevation angle
     public static Double ElevationOffset = 0.0;
@@ -69,6 +73,11 @@ public class MDOConstants {
     // PIDF constants for controlling the azimuth servos {kP, kI, kD, kF}
     public static double[] AzimuthPIDFConstants = new double[]{4.0, 0.2, 0.0, 0.0};
 
+    // Servo center offset to correct for asymmetric dead band in continuous rotation servos
+    // Positive values shift the "stop" point higher (e.g., 0.02 means stop is at 0.52 instead of 0.50)
+    // Negative values shift it lower. Tune this if servo moves faster in one direction than the other.
+    public static double AzimuthServoCenterOffset = 0.0;
+
     // PID deadzone as a percentage of the tolerance range (0.0 to 1.0)
     // Lower values = more responsive but may cause jitter; Higher values = less jitter but less precise
     // Default is 0.1 (10% of range), set lower like 0.05 (5%) for tighter control
@@ -76,6 +85,24 @@ public class MDOConstants {
     public static double[] CameraOffset = new double[]{-4.2, -7.5, -12.7}; // {x, y, z} offsets of the camera from robot center in inches
     // Maximum distance from an AprilTag to use it for localization (in inches)
     public static double AprilTagMaxDistance = 60.0;
+
+    // Heading offset to apply when relocalizing from AprilTag (in degrees)
+    // This corrects for differences between AprilTag coordinate system and robot coordinate system
+    // The AprilTag library returns heading in field coordinates, but the zero reference may differ
+    // from your robot's IMU zero or Pedro Pathing's expected heading
+    //
+    // TUNING:
+    // 1. Place robot at a known position facing a known direction
+    // 2. Look at "AprilTag Heading (rad)" in telemetry
+    // 3. Compare to expected heading in your coordinate system
+    // 4. Adjust this offset until robot localizes correctly
+    //
+    // Common values:
+    //   0.0  = No offset (AprilTag heading matches Pedro heading)
+    //   90.0 = AprilTag forward is robot right (rotate 90° CCW)
+    //  -90.0 = AprilTag forward is robot left (rotate 90° CW)
+    //  180.0 = AprilTag forward is robot backward
+    public static double AprilTagHeadingOffset = 90.0;
 
     // Enable threaded drive control for more responsive driving
     public static boolean EnableThreadedDrive = true;
@@ -91,6 +118,35 @@ public class MDOConstants {
 
     // AprilTag update frequency in milliseconds (higher = less CPU usage, lower = more responsive)
     public static int AprilTagUpdateIntervalMs = 100;
-	public static int LauncherRPM = 3600;
-	public static CustomPIDFController LauncherPIDF = new CustomPIDFController(3, 0, 0, 2);
+	public static int LauncherRPM = 2300;
+	public static CustomPIDFController LauncherPIDF = new CustomPIDFController(20, 2, 0, 3);
+
+	// ===== LAUNCHER RPM ZONES =====
+	// RPM zones based on distance to target (in inches)
+	// Format: {distance threshold (inches), RPM for that zone}
+	// Distances are checked in order, first matching threshold wins
+	// Example: If distance is 50 inches and zones are {{0, 2000}, {70, 2800}}
+	// then RPM will be 2000 if distance < 70 inches, or 2800 if distance >= 70 inches
+	public static double[][] LauncherRPMZones = new double[][]{
+			{0.0, 2000},    // 0-70 inches: close range, lower RPM
+			{120.0, 2500},   // 110+ inches: far range, higher RPM
+	};
+
+	// Enable RPM zones (if false, uses static LauncherRPM)
+	public static boolean EnableLauncherRPMZones = true;
+
+	// ===== EMERGENCY STOP SETTINGS =====
+	// Temperature at which OpMode automatically stops (in Celsius)
+	// CPU overheating is caused by intensive processing (vision, calculations), not motor current
+	// Motors are on separate boards (expansion hubs) and don't heat the Control Hub CPU
+	public static double EmergencyStopTemp = 88.0;
+
+	// ===== START POSITION SETTINGS =====
+	// Default starting positions for manual selection when no auto pose is available
+	// Format: {x, y, heading (degrees)}
+	// These can be tuned via Panels during init
+	public static double[] RedCloseStartPose = new double[]{-52.85, 49.15, -40.7};  // 0.8604 rad - 90° = ~-40.7°
+	public static double[] RedFarStartPose = new double[]{0.0, 0.0, 0.0};
+	public static double[] BlueCloseStartPose = new double[]{-52.85, -49.15, 49.3};  // 0.8604 rad = ~49.3°
+	public static double[] BlueFarStartPose = new double[]{0.0, 0.0, 0.0};
 }

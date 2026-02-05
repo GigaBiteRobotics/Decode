@@ -16,6 +16,7 @@ import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
 import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
 import org.firstinspires.ftc.teamcode.drive.CustomPIDFController;
 import org.firstinspires.ftc.teamcode.drive.CustomThreads;
+import org.firstinspires.ftc.teamcode.drive.LocalizationAutoAim;
 import org.firstinspires.ftc.teamcode.drive.MDOConstants;
 import org.firstinspires.ftc.teamcode.drive.RobotCoreCustom;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
@@ -48,6 +49,14 @@ public class MainDriveOpmode extends OpMode {
     }
 
     Team team = Team.BLUE;
+
+    enum StartPosition {
+        CLOSE,
+        FAR
+    }
+
+    StartPosition startPosition = StartPosition.CLOSE;
+    boolean hasAutoPose = false;
      ElapsedTime lifterAutoLaunchTimer = new ElapsedTime();
      ElapsedTime aprilSlowdownTimer = new ElapsedTime();
      ElapsedTime loopTimer = new ElapsedTime();
@@ -57,10 +66,10 @@ public class MainDriveOpmode extends OpMode {
     double timeCaching = 0, timeUpdate = 0, timeSorter = 0, timeDrive = 0;
     double timeAprilTag = 0, timeServo = 0, timeLauncher = 0, timeIntake = 0, timeTelemetry = 0;
 
-    Double launchAzimuthDeg = null;
-    Double fieldRelativeAzimuthDeg;
-    Double robotFieldRelativeAzimuthDeg;
-    Double finalAzimuthDeg;
+     Double launchAzimuthDeg = 0.0;
+    Double fieldRelativeAzimuthDeg = 0.0;
+    Double robotFieldRelativeAzimuthDeg = 0.0;
+    Double finalAzimuthDeg = 0.0;
     static TelemetryManager telemetryM;
     enum intakeState {
         IN,
@@ -137,15 +146,19 @@ public class MainDriveOpmode extends OpMode {
 
         follower = Constants.createFollower(hardwareMap);
 
-        // Use pose from auto if available, otherwise use default
-        if (startPose.getX() != 0 || startPose.getY() != 0 || startPose.getHeading() != 0) {
+        // Check if we have a pose from auto
+        hasAutoPose = (startPose.getX() != 0 || startPose.getY() != 0 || startPose.getHeading() != 0);
+
+        // Use pose from auto if available, otherwise start position will be set in start() based on selection
+        if (hasAutoPose) {
             follower.setStartingPose(startPose);
             telemetryC.addData("Starting Pose from Auto",
                 String.format("(%.1f, %.1f, %.1f°)",
                     startPose.getX(), startPose.getY(), Math.toDegrees(startPose.getHeading())));
         } else {
+            // Temporary default, will be updated in start() based on selection
             follower.setStartingPose(new Pose(0, 0, 0));
-            telemetryC.addData("Starting Pose", "Default (0, 0, 0)");
+            telemetryC.addData("Starting Pose", "Select during init (no auto pose)");
         }
         telemetryC.update();
 
@@ -166,19 +179,62 @@ public class MainDriveOpmode extends OpMode {
 
     @Override
     public void init_loop() {
+        // Team selection
         if (gamepad1.x) {
             team = Team.BLUE;
         } else if (gamepad1.b) {
             team = Team.RED;
         }
 
+        // Start position selection (only when no auto pose)
+        if (!hasAutoPose) {
+            if (gamepad1.dpad_up) {
+                startPosition = StartPosition.CLOSE;
+            } else if (gamepad1.dpad_down) {
+                startPosition = StartPosition.FAR;
+            }
+        }
+
         telemetryC.addData("Selected Team", team);
         telemetryC.addData("Select Team", "Press X for Blue, B for Red");
+
+        if (hasAutoPose) {
+            telemetryC.addData("Start Position", "FROM AUTO (locked)");
+        } else {
+            telemetryC.addData("Selected Start Position", startPosition);
+            telemetryC.addData("Select Position", "D-Pad Up for Close, D-Pad Down for Far");
+
+            // Show the current selected pose values
+            double[] selectedPose;
+            if (team == Team.RED) {
+                selectedPose = (startPosition == StartPosition.CLOSE) ?
+                    MDOConstants.RedCloseStartPose : MDOConstants.RedFarStartPose;
+            } else {
+                selectedPose = (startPosition == StartPosition.CLOSE) ?
+                    MDOConstants.BlueCloseStartPose : MDOConstants.BlueFarStartPose;
+            }
+            telemetryC.addData("Start Pose Preview",
+                String.format("(%.1f, %.1f, %.1f°)", selectedPose[0], selectedPose[1], selectedPose[2]));
+        }
+
         telemetryC.update();
     }
 
     @Override
     public void start() {
+        // Apply selected start position if no auto pose was received
+        if (!hasAutoPose) {
+            double[] selectedPose;
+            if (team == Team.RED) {
+                selectedPose = (startPosition == StartPosition.CLOSE) ?
+                    MDOConstants.RedCloseStartPose : MDOConstants.RedFarStartPose;
+            } else {
+                selectedPose = (startPosition == StartPosition.CLOSE) ?
+                    MDOConstants.BlueCloseStartPose : MDOConstants.BlueFarStartPose;
+            }
+            follower.setStartingPose(new Pose(selectedPose[0], selectedPose[1], Math.toRadians(selectedPose[2])));
+        }
+
         customThreads.startDrawingThread();
         customThreads.startCPUMonThread();
         customThreads.startAzimuthPIDThread();
@@ -242,6 +298,10 @@ public class MainDriveOpmode extends OpMode {
         launchVectors = RobotCoreCustom.localizerLauncherCalc(follower, (team == Team.RED) ?
                 MDOConstants.redTargetLocation : MDOConstants.blueTargetLocation);
 
+        // Current target and dynamic RPM calculation
+        Double[] currentTarget = (team == Team.RED) ? MDOConstants.redTargetLocation : MDOConstants.blueTargetLocation;
+        int dynamicRPM = RobotCoreCustom.calculateLauncherRPM(follower, currentTarget);
+
         // Launcher data
         double launcherRPM = launcherMotors.getAverageRPM();
 
@@ -260,6 +320,20 @@ public class MainDriveOpmode extends OpMode {
         // Pre-format CPU strings to avoid repeated String.format() in telemetry (expensive operation)
         double cpuUsage = customThreads.getCpuUsage();
         double cpuTemp = customThreads.getCpuTemp();
+
+        // ===== EMERGENCY STOP CHECK =====
+        // Stop OpMode immediately if CPU temperature is critically high
+        // Note: CPU heating is from intensive processing (vision, odometry, calculations)
+        // NOT from motor current - motors are on separate expansion hub boards
+        if (cpuTemp >= MDOConstants.EmergencyStopTemp && cpuTemp > 0) {
+            telemetry.addData("🚨 EMERGENCY STOP 🚨", "");
+            telemetry.addData("CPU TEMP TOO HIGH", String.format("%.1f°C", cpuTemp));
+            telemetry.addData("Critical Limit", String.format("%.1f°C", MDOConstants.EmergencyStopTemp));
+            telemetry.addData("", "OpMode stopping to prevent damage");
+            telemetry.update();
+            requestOpModeStop();
+            return; // Exit loop immediately
+        }
 
         // Cache AprilTag position from the background thread (non-blocking)
         Double[] aprilPose = customThreads.getCachedAprilPose();
@@ -326,7 +400,7 @@ public class MainDriveOpmode extends OpMode {
         if (aprilPose != null && MDOConstants.useAprilTags && localizer != null) {
             double decisionMargin = localizer.getDecisionMargin();
             if (decisionMargin > 0.8 && aprilSlowdownTimer.milliseconds() > 100) {
-                follower.setPose(new Pose(aprilPose[0], aprilPose[1], aprilPose[3] + Math.toRadians(90.0)));
+                follower.setPose(new Pose(aprilPose[0], aprilPose[1], aprilPose[3] + Math.toRadians(MDOConstants.AprilTagHeadingOffset)));
                 aprilSlowdownTimer.reset();
             }
         }
@@ -369,7 +443,7 @@ public class MainDriveOpmode extends OpMode {
 
         // Clamp target power
         targetPower = Math.max(-1.0, Math.min(1.0, targetPower));
-		launcherMotors.setRPM(launcherSpinning ? MDOConstants.LauncherRPM : 0);
+		launcherMotors.setRPM(launcherSpinning ? dynamicRPM : 0);
 		launcherMotors.setPIDFController(MDOConstants.LauncherPIDF);
 
         timeLauncher = sectionTimer.milliseconds();
@@ -432,6 +506,9 @@ public class MainDriveOpmode extends OpMode {
             if (aprilPose != null) {
                 telemetryC.addData("X (in) AprilTag", aprilPose[0]);
                 telemetryC.addData("Y (in) AprilTag", aprilPose[1]);
+                telemetryC.addData("AprilTag ID", (int) aprilPose[4].doubleValue());
+                telemetryC.addData("AprilTag Heading (rad)", aprilPose[3]);
+                telemetryC.addData("Decision Margin", localizer.getDecisionMargin());
             } else {
                 telemetryC.addData("X (in) AprilTag", "No Tag");
                 telemetryC.addData("Y (in) AprilTag", "No Tag");
@@ -452,6 +529,15 @@ public class MainDriveOpmode extends OpMode {
             telemetryC.addData("Launcher RPM", launcherRPM);
             telemetryC.addData("Launcher Pressure", targetPower); // Corrected label to Launcher Power, but kept logic
 	        telemetryC.addData("launcherRunning", launcherSpinning);
+
+            // Distance to target and dynamic RPM
+            if (currentTarget != null) {
+                Double[] robotPos = {follower.getPose().getX(), follower.getPose().getY(), 10.0};
+                double distanceToTarget = LocalizationAutoAim.getDistance(robotPos, currentTarget);
+                telemetryC.addData("Distance to Target (in)", String.format("%.1f", distanceToTarget));
+                telemetryC.addData("Dynamic RPM (Target)", dynamicRPM);
+            }
+
             telemetryC.addData("Intake State", intakeRunningState);
             telemetryC.addData("Ball Count", currentBallCount);
 
@@ -464,6 +550,13 @@ public class MainDriveOpmode extends OpMode {
             // ===== CPU USAGE/TEMP TELEMETRY =====
             telemetryC.addData("CPU Usage (%)", cpuUsage);
             telemetryC.addData("CPU Temp (°C)", cpuTemp);
+
+            // ===== THERMAL WARNING =====
+            // Warn if approaching emergency stop temperature (within 5°C)
+            if (cpuTemp >= MDOConstants.EmergencyStopTemp - 5 && cpuTemp > 0) {
+                telemetryC.addData("🚨 CRITICAL TEMP 🚨", String.format("%.1f°C (Stop at %.1f°C)",
+                    cpuTemp, MDOConstants.EmergencyStopTemp));
+            }
 
 
             // ===== PERFORMANCE TIMING TELEMETRY =====
@@ -499,8 +592,9 @@ public class MainDriveOpmode extends OpMode {
         // Calculate elevation angle for launch
         // start off with IMU offset
         // Pre-calculate launch vector conversions if available
+        boolean hasValidLaunchVectors = (launchVectors != null);
 
-        if (launchVectors != null) {
+        if (hasValidLaunchVectors) {
             launchAzimuthDeg = Math.toDegrees(launchVectors[1]);
             // Elevation is already calculated as servo position in LocalizationAutoAim, not radians
             launchElevationDeg = launchVectors[0];
@@ -514,28 +608,31 @@ public class MainDriveOpmode extends OpMode {
         }
 
         // Wrap-around for launchAzimuthDeg: Normalize to 0-360 degree range
-        if (launchAzimuthDeg != null) {
-            launchAzimuthDeg = launchAzimuthDeg % 360.0;
-            if (launchAzimuthDeg < 0) {
-                launchAzimuthDeg += 360.0;
-            }
+        launchAzimuthDeg = launchAzimuthDeg % 360.0;
+        if (launchAzimuthDeg < 0) {
+            launchAzimuthDeg += 360.0;
         }
 
         if (MDOConstants.EnableTurretIMUCorrection && MDOConstants.EnableTurret) {
-            fieldRelativeAzimuthDeg = robotFieldRelativeAzimuthDeg + MDOConstants.AzimuthIMUOffset;
+            // Get the robot's raw field-relative heading (no offset here - offset is for turret calibration)
+            double robotHeadingDeg = robotFieldRelativeAzimuthDeg;
 
-            // Wrap-around for fieldRelativeAzimuthDeg with offset
-            fieldRelativeAzimuthDeg = fieldRelativeAzimuthDeg % 360.0;
-            if (fieldRelativeAzimuthDeg < 0) {
-                fieldRelativeAzimuthDeg += 360.0;
+            // Wrap-around for robotHeadingDeg
+            robotHeadingDeg = robotHeadingDeg % 360.0;
+            if (robotHeadingDeg < 0) {
+                robotHeadingDeg += 360.0;
             }
 
-            fieldRelativeAzimuthDeg = fieldRelativeAzimuthDeg * MDOConstants.AzimuthMultiplier;
-
-            if (MDOConstants.EnableLauncherCalcAzimuth && launchAzimuthDeg != null) {
-                finalAzimuthDeg = fieldRelativeAzimuthDeg + launchAzimuthDeg;
+            if (MDOConstants.EnableLauncherCalcAzimuth && hasValidLaunchVectors) {
+                // launchAzimuthDeg is the field-relative angle from robot to target
+                // To aim the turret at the target, we need: robotHeading - targetAngle (reversed direction)
+                // This gives us the robot-relative angle to the target
+                // Then add the mechanical offset (AzimuthIMUOffset) to calibrate the turret's zero position
+                finalAzimuthDeg = robotHeadingDeg - launchAzimuthDeg + MDOConstants.AzimuthIMUOffset + MDOConstants.AzimuthFineAdjustment;
             } else {
-                finalAzimuthDeg = fieldRelativeAzimuthDeg;
+                // When not using launcher calc, just maintain heading-based orientation
+                // Apply the AzimuthIMUOffset to set the turret's "forward" position
+                finalAzimuthDeg = (robotHeadingDeg + MDOConstants.AzimuthIMUOffset) * MDOConstants.AzimuthMultiplier;
             }
 
             // Apply wrap-around offset before normalization, then remove it after

@@ -233,7 +233,8 @@ public class AprilTagLocalizer {
 								camX - xRotated,
 								camY - yRotated,
 								camZ - cameraPosition.z,
-								yaw
+								yaw,
+								(double) detection.id  // Add AprilTag ID to help with debugging
 						};
 					}
 				}
