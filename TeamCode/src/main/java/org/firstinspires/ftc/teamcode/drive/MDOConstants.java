@@ -11,10 +11,14 @@ public class MDOConstants {
     public static boolean useAprilTags = true;
 
     // Coordinates [x, y, z] for the red alliance target (e.g. goal)
-    public static Double[] redTargetLocation = new Double[]{-70.0, 70.0, 40.0};
+    // Pedro Pathing coords: x_new = y_old + 72, y_new = -x_old + 72
+    // Original (-70, 70, 40) → (142, 142, 40)
+    public static Double[] redTargetLocation = new Double[]{142.0, 142.0, 40.0};
 
     // Coordinates [x, y, z] for the blue alliance target (e.g. goal)
-    public static Double[] blueTargetLocation = new Double[]{-70.0, -70.0, 40.0};
+    // Pedro Pathing coords: x_new = y_old + 72, y_new = -x_old + 72
+    // Original (-70, -70, 40) → (2, 142, 40)
+    public static Double[] blueTargetLocation = new Double[]{2.0, 142.0, 40.0};
 
     // Calibration constants for launcher trajectory calculations {velocity, gravity}
     public static Double[] launcherCalcConstants = new Double[]{280.00, 386.09};
@@ -196,8 +200,9 @@ public class MDOConstants {
 	// Default starting positions for manual selection when no auto pose is available
 	// Format: {x, y, heading (degrees)}
 	// These can be tuned via Panels during init
-	public static double[] RedCloseStartPose = new double[]{-52.85, 49.15, -40.7};  // 0.8604 rad - 90° = ~-40.7°
-	public static double[] RedFarStartPose = new double[]{0.0, 0.0, 0.0};
-	public static double[] BlueCloseStartPose = new double[]{-52.85, -49.15, 49.3};  // 0.8604 rad = ~49.3°
-	public static double[] BlueFarStartPose = new double[]{0.0, 0.0, 0.0};
+	// Pedro Pathing coords: x_new = y_old + 72, y_new = -x_old + 72, heading_new = heading_old - 90
+	public static double[] RedCloseStartPose = new double[]{121.15, 124.85, -130.7};
+	public static double[] RedFarStartPose = new double[]{72.0, 72.0, -90.0};
+	public static double[] BlueCloseStartPose = new double[]{22.85, 124.85, -40.7};
+	public static double[] BlueFarStartPose = new double[]{72.0, 72.0, -90.0};
 }
