@@ -677,18 +677,30 @@ public class RobotCoreCustom {
 
 		public void launch(CustomColor color) {
 			boolean isLaunched = false;
+			// Priority order: slot 2 first, then 1, then 0
+			int[] slotPriority = {2, 1, 0};
 			if (color == CustomColor.NULL) {
-				for (int i = 0; i < 3; i++) {
+				for (int i : slotPriority) {
 					if (getColor(i) != CustomColor.NULL && !isLaunched) {
 						isLaunched = true;
 						lifterState[i] = 1;
 					}
 				}
 			} else {
-				for (int i = 0; i < 3; i++) {
+				// First try to find the requested color
+				for (int i : slotPriority) {
 					if (getColor(i) == color && !isLaunched) {
 						isLaunched = true;
 						lifterState[i] = 1;
+					}
+				}
+				// If requested color not found, launch any available ball
+				if (!isLaunched) {
+					for (int i : slotPriority) {
+						if (getColor(i) != CustomColor.NULL && !isLaunched) {
+							isLaunched = true;
+							lifterState[i] = 1;
+						}
 					}
 				}
 			}
@@ -699,36 +711,48 @@ public class RobotCoreCustom {
 		 */
 		public void launchCached(CustomColor color) {
 			boolean isLaunched = false;
+			// Priority order: slot 2 first, then 1, then 0
+			int[] slotPriority = {2, 1, 0};
 			if (color == CustomColor.NULL) {
-				for (int i = 0; i < 3; i++) {
+				for (int i : slotPriority) {
 					if (getCachedColor(i) != CustomColor.NULL && !isLaunched) {
 						isLaunched = true;
 						lifterState[i] = 1;
 					}
 				}
 			} else {
-				for (int i = 0; i < 3; i++) {
+				// First try to find the requested color
+				for (int i : slotPriority) {
 					if (getCachedColor(i) == color && !isLaunched) {
 						isLaunched = true;
 						lifterState[i] = 1;
 					}
 				}
+				// If requested color not found, launch any available ball
+				if (!isLaunched) {
+					for (int i : slotPriority) {
+						if (getCachedColor(i) != CustomColor.NULL && !isLaunched) {
+							isLaunched = true;
+							lifterState[i] = 1;
+						}
+					}
+				}
 			}
 		}
 		public void lifterUpdater() {
-				for (int i = 0; i < 3; i++) {
-					// Reverse Map for lifters
-					boolean[] reverseMap = MDOConstants.LifterReverseMap;
-					if (lifterState[i] == 1) {
-						lifterState[i] = 2;
-						lifterTimer.reset();
-						lifter[i].setPosition(reverseMap[i] ? 1 - MDOConstants.LifterPositionHigh : MDOConstants.LifterPositionHigh); // reversed Boolean ? flipped 0 to 1 range: normal
-					}
-					else if (lifterState[i] == 2 && lifterTimer.milliseconds() > MDOConstants.LifterWaitToTopTimerMillis) {
-						lifterState[i] = 0;
-						lifter[i].setPosition(reverseMap[i] ? 1 - MDOConstants.LifterPositionLow : MDOConstants.LifterPositionLow); // reversed Boolean ? flipped 0 to 1 range: normal
-					}
+			for (int i = 0; i < 3; i++) {
+				// Reverse Map for lifters
+				boolean[] reverseMap = MDOConstants.LifterReverseMap;
+				if (lifterState[i] == 1) {
+					lifterState[i] = 2;
+					lifterTimer.reset();
+					lifter[i].setPosition(reverseMap[i] ? 1 - MDOConstants.LifterPositionHigh : MDOConstants.LifterPositionHigh); // reversed Boolean ? flipped 0 to 1 range: normal
 				}
+				else if (lifterState[i] == 2 && lifterTimer.milliseconds() > MDOConstants.LifterWaitToTopTimerMillis) {
+					lifterState[i] = 0;
+					lifter[i].setPosition(reverseMap[i] ? 1 - MDOConstants.LifterPositionLow : MDOConstants.LifterPositionLow); // reversed Boolean ? flipped 0 to 1 range: normal
+				}
+			}
 		}
 		public void lightingUpdater() {
 			for (int i = 0; i < 3; i++) {
