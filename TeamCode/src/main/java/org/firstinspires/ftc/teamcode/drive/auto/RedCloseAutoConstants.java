@@ -32,4 +32,8 @@ public class RedCloseAutoConstants {
 
 	// Time to wait for ball collection in milliseconds
 	public static int intakeCollectTimeMs = 1300;
+
+	// Maximum time in each launch state before moving on (prevents infinite loops)
+	// 9 attempts (3 slots × 3 attempts) at ~1 second each = ~9 seconds, plus buffer
+	public static long maxLaunchStateTimeMs = 12000;
 }

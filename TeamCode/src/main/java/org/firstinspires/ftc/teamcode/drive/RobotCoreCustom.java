@@ -521,6 +521,8 @@ public class RobotCoreCustom {
 		// Cache for colors and ball count
 		private volatile CustomColor[] cachedColors = {CustomColor.NULL, CustomColor.NULL, CustomColor.NULL};
 		private volatile int cachedBallCount = 0;
+		// Lock lifters during launch to prevent balls from moving between pits
+		private volatile boolean liftersLocked = false;
 
 		public CustomSorterController(HardwareMap hardwareMap) {
 			lifter[0] = hardwareMap.get(Servo.class, "lifter0");
@@ -708,8 +710,9 @@ public class RobotCoreCustom {
 		/**
 		 * Launch command extended to use cached values if desired or fallback.
 		 * To use cached values, ensure updateSensors() is being called periodically.
+		 * @return true if a ball was found and launch was triggered, false otherwise
 		 */
-		public void launchCached(CustomColor color) {
+		public boolean launchCached(CustomColor color) {
 			boolean isLaunched = false;
 			// Priority order: slot 2 first, then 1, then 0
 			int[] slotPriority = {2, 1, 0};
@@ -738,7 +741,55 @@ public class RobotCoreCustom {
 					}
 				}
 			}
+			return isLaunched;
 		}
+
+		/**
+		 * Lock/unlock lifters during launch to prevent balls from moving between pits.
+		 * When locked, all lifters are held in the down position and lifterUpdater() is paused.
+		 * @param lock true to lock lifters down, false to unlock
+		 */
+		public void lockLiftersForLaunch(boolean lock) {
+			liftersLocked = lock;
+			if (lock) {
+				// Set all lifters to down position to trap balls in their current slots
+				boolean[] reverseMap = MDOConstants.LifterReverseMap;
+				for (int i = 0; i < 3; i++) {
+					// Only set to down if not currently launching (state 0)
+					if (lifterState[i] == 0) {
+						lifter[i].setPosition(reverseMap[i] ? 1 - MDOConstants.LifterPositionLow : MDOConstants.LifterPositionLow);
+					}
+				}
+			}
+		}
+
+		/**
+		 * Check if lifters are currently locked for launch.
+		 * @return true if lifters are locked
+		 */
+		public boolean areLiftersLocked() {
+			return liftersLocked;
+		}
+
+		/**
+		 * Force launch from a specific slot, regardless of sensor reading.
+		 * Use this as a fallback when sensors don't detect a ball.
+		 * @param slot The slot index (0, 1, or 2) to force launch from
+		 */
+		public void forceLaunchSlot(int slot) {
+			if (slot >= 0 && slot < 3) {
+				lifterState[slot] = 1;
+			}
+		}
+
+		/**
+		 * Get the total number of slots.
+		 * @return number of slots (3)
+		 */
+		public int getSlotCount() {
+			return 3;
+		}
+
 		public void lifterUpdater() {
 			for (int i = 0; i < 3; i++) {
 				// Reverse Map for lifters

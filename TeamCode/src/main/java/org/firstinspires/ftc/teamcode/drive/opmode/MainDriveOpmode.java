@@ -84,6 +84,9 @@ public class MainDriveOpmode extends OpMode {
     private int telemetryLoopCounter = 0;
     private static final int TELEMETRY_UPDATE_INTERVAL = 5; // Update telemetry every N loops (higher = less lag)
 
+    // Disable camera completely - set to false to skip all camera/AprilTag initialization
+    private static final boolean ENABLE_CAMERA = false;
+
     // Threads
     // Handles background tasks like sensor reading and servo PID to keep the main loop fast
     CustomThreads customThreads;
@@ -103,11 +106,13 @@ public class MainDriveOpmode extends OpMode {
         
         robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
 
-        localizer = new AprilTagLocalizer();
+        if (ENABLE_CAMERA) {
+            localizer = new AprilTagLocalizer();
 
-        // Apply initial value
-        localizer.cameraPosition = new Position(DistanceUnit.INCH,
-                MDOConstants.CameraOffset[0], MDOConstants.CameraOffset[1], MDOConstants.CameraOffset[2], 0);
+            // Apply initial value
+            localizer.cameraPosition = new Position(DistanceUnit.INCH,
+                    MDOConstants.CameraOffset[0], MDOConstants.CameraOffset[1], MDOConstants.CameraOffset[2], 0);
+        }
 
         elevationServo = new RobotCoreCustom.CustomAxonServoController(
                 hardwareMap,
@@ -125,7 +130,9 @@ public class MainDriveOpmode extends OpMode {
                 MDOConstants.AzimuthPIDFConstants,
                 "azimuthPosition"
         );
-        localizer.initAprilTag(hardwareMap, "Webcam 1");
+        if (ENABLE_CAMERA) {
+            localizer.initAprilTag(hardwareMap, "Webcam 1");
+        }
 
         launcherMotors = new RobotCoreCustom.CustomMotorController(
                 hardwareMap,
@@ -175,7 +182,9 @@ public class MainDriveOpmode extends OpMode {
         // Pass the sorter controller to the thread manager so it can update sensors in the background
         customThreads.setSorterController(sorterController);
         // Pass the AprilTag localizer to process detections in background
-        customThreads.setAprilTagLocalizer(localizer);
+        if (ENABLE_CAMERA) {
+            customThreads.setAprilTagLocalizer(localizer);
+        }
 
     }
 
@@ -252,7 +261,9 @@ public class MainDriveOpmode extends OpMode {
             customThreads.startFollowerUpdateThread();
         }
         // Start the AprilTag processing thread to offload vision processing
-        customThreads.startAprilTagThread();
+        if (ENABLE_CAMERA) {
+            customThreads.startAprilTagThread();
+        }
         // Start the launcher PIDF thread for RPM control
         customThreads.startLauncherPIDThread();
     }
@@ -272,10 +283,12 @@ public class MainDriveOpmode extends OpMode {
             customThreads.stopFollowerUpdateThread();
         }
         // Stop the AprilTag thread
-        customThreads.stopAprilTagThread();
+        if (ENABLE_CAMERA) {
+            customThreads.stopAprilTagThread();
+            localizer.stopStream();
+        }
         // Stop the launcher PID thread
         customThreads.stopLauncherPIDThread();
-        localizer.stopStream();
     }
 
     @SuppressLint("DefaultLocale")
