@@ -64,7 +64,23 @@ public class RobotCoreCustom {
 		if (follower == null || target == null || target.length < 3) {
 			return null;
 		}
-		Double[] pose = {follower.getPose().getX(), follower.getPose().getY(), follower.getPose().getHeading()};
+		// Get pose once and pass to thread-safe overload
+		com.pedropathing.geometry.Pose currentPose = follower.getPose();
+		if (currentPose == null) {
+			return null;
+		}
+		return localizerLauncherCalc(currentPose, target, isRedSide);
+	}
+
+	/**
+	 * Thread-safe overload that accepts a pre-fetched Pose
+	 * Use this when calling from threaded code to avoid race conditions
+	 */
+	public static Double[] localizerLauncherCalc(com.pedropathing.geometry.Pose pose, Double[] target, boolean isRedSide) {
+		if (pose == null || target == null || target.length < 3) {
+			return null;
+		}
+		Double[] poseArr = {pose.getX(), pose.getY(), pose.getHeading()};
 		// Use alliance-specific launcher constants
 		Double[] launcherConstants = isRedSide ? MDOConstants.RedLauncherCalcConstants : MDOConstants.BlueLauncherCalcConstants;
 		// launch position (x, y, z)
@@ -72,7 +88,7 @@ public class RobotCoreCustom {
 		// launch velocity (in/s)
 		// gravity (in/s^2)
 		return LocalizationAutoAim.calculateLaunchAngle(
-				new Double[]{pose[0], pose[1], 10.0}, // launch position (x, y, z)
+				new Double[]{poseArr[0], poseArr[1], 10.0}, // launch position (x, y, z)
 				new Double[]{target[0], target[1], target[2]}, // target position (x, y, z)
 				launcherConstants[0], // launch velocity (in/s)
 				launcherConstants[1] // gravity (in/s^2)
@@ -99,6 +115,22 @@ public class RobotCoreCustom {
 	public static int calculateLauncherRPM(Follower follower, Double[] target, boolean isRedSide) {
 		// Get alliance-specific values
 		int staticRPM = isRedSide ? MDOConstants.RedLauncherRPM : MDOConstants.BlueLauncherRPM;
+
+		if (follower == null) {
+			return staticRPM;
+		}
+		// Get pose once and pass to thread-safe overload
+		com.pedropathing.geometry.Pose currentPose = follower.getPose();
+		return calculateLauncherRPM(currentPose, target, isRedSide);
+	}
+
+	/**
+	 * Thread-safe overload that accepts a pre-fetched Pose
+	 * Use this when calling from threaded code to avoid race conditions
+	 */
+	public static int calculateLauncherRPM(com.pedropathing.geometry.Pose pose, Double[] target, boolean isRedSide) {
+		// Get alliance-specific values
+		int staticRPM = isRedSide ? MDOConstants.RedLauncherRPM : MDOConstants.BlueLauncherRPM;
 		double[][] rpmZones = isRedSide ? MDOConstants.RedLauncherRPMZones : MDOConstants.BlueLauncherRPMZones;
 
 		// If zones are disabled, return static RPM
@@ -107,11 +139,11 @@ public class RobotCoreCustom {
 		}
 
 		// Calculate distance to target
-		if (follower == null || target == null || target.length < 3) {
+		if (pose == null || target == null || target.length < 3) {
 			return staticRPM; // Fallback to default
 		}
 
-		Double[] robotPos = {follower.getPose().getX(), follower.getPose().getY(), 10.0};
+		Double[] robotPos = {pose.getX(), pose.getY(), 10.0};
 		double distance = LocalizationAutoAim.getDistance(robotPos, target);
 
 		// Find appropriate RPM zone based on distance
@@ -134,6 +166,23 @@ public class RobotCoreCustom {
 			Drawing.sendPacket();
 		} catch (Exception e) {
 			throw new RuntimeException("Drawing failed " + e);
+		}
+	}
+
+	/**
+	 * Thread-safe version of drawCurrent that takes a pre-fetched Pose
+	 * Use this when calling from a background thread to avoid race conditions
+	 * @param pose The pre-fetched pose to draw
+	 */
+	public void drawCurrentWithPose(com.pedropathing.geometry.Pose pose) {
+		try {
+			if (pose != null) {
+				Drawing.drawRobot(pose);
+				Drawing.sendPacket();
+			}
+		} catch (Exception e) {
+			// Log but don't crash - drawing is non-critical
+			System.err.println("Drawing failed: " + e.getMessage());
 		}
 	}
 
@@ -342,6 +391,17 @@ public class RobotCoreCustom {
 		 */
 		public double getTargetPower() {
 			return targetPower;
+		}
+
+		/**
+		 * Get the last applied PID output power
+		 * @return Last applied group power from PID controller (-1 to 1)
+		 */
+		public double getPIDOutput() {
+			synchronized (lock) {
+				// Return 0 if never set (initial impossible value)
+				return lastAppliedGroupPower == 123456.0 ? 0.0 : lastAppliedGroupPower;
+			}
 		}
 
 		/**
@@ -825,19 +885,97 @@ public class RobotCoreCustom {
 			}
 		}
 
+		/**
+		 * Converts RGB to HSV and classifies color based on hue, saturation, and value thresholds.
+		 * This approach is more robust than simple RGB comparison and reduces false positives/negatives.
+		 *
+		 * HSV ranges:
+		 * - Hue: 0-360 degrees (Red: 0/360, Green: ~120, Blue: ~240, Purple/Magenta: ~280-320)
+		 * - Saturation: 0-1 (0 = gray, 1 = pure color)
+		 * - Value: 0-1 (0 = black, 1 = bright)
+		 */
 		private CustomColor calcColor(int argb) {
 			// Extract color components from ARGB int
 			int red = (argb >> 16) & 0xFF;
 			int green = (argb >> 8) & 0xFF;
 			int blue = argb & 0xFF;
 
-			if (green > blue && green > red) {
-				return CustomColor.GREEN;
-			} else if (blue > green && blue > red) {
-				return CustomColor.PURPLE;
-			} else {
+			// Convert RGB to HSV for better color classification
+			float[] hsv = rgbToHsv(red, green, blue);
+			float hue = hsv[0];        // 0-360
+			float saturation = hsv[1]; // 0-1
+			float value = hsv[2];      // 0-1
+
+			// Get thresholds from constants (or use defaults)
+			float minBrightness = (float) MDOConstants.ColorMinBrightness;
+			float minSaturation = (float) MDOConstants.ColorMinSaturation;
+			float greenHueMin = (float) MDOConstants.GreenHueMin;
+			float greenHueMax = (float) MDOConstants.GreenHueMax;
+			float purpleHueMin = (float) MDOConstants.PurpleHueMin;
+			float purpleHueMax = (float) MDOConstants.PurpleHueMax;
+
+			// Check minimum brightness - if too dark, no ball is present
+			if (value < minBrightness) {
 				return CustomColor.NULL;
 			}
+
+			// Check minimum saturation - if too gray/white, can't determine color
+			if (saturation < minSaturation) {
+				return CustomColor.NULL;
+			}
+
+			// Classify based on hue ranges
+			// Green: typically 80-160 degrees
+			if (hue >= greenHueMin && hue <= greenHueMax) {
+				return CustomColor.GREEN;
+			}
+
+			// Purple/Magenta: typically 260-320 degrees
+			// Also check for blue-purple range (220-320)
+			if (hue >= purpleHueMin && hue <= purpleHueMax) {
+				return CustomColor.PURPLE;
+			}
+
+			// No match - return NULL
+			return CustomColor.NULL;
+		}
+
+		/**
+		 * Converts RGB values to HSV (Hue, Saturation, Value)
+		 * @param r Red component (0-255)
+		 * @param g Green component (0-255)
+		 * @param b Blue component (0-255)
+		 * @return float array [hue (0-360), saturation (0-1), value (0-1)]
+		 */
+		private float[] rgbToHsv(int r, int g, int b) {
+			float rf = r / 255f;
+			float gf = g / 255f;
+			float bf = b / 255f;
+
+			float max = Math.max(rf, Math.max(gf, bf));
+			float min = Math.min(rf, Math.min(gf, bf));
+			float delta = max - min;
+
+			float hue = 0;
+			float saturation = (max == 0) ? 0 : (delta / max);
+			float value = max;
+
+			if (delta != 0) {
+				if (max == rf) {
+					hue = 60 * (((gf - bf) / delta) % 6);
+				} else if (max == gf) {
+					hue = 60 * (((bf - rf) / delta) + 2);
+				} else {
+					hue = 60 * (((rf - gf) / delta) + 4);
+				}
+			}
+
+			// Ensure hue is in 0-360 range
+			if (hue < 0) {
+				hue += 360;
+			}
+
+			return new float[]{hue, saturation, value};
 		}
 	}
 	public static class CustomRGBController {

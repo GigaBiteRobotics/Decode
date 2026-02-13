@@ -101,6 +101,32 @@ public class MDOConstants {
     // Allow the launcher calculator to automatically control the azimuth angle
     public static boolean EnableLauncherCalcAzimuth = true;
 
+    // ===== COLOR SENSOR CLASSIFICATION THRESHOLDS =====
+    // These thresholds are used to classify ball colors and reduce false positives/negatives
+
+    // Minimum brightness (HSV Value) required to detect a ball (0.0-1.0)
+    // Lower values = more sensitive to dark colors but more false positives
+    // Higher values = less sensitive, may miss balls in shadows
+    // Recommended: 0.15-0.30
+    public static double ColorMinBrightness = 0.20;
+
+    // Minimum saturation required to classify a color (0.0-1.0)
+    // Low saturation = gray/white, can't determine actual color
+    // Higher values = more confident color detection but may miss faded balls
+    // Recommended: 0.25-0.45
+    public static double ColorMinSaturation = 0.30;
+
+    // Hue range for GREEN ball detection (HSV hue, 0-360 degrees)
+    // Green is typically around 80-160 degrees
+    public static double GreenHueMin = 80.0;
+    public static double GreenHueMax = 160.0;
+
+    // Hue range for PURPLE ball detection (HSV hue, 0-360 degrees)
+    // Purple/Magenta is typically around 260-320 degrees
+    // Wider range (220-330) to catch blue-purple variations
+    public static double PurpleHueMin = 220.0;
+    public static double PurpleHueMax = 330.0;
+
     // Fine adjustment offset for azimuth aiming (in degrees)
     // Positive values rotate turret clockwise, negative counter-clockwise
     public static Double AzimuthFineAdjustment = 0.0;

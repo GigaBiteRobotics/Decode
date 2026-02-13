@@ -103,7 +103,10 @@ public class MainDriveOpmode extends OpMode {
         // Get data from autonomous if available
         AutoToTeleDataTransferer dataTransfer = AutoToTeleDataTransferer.getInstance();
         Pose startPose = dataTransfer.getEndPose();
-        
+        if (startPose == null) {
+            startPose = new Pose(0, 0, 0);
+        }
+
         robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
 
         if (ENABLE_CAMERA) {
@@ -137,7 +140,7 @@ public class MainDriveOpmode extends OpMode {
         launcherMotors = new RobotCoreCustom.CustomMotorController(
                 hardwareMap,
                 new String[]{"launcher0", "launcher1"},
-                new boolean[]{false, true}, // launcher1 is reversed
+                new boolean[]{true, false}, // launcher1 is reversed
                 new boolean[]{true, false}, // encoder reverse map: launcher1 encoder is reversed
                 true, // has encoders
                 28.0, // ticks per rev
@@ -302,21 +305,31 @@ public class MainDriveOpmode extends OpMode {
         // Follower/Pose data
         Pose currentPose;
         double poseX, poseY, robotHeadingRad;
-        currentPose = follower.getPose();
+        // Use thread-safe pose when follower update thread is running to prevent race conditions
+        if (MDOConstants.EnableThreadedFollowerUpdate) {
+            currentPose = customThreads.getThreadSafePose();
+        } else {
+            currentPose = follower.getPose();
+        }
+        if (currentPose == null) {
+            // Pose not yet available, use default values and skip this loop iteration
+            currentPose = new Pose(0, 0, 0);
+        }
         poseX = currentPose.getX();
         poseY = currentPose.getY();
-        robotHeadingRad = follower.getHeading();
+        robotHeadingRad = currentPose.getHeading();
         robotFieldRelativeAzimuthDeg = Math.toDegrees(robotHeadingRad);
 
 
         // Launch calculations - pass alliance side for side-specific tuning
+        // Use the already-fetched thread-safe pose instead of accessing follower.getPose() again
         boolean isRedSide = (team == Team.RED);
-        launchVectors = RobotCoreCustom.localizerLauncherCalc(follower, (team == Team.RED) ?
+        launchVectors = RobotCoreCustom.localizerLauncherCalc(currentPose, (team == Team.RED) ?
                 MDOConstants.redTargetLocation : MDOConstants.blueTargetLocation, isRedSide);
 
         // Current target and dynamic RPM calculation
         Double[] currentTarget = (team == Team.RED) ? MDOConstants.redTargetLocation : MDOConstants.blueTargetLocation;
-        int dynamicRPM = RobotCoreCustom.calculateLauncherRPM(follower, currentTarget, isRedSide);
+        int dynamicRPM = RobotCoreCustom.calculateLauncherRPM(currentPose, currentTarget, isRedSide);
 
         // Launcher data
         double launcherRPM = launcherMotors.getAverageRPM();
@@ -418,7 +431,13 @@ public class MainDriveOpmode extends OpMode {
             // Use alliance-specific AprilTag heading offset
             double aprilTagHeadingOffset = (team == Team.RED) ? MDOConstants.RedAprilTagHeadingOffset : MDOConstants.BlueAprilTagHeadingOffset;
             if (decisionMargin > 0.8 && aprilSlowdownTimer.milliseconds() > 100) {
-                follower.setPose(new Pose(aprilPose[0], aprilPose[1], aprilPose[3] + Math.toRadians(aprilTagHeadingOffset)));
+                Pose newPose = new Pose(aprilPose[0], aprilPose[1], aprilPose[3] + Math.toRadians(aprilTagHeadingOffset));
+                // Use thread-safe method when follower update thread is running
+                if (MDOConstants.EnableThreadedFollowerUpdate) {
+                    customThreads.setThreadSafePose(newPose);
+                } else {
+                    follower.setPose(newPose);
+                }
                 aprilSlowdownTimer.reset();
             }
         }
@@ -567,12 +586,13 @@ public class MainDriveOpmode extends OpMode {
             }
 
             telemetryC.addData("Launcher RPM", launcherRPM);
-            telemetryC.addData("Launcher Pressure", targetPower); // Corrected label to Launcher Power, but kept logic
+            telemetryC.addData("Launcher Pressure", launcherMotors.getPIDOutput());
 	        telemetryC.addData("launcherRunning", launcherSpinning);
 
             // Distance to target and dynamic RPM
             if (currentTarget != null) {
-                Double[] robotPos = {follower.getPose().getX(), follower.getPose().getY(), 10.0};
+                // Use already-cached pose values instead of calling follower.getPose() again
+                Double[] robotPos = {poseX, poseY, 10.0};
                 double distanceToTarget = LocalizationAutoAim.getDistance(robotPos, currentTarget);
                 telemetryC.addData("Distance to Target (in)", String.format("%.1f", distanceToTarget));
                 telemetryC.addData("Dynamic RPM (Target)", dynamicRPM);

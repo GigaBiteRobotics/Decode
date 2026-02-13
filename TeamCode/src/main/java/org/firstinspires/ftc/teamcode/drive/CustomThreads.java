@@ -1,6 +1,7 @@
 package org.firstinspires.ftc.teamcode.drive;
 
 import com.pedropathing.follower.Follower;
+import com.pedropathing.geometry.Pose;
 
 import org.firstinspires.ftc.teamcode.CpuMonitor;
 
@@ -8,6 +9,11 @@ public class CustomThreads {
 
     RobotCoreCustom robotCoreCustom;
     Follower follower;
+
+    // Thread-safe pose caching to prevent race conditions when accessing follower.getPose()
+    private final Object followerLock = new Object();
+    private volatile Pose cachedPose = null;
+
     private Thread drawingThread;
     private volatile boolean drawingThreadRunning = false;
 
@@ -47,6 +53,67 @@ public class CustomThreads {
     public CustomThreads(RobotCoreCustom robotCoreCustom, Follower follower) {
         this.robotCoreCustom = robotCoreCustom;
         this.follower = follower;
+        // Initialize cached pose to default - will be updated by followerUpdateThread
+        // We don't call follower.getPose() here because it might not be safe during construction
+        this.cachedPose = new Pose(0, 0, 0);
+    }
+
+    /**
+     * Thread-safe method to get the current robot pose
+     * This method returns the cached pose that is updated by the follower update thread.
+     * IMPORTANT: This method NEVER calls follower.getPose() directly to prevent race conditions.
+     * The cache is updated ONLY by the followerUpdateThread after each follower.update() call.
+     * @return A copy of the current cached pose (thread-safe)
+     */
+    public Pose getThreadSafePose() {
+        synchronized (followerLock) {
+            // Always return a copy of the cached pose
+            // The cache is updated ONLY by the followerUpdateThread
+            if (cachedPose == null) {
+                // Return default pose if never initialized
+                return new Pose(0, 0, 0);
+            }
+            // Return a copy to prevent external modification
+            return new Pose(cachedPose.getX(), cachedPose.getY(), cachedPose.getHeading());
+        }
+    }
+
+    /**
+     * Thread-safe method to set the follower pose
+     * Use this when updating pose from AprilTag or other sources while threaded update is running
+     * @param pose The new pose to set
+     */
+    public void setThreadSafePose(Pose pose) {
+        synchronized (followerLock) {
+            try {
+                if (follower != null && pose != null) {
+                    follower.setPose(pose);
+                    // Also update cached pose immediately
+                    cachedPose = new Pose(pose.getX(), pose.getY(), pose.getHeading());
+                }
+            } catch (Exception e) {
+                System.err.println("Error setting pose: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Thread-safe method to update the cached pose
+     * Call this after follower.update() to refresh the cache
+     */
+    public void updateCachedPose() {
+        synchronized (followerLock) {
+            try {
+                if (follower != null) {
+                    Pose currentPose = follower.getPose();
+                    if (currentPose != null) {
+                        cachedPose = new Pose(currentPose.getX(), currentPose.getY(), currentPose.getHeading());
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Error updating cached pose: " + e.getMessage());
+            }
+        }
     }
 
     /**
@@ -99,7 +166,9 @@ public class CustomThreads {
         drawingThread = new Thread(() -> {
             while (drawingThreadRunning) {
                 try {
-                    robotCoreCustom.drawCurrentAndHistory(follower);
+                    // Use thread-safe pose access to prevent race conditions
+                    Pose safePose = getThreadSafePose();
+                    robotCoreCustom.drawCurrentWithPose(safePose);
                     Thread.sleep(10); // Adjust the sleep time as needed
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -323,8 +392,11 @@ public class CustomThreads {
         driveThread = new Thread(() -> {
             while (driveThreadRunning) {
                 try {
-                    // Update follower with current drive inputs
-                    follower.setTeleOpDrive(driveY, driveX, driveRotation, driveFieldCentric);
+                    // Synchronize follower access to prevent race conditions
+                    synchronized (followerLock) {
+                        // Update follower with current drive inputs
+                        follower.setTeleOpDrive(driveY, driveX, driveRotation, driveFieldCentric);
+                    }
 
                     // Run at high frequency for responsive driving (~200Hz)
                     Thread.sleep(5);
@@ -411,8 +483,16 @@ public class CustomThreads {
         followerUpdateThread = new Thread(() -> {
             while (followerUpdateThreadRunning) {
                 try {
-                    // This is the expensive operation that updates odometry, path following, etc.
-                    follower.update();
+                    // Synchronize follower.update() to prevent race conditions with getPose()
+                    synchronized (followerLock) {
+                        // This is the expensive operation that updates odometry, path following, etc.
+                        follower.update();
+                        // Update cached pose immediately after update
+                        Pose currentPose = follower.getPose();
+                        if (currentPose != null) {
+                            cachedPose = new Pose(currentPose.getX(), currentPose.getY(), currentPose.getHeading());
+                        }
+                    }
 
                     // Run at high frequency for accurate odometry (~200Hz)
                     Thread.sleep(5);
