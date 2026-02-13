@@ -14,23 +14,23 @@ public class Constants {
     public static FollowerConstants followerConstants = new FollowerConstants()
 		    .forwardZeroPowerAcceleration(-35.244)
 		    .lateralZeroPowerAcceleration(-53.551)
-            .mass(4);
+            .mass(12);
 
     public static MecanumConstants driveConstants = new MecanumConstants()
             .maxPower(1)
 		    .xVelocity(68.578)
 		    .yVelocity(53.301)
             .rightFrontMotorName("rf")
-            .rightRearMotorName("rr")
-            .leftRearMotorName("lr")
+            .rightRearMotorName("rb")
+            .leftRearMotorName("lb")
             .leftFrontMotorName("lf")
-            .leftFrontMotorDirection(DcMotorSimple.Direction.REVERSE)
-            .leftRearMotorDirection(DcMotorSimple.Direction.REVERSE)
+            .leftFrontMotorDirection(DcMotorSimple.Direction.FORWARD)
+            .leftRearMotorDirection(DcMotorSimple.Direction.FORWARD)
             .rightFrontMotorDirection(DcMotorSimple.Direction.FORWARD)
             .rightRearMotorDirection(DcMotorSimple.Direction.FORWARD);
 
     public static TwoWheelConstants localizerConstants = new TwoWheelConstants()
-            .forwardEncoder_HardwareMapName("rr")
+            .forwardEncoder_HardwareMapName("rb")
             .forwardPodY(-5.295)
             .forwardTicksToInches(-0.00195915)
             .strafeEncoder_HardwareMapName("lf")
