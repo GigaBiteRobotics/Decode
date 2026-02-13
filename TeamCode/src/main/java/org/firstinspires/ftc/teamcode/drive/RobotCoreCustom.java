@@ -584,6 +584,12 @@ public class RobotCoreCustom {
 		// Lock lifters during launch to prevent balls from moving between pits
 		private volatile boolean liftersLocked = false;
 
+		// ===== DEBUG TELEMETRY DATA (updated in background thread) =====
+		// Cached RGB values for each sensor [sensor index][R, G, B]
+		private volatile int[][] cachedRGB = new int[6][3];
+		// Cached HSV values for each sensor [sensor index][H, S, V]
+		private volatile float[][] cachedHSV = new float[6][3];
+
 		public CustomSorterController(HardwareMap hardwareMap) {
 			lifter[0] = hardwareMap.get(Servo.class, "lifter0");
 			lifter[1] = hardwareMap.get(Servo.class, "lifter1");
@@ -598,9 +604,11 @@ public class RobotCoreCustom {
 			lifterTimer = new ElapsedTime();
 
 			// Initialize lifters to low position
+			int[] lifterMapping = MDOConstants.LifterPitMapping;
 			boolean[] reverseMap = MDOConstants.LifterReverseMap;
 			for (int i = 0; i < 3; i++) {
-				lifter[i].setPosition(reverseMap[i] ? 1 - MDOConstants.LifterPositionLow : MDOConstants.LifterPositionLow);
+				int lifterIndex = lifterMapping[i];
+				lifter[lifterIndex].setPosition(reverseMap[lifterIndex] ? 1 - MDOConstants.LifterPositionLow : MDOConstants.LifterPositionLow);
 			}
 		}
 
@@ -612,21 +620,37 @@ public class RobotCoreCustom {
 			int ballCount = 0;
 			CustomColor[] newColors = new CustomColor[3];
 
+			// Update debug data for all 6 sensors
+			int[][] newRGB = new int[6][3];
+			float[][] newHSV = new float[6][3];
+
+			for (int s = 0; s < 6; s++) {
+				int argb = colorSensor[s].argb();
+				int red = (argb >> 16) & 0xFF;
+				int green = (argb >> 8) & 0xFF;
+				int blue = argb & 0xFF;
+				newRGB[s] = new int[]{red, green, blue};
+				newHSV[s] = rgbToHsv(red, green, blue);
+			}
+			cachedRGB = newRGB;
+			cachedHSV = newHSV;
+
 			for (int i = 0; i < 3; i++) {
 				int sensorIndex0, sensorIndex1;
+				int[] mapping = MDOConstants.ColorSensorPitMapping;
 
 				switch (i) {
 					case 0:
-						sensorIndex0 = 0;
-						sensorIndex1 = 1;
+						sensorIndex0 = mapping[0];
+						sensorIndex1 = mapping[1];
 						break;
 					case 1:
-						sensorIndex0 = 4;
-						sensorIndex1 = 5;
+						sensorIndex0 = mapping[2];
+						sensorIndex1 = mapping[3];
 						break;
 					case 2:
-						sensorIndex0 = 2;
-						sensorIndex1 = 3;
+						sensorIndex0 = mapping[4];
+						sensorIndex1 = mapping[5];
 						break;
 					default:
 						// Should not happen for 0-2
@@ -672,6 +696,43 @@ public class RobotCoreCustom {
 			return cachedBallCount;
 		}
 
+		/**
+		 * Get cached RGB values for a sensor.
+		 * @param sensorIndex The sensor index (0-5)
+		 * @return int array [R, G, B] (0-255 each)
+		 */
+		public int[] getCachedRGB(int sensorIndex) {
+			if (sensorIndex >= 0 && sensorIndex < 6) {
+				return cachedRGB[sensorIndex];
+			}
+			return new int[]{0, 0, 0};
+		}
+
+		/**
+		 * Get cached HSV values for a sensor.
+		 * @param sensorIndex The sensor index (0-5)
+		 * @return float array [H (0-360), S (0-1), V (0-1)]
+		 */
+		public float[] getCachedHSV(int sensorIndex) {
+			if (sensorIndex >= 0 && sensorIndex < 6) {
+				return cachedHSV[sensorIndex];
+			}
+			return new float[]{0, 0, 0};
+		}
+
+		/**
+		 * Get formatted debug string for a sensor.
+		 * @param sensorIndex The sensor index (0-5)
+		 * @return Formatted string with RGB, HSV values, and raw sum
+		 */
+		public String getDebugString(int sensorIndex) {
+			int[] rgb = getCachedRGB(sensorIndex);
+			float[] hsv = getCachedHSV(sensorIndex);
+			int rawSum = rgb[0] + rgb[1] + rgb[2];
+			return String.format("RGB(%d,%d,%d) Sum:%d H:%.0f S:%.2f V:%.2f",
+					rgb[0], rgb[1], rgb[2], rawSum, hsv[0], hsv[1], hsv[2]);
+		}
+
 		/* Original blocking method kept for reference or direct use if needed */
 		public CustomColor getDirectColor(int pitSelector) {
 			return getColor(pitSelector);
@@ -680,19 +741,20 @@ public class RobotCoreCustom {
 		public CustomColor getColor(int pitSelector) {
 
 			int sensorIndex0, sensorIndex1;
+			int[] mapping = MDOConstants.ColorSensorPitMapping;
 
 			switch (pitSelector) {
 				case 0:
-					sensorIndex0 = 0;
-					sensorIndex1 = 1;
+					sensorIndex0 = mapping[0];
+					sensorIndex1 = mapping[1];
 					break;
 				case 1:
-					sensorIndex0 = 4;
-					sensorIndex1 = 5;
+					sensorIndex0 = mapping[2];
+					sensorIndex1 = mapping[3];
 					break;
 				case 2:
-					sensorIndex0 = 2;
-					sensorIndex1 = 3;
+					sensorIndex0 = mapping[4];
+					sensorIndex1 = mapping[5];
 					break;
 				default:
 					throw new IllegalArgumentException("Invalid pit selector: " + pitSelector);
@@ -743,23 +805,26 @@ public class RobotCoreCustom {
 			int[] slotPriority = {2, 1, 0};
 			if (color == CustomColor.NULL) {
 				for (int i : slotPriority) {
-					if (getColor(i) != CustomColor.NULL && !isLaunched) {
+					// Only launch from idle slots (state 0) to prevent double-launching
+					if (lifterState[i] == 0 && getColor(i) != CustomColor.NULL && !isLaunched) {
 						isLaunched = true;
 						lifterState[i] = 1;
 					}
 				}
 			} else {
-				// First try to find the requested color
+				// First try to find the requested color in an idle slot
 				for (int i : slotPriority) {
-					if (getColor(i) == color && !isLaunched) {
+					// Only launch from idle slots (state 0) to prevent double-launching
+					if (lifterState[i] == 0 && getColor(i) == color && !isLaunched) {
 						isLaunched = true;
 						lifterState[i] = 1;
 					}
 				}
-				// If requested color not found, launch any available ball
+				// If requested color not found in idle slot, launch any available ball from idle slot
 				if (!isLaunched) {
 					for (int i : slotPriority) {
-						if (getColor(i) != CustomColor.NULL && !isLaunched) {
+						// Only launch from idle slots (state 0) to prevent double-launching
+						if (lifterState[i] == 0 && getColor(i) != CustomColor.NULL && !isLaunched) {
 							isLaunched = true;
 							lifterState[i] = 1;
 						}
@@ -778,29 +843,60 @@ public class RobotCoreCustom {
 			int[] slotPriority = {2, 1, 0};
 			if (color == CustomColor.NULL) {
 				for (int i : slotPriority) {
-					if (getCachedColor(i) != CustomColor.NULL && !isLaunched) {
+					// Only launch from idle slots (state 0) to prevent double-launching
+					if (lifterState[i] == 0 && getCachedColor(i) != CustomColor.NULL && !isLaunched) {
 						isLaunched = true;
 						lifterState[i] = 1;
 					}
 				}
 			} else {
-				// First try to find the requested color
+				// First try to find the requested color in an idle slot
 				for (int i : slotPriority) {
-					if (getCachedColor(i) == color && !isLaunched) {
+					// Only launch from idle slots (state 0) to prevent double-launching
+					if (lifterState[i] == 0 && getCachedColor(i) == color && !isLaunched) {
 						isLaunched = true;
 						lifterState[i] = 1;
 					}
 				}
-				// If requested color not found, launch any available ball
+				// If requested color not found in idle slot, launch any available ball from idle slot
 				if (!isLaunched) {
 					for (int i : slotPriority) {
-						if (getCachedColor(i) != CustomColor.NULL && !isLaunched) {
+						// Only launch from idle slots (state 0) to prevent double-launching
+						if (lifterState[i] == 0 && getCachedColor(i) != CustomColor.NULL && !isLaunched) {
 							isLaunched = true;
 							lifterState[i] = 1;
 						}
 					}
 				}
 			}
+			return isLaunched;
+		}
+
+		/**
+		 * Launch command that ONLY launches the requested color (no fallback).
+		 * Use this for sorted/ordered launching where you need a specific color.
+		 * To use cached values, ensure updateSensors() is being called periodically.
+		 * @param color The specific color to launch (must not be NULL)
+		 * @return true if a ball of the requested color was found and launch was triggered, false otherwise
+		 */
+		public boolean launchCachedStrict(CustomColor color) {
+			if (color == CustomColor.NULL) {
+				return false; // Strict mode requires a specific color
+			}
+
+			boolean isLaunched = false;
+			// Priority order: slot 2 first, then 1, then 0
+			int[] slotPriority = {2, 1, 0};
+
+			// Only launch the requested color - no fallback to other colors
+			for (int i : slotPriority) {
+				// Only launch from idle slots (state 0) to prevent double-launching
+				if (lifterState[i] == 0 && getCachedColor(i) == color && !isLaunched) {
+					isLaunched = true;
+					lifterState[i] = 1;
+				}
+			}
+
 			return isLaunched;
 		}
 
@@ -813,11 +909,13 @@ public class RobotCoreCustom {
 			liftersLocked = lock;
 			if (lock) {
 				// Set all lifters to down position to trap balls in their current slots
+				int[] lifterMapping = MDOConstants.LifterPitMapping;
 				boolean[] reverseMap = MDOConstants.LifterReverseMap;
 				for (int i = 0; i < 3; i++) {
+					int lifterIndex = lifterMapping[i];
 					// Only set to down if not currently launching (state 0)
 					if (lifterState[i] == 0) {
-						lifter[i].setPosition(reverseMap[i] ? 1 - MDOConstants.LifterPositionLow : MDOConstants.LifterPositionLow);
+						lifter[lifterIndex].setPosition(reverseMap[lifterIndex] ? 1 - MDOConstants.LifterPositionLow : MDOConstants.LifterPositionLow);
 					}
 				}
 			}
@@ -851,17 +949,18 @@ public class RobotCoreCustom {
 		}
 
 		public void lifterUpdater() {
+			int[] lifterMapping = MDOConstants.LifterPitMapping;
+			boolean[] reverseMap = MDOConstants.LifterReverseMap;
 			for (int i = 0; i < 3; i++) {
-				// Reverse Map for lifters
-				boolean[] reverseMap = MDOConstants.LifterReverseMap;
+				int lifterIndex = lifterMapping[i];
 				if (lifterState[i] == 1) {
 					lifterState[i] = 2;
 					lifterTimer.reset();
-					lifter[i].setPosition(reverseMap[i] ? 1 - MDOConstants.LifterPositionHigh : MDOConstants.LifterPositionHigh); // reversed Boolean ? flipped 0 to 1 range: normal
+					lifter[lifterIndex].setPosition(reverseMap[lifterIndex] ? 1 - MDOConstants.LifterPositionHigh : MDOConstants.LifterPositionHigh);
 				}
 				else if (lifterState[i] == 2 && lifterTimer.milliseconds() > MDOConstants.LifterWaitToTopTimerMillis) {
 					lifterState[i] = 0;
-					lifter[i].setPosition(reverseMap[i] ? 1 - MDOConstants.LifterPositionLow : MDOConstants.LifterPositionLow); // reversed Boolean ? flipped 0 to 1 range: normal
+					lifter[lifterIndex].setPosition(reverseMap[lifterIndex] ? 1 - MDOConstants.LifterPositionLow : MDOConstants.LifterPositionLow);
 				}
 			}
 		}
@@ -900,6 +999,13 @@ public class RobotCoreCustom {
 			int green = (argb >> 8) & 0xFF;
 			int blue = argb & 0xFF;
 
+			// Check raw RGB sum first - if too low, no ball is present
+			// This works better than HSV brightness for low-output sensors
+			int rawSum = red + green + blue;
+			if (rawSum < MDOConstants.ColorMinRawSum) {
+				return CustomColor.NULL;
+			}
+
 			// Convert RGB to HSV for better color classification
 			float[] hsv = rgbToHsv(red, green, blue);
 			float hue = hsv[0];        // 0-360
@@ -915,7 +1021,8 @@ public class RobotCoreCustom {
 			float purpleHueMax = (float) MDOConstants.PurpleHueMax;
 
 			// Check minimum brightness - if too dark, no ball is present
-			if (value < minBrightness) {
+			// Skip this check if minBrightness is 0 (disabled for low-output sensors)
+			if (minBrightness > 0 && value < minBrightness) {
 				return CustomColor.NULL;
 			}
 

@@ -102,9 +102,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 	// ===== LAUNCH TRACKING =====
 	protected int ballsLaunched = 0;
 	protected static final int BALLS_TO_LAUNCH = 3;
-	protected int currentLaunchSlot = 0; // For force-launch fallback when sensors miss balls
-	protected int launchAttemptsForCurrentSlot = 0; // Track attempts per slot
-	protected static final int MAX_ATTEMPTS_PER_SLOT = 3; // Try each slot 3 times before moving on
+	protected int currentLaunchSlot = 0; // Current slot being launched
 
 	// ===== OPTIONS =====
 	protected boolean enableCameraLook = true; // Toggle camera look state
@@ -131,7 +129,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 		launcherMotors = new RobotCoreCustom.CustomMotorController(
 			hardwareMap,
 			new String[]{"launcher0", "launcher1"},
-			new boolean[]{false, true}, // launcher1 is reversed
+			new boolean[]{true, false}, // launcher1 is reversed
 			new boolean[]{true, false}, // encoder reverse map
 			true, // has encoders
 			28.0, // ticks per rev
@@ -471,10 +469,10 @@ public class BlueCloseAutoOpmode extends OpMode {
 					// Check if we came from camera look or skipped it
 					if (previousState == AutoState.CAMERA_LOOK) {
 						// Coming from camera look - follow path from camera look to launch
-						follower.followPath(pathFromCameraLookToLaunch);
+						follower.followPath(pathFromCameraLookToLaunch, true);
 					} else {
 						// Coming from start (skipped camera look) - follow full path
-						follower.followPath(pathToLaunch);
+						follower.followPath(pathToLaunch, true);
 					}
 				}
 				// Must wait at least 500ms before checking isBusy (give path time to start)
@@ -491,33 +489,40 @@ public class BlueCloseAutoOpmode extends OpMode {
 					ballsLaunched = 0;
 					launchOrderIndex = 0;
 					currentLaunchSlot = 0;
-					launchAttemptsForCurrentSlot = 0;
 					launchTimer.reset();
-					// Enable hold position at launch pose
+					// Actively hold position at launch pose to prevent going limp
 					follower.holdPoint(BlueCloseAutoConstants.launchPose);
 					// Lock lifters to prevent balls from moving between pits
 					sorterController.lockLiftersForLaunch(true);
 				}
-				// Launch one slot at a time, with multiple attempts per slot
-				// Only move to next slot after MAX_ATTEMPTS_PER_SLOT attempts
-				if (launchTimer.milliseconds() > BlueCloseAutoConstants.shotDelayMs && currentLaunchSlot < 3) {
-					// Force launch the current slot
-					sorterController.forceLaunchSlot(currentLaunchSlot);
-					launchAttemptsForCurrentSlot++;
+				// Launch one ball at a time based on launchOrder from AprilTag
+				if (launchTimer.milliseconds() > BlueCloseAutoConstants.shotDelayMs && ballsLaunched < 3) {
+					boolean launched = false;
 
-					// After enough attempts on this slot, move to the next one
-					if (launchAttemptsForCurrentSlot >= MAX_ATTEMPTS_PER_SLOT) {
+					// Use launchOrder if available to determine which color to launch next
+					if (!launchOrder.isEmpty() && launchOrderIndex < launchOrder.size()) {
+						RobotCoreCustom.CustomSorterController.CustomColor targetColor = launchOrder.get(launchOrderIndex);
+						launched = launchNextBallSorted(targetColor);
+					}
+
+					// Fallback: if couldn't launch from order, force sequential
+					if (!launched && currentLaunchSlot < 3) {
+						sorterController.forceLaunchSlot(currentLaunchSlot);
 						currentLaunchSlot++;
-						launchAttemptsForCurrentSlot = 0;
+						launched = true;
+					}
+
+					// Always increment counters when a ball is launched
+					if (launched) {
 						ballsLaunched++;
-						if (!launchOrder.isEmpty() && launchOrderIndex < launchOrder.size()) {
+						if (launchOrderIndex < launchOrder.size()) {
 							launchOrderIndex++;
 						}
+						launchTimer.reset();
 					}
-					launchTimer.reset();
 				}
-				// Transition after all 3 slots have been attempted and post-launch delay, or timeout
-				if ((currentLaunchSlot >= 3 && launchTimer.milliseconds() > BlueCloseAutoConstants.postLaunchDelayMs)
+				// Transition after all 3 balls have been launched and post-launch delay, or timeout
+				if ((ballsLaunched >= 3 && launchTimer.milliseconds() > BlueCloseAutoConstants.postLaunchDelayMs)
 					|| stateTimer.milliseconds() > BlueCloseAutoConstants.maxLaunchStateTimeMs) {
 					sorterController.lockLiftersForLaunch(false);
 					setState(AutoState.DRIVE_TO_BALL_0_LINEUP);
@@ -565,7 +570,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 					// Stop intake, spin up launcher
 					intakeRunningState = IntakeState.STOP;
 					launcherSpinning = true;
-					follower.followPath(pathFromBall0ToLaunch);
+					follower.followPath(pathFromBall0ToLaunch, true);
 				}
 				// Wait for path to start (minimum 100ms) and complete
 				if (!follower.isBusy() && stateTimer.milliseconds() > 100) {
@@ -577,32 +582,40 @@ public class BlueCloseAutoOpmode extends OpMode {
 				if (stateChanged) {
 					ballsLaunched = 0;
 					currentLaunchSlot = 0;
-					launchAttemptsForCurrentSlot = 0;
 					launchTimer.reset();
-					// Enable hold position at launch pose
+					// Actively hold position at launch pose to prevent going limp
 					follower.holdPoint(BlueCloseAutoConstants.launchPose);
 					// Lock lifters to prevent balls from moving between pits
 					sorterController.lockLiftersForLaunch(true);
 				}
-				// Launch one slot at a time, with multiple attempts per slot
-				if (launchTimer.milliseconds() > BlueCloseAutoConstants.shotDelayMs && currentLaunchSlot < 3) {
-					// Force launch the current slot
-					sorterController.forceLaunchSlot(currentLaunchSlot);
-					launchAttemptsForCurrentSlot++;
+				// Launch one ball at a time based on launchOrder from AprilTag
+				if (launchTimer.milliseconds() > BlueCloseAutoConstants.shotDelayMs && ballsLaunched < 3) {
+					boolean launched = false;
 
-					// After enough attempts on this slot, move to the next one
-					if (launchAttemptsForCurrentSlot >= MAX_ATTEMPTS_PER_SLOT) {
+					// Use launchOrder if available to determine which color to launch next
+					if (!launchOrder.isEmpty() && launchOrderIndex < launchOrder.size()) {
+						RobotCoreCustom.CustomSorterController.CustomColor targetColor = launchOrder.get(launchOrderIndex);
+						launched = launchNextBallSorted(targetColor);
+					}
+
+					// Fallback: if couldn't launch from order, force sequential
+					if (!launched && currentLaunchSlot < 3) {
+						sorterController.forceLaunchSlot(currentLaunchSlot);
 						currentLaunchSlot++;
-						launchAttemptsForCurrentSlot = 0;
+						launched = true;
+					}
+
+					// Always increment counters when a ball is launched
+					if (launched) {
 						ballsLaunched++;
-						if (!launchOrder.isEmpty() && launchOrderIndex < launchOrder.size()) {
+						if (launchOrderIndex < launchOrder.size()) {
 							launchOrderIndex++;
 						}
+						launchTimer.reset();
 					}
-					launchTimer.reset();
 				}
-				// Transition after all 3 slots have been attempted and post-launch delay, or timeout
-				if ((currentLaunchSlot >= 3 && launchTimer.milliseconds() > BlueCloseAutoConstants.postLaunchDelayMs)
+				// Transition after all 3 balls have been launched and post-launch delay, or timeout
+				if ((ballsLaunched >= 3 && launchTimer.milliseconds() > BlueCloseAutoConstants.postLaunchDelayMs)
 					|| stateTimer.milliseconds() > BlueCloseAutoConstants.maxLaunchStateTimeMs) {
 					sorterController.lockLiftersForLaunch(false);
 					setState(AutoState.DRIVE_TO_BALL_1_LINEUP);
@@ -649,7 +662,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 					// Stop intake, spin up launcher
 					intakeRunningState = IntakeState.STOP;
 					launcherSpinning = true;
-					follower.followPath(pathFromBall1ToLaunch);
+					follower.followPath(pathFromBall1ToLaunch, true);
 				}
 				// Wait for path to start (minimum 100ms) and complete
 				if (!follower.isBusy() && stateTimer.milliseconds() > 100) {
@@ -661,32 +674,40 @@ public class BlueCloseAutoOpmode extends OpMode {
 				if (stateChanged) {
 					ballsLaunched = 0;
 					currentLaunchSlot = 0;
-					launchAttemptsForCurrentSlot = 0;
 					launchTimer.reset();
-					// Enable hold position at launch pose
+					// Actively hold position at launch pose to prevent going limp
 					follower.holdPoint(BlueCloseAutoConstants.launchPose);
 					// Lock lifters to prevent balls from moving between pits
 					sorterController.lockLiftersForLaunch(true);
 				}
-				// Launch one slot at a time, with multiple attempts per slot
-				if (launchTimer.milliseconds() > BlueCloseAutoConstants.shotDelayMs && currentLaunchSlot < 3) {
-					// Force launch the current slot
-					sorterController.forceLaunchSlot(currentLaunchSlot);
-					launchAttemptsForCurrentSlot++;
+				// Launch one ball at a time based on launchOrder from AprilTag
+				if (launchTimer.milliseconds() > BlueCloseAutoConstants.shotDelayMs && ballsLaunched < 3) {
+					boolean launched = false;
 
-					// After enough attempts on this slot, move to the next one
-					if (launchAttemptsForCurrentSlot >= MAX_ATTEMPTS_PER_SLOT) {
+					// Use launchOrder if available to determine which color to launch next
+					if (!launchOrder.isEmpty() && launchOrderIndex < launchOrder.size()) {
+						RobotCoreCustom.CustomSorterController.CustomColor targetColor = launchOrder.get(launchOrderIndex);
+						launched = launchNextBallSorted(targetColor);
+					}
+
+					// Fallback: if couldn't launch from order, force sequential
+					if (!launched && currentLaunchSlot < 3) {
+						sorterController.forceLaunchSlot(currentLaunchSlot);
 						currentLaunchSlot++;
-						launchAttemptsForCurrentSlot = 0;
+						launched = true;
+					}
+
+					// Always increment counters when a ball is launched
+					if (launched) {
 						ballsLaunched++;
-						if (!launchOrder.isEmpty() && launchOrderIndex < launchOrder.size()) {
+						if (launchOrderIndex < launchOrder.size()) {
 							launchOrderIndex++;
 						}
+						launchTimer.reset();
 					}
-					launchTimer.reset();
 				}
-				// Transition after all 3 slots have been attempted and post-launch delay, or timeout
-				if ((currentLaunchSlot >= 3 && launchTimer.milliseconds() > BlueCloseAutoConstants.postLaunchDelayMs)
+				// Transition after all 3 balls have been launched and post-launch delay, or timeout
+				if ((ballsLaunched >= 3 && launchTimer.milliseconds() > BlueCloseAutoConstants.postLaunchDelayMs)
 					|| stateTimer.milliseconds() > BlueCloseAutoConstants.maxLaunchStateTimeMs) {
 					sorterController.lockLiftersForLaunch(false);
 					setState(AutoState.DRIVE_TO_FINAL);
@@ -725,6 +746,38 @@ public class BlueCloseAutoOpmode extends OpMode {
 	// Set intake state directly
 	protected void setIntake(IntakeState state) {
 		intakeRunningState = state;
+	}
+
+	/**
+	 * Launch the next ball based on current launch order pattern.
+	 * Searches through remaining colors in the launch order to find one that's available.
+	 * If target color isn't available, tries remaining colors in priority order.
+	 * @param targetColor The preferred color to launch (from launchOrder)
+	 * @return true if any ball was successfully launched, false if no balls available
+	 */
+	protected boolean launchNextBallSorted(RobotCoreCustom.CustomSorterController.CustomColor targetColor) {
+		// First, try to launch the exact target color
+		if (sorterController.launchCachedStrict(targetColor)) {
+			return true;
+		}
+
+		// Target color not available - try the OTHER color instead
+		// This ensures we launch a ball even if the exact order can't be maintained
+		RobotCoreCustom.CustomSorterController.CustomColor GREEN =
+			RobotCoreCustom.CustomSorterController.CustomColor.GREEN;
+		RobotCoreCustom.CustomSorterController.CustomColor PURPLE =
+			RobotCoreCustom.CustomSorterController.CustomColor.PURPLE;
+
+		RobotCoreCustom.CustomSorterController.CustomColor alternateColor =
+			(targetColor == GREEN) ? PURPLE : GREEN;
+
+		if (sorterController.launchCachedStrict(alternateColor)) {
+			return true;
+		}
+
+		// Neither color detected - try launching ANY ball that might be there
+		// This handles cases where color sensors fail to detect a ball
+		return sorterController.launchCached(RobotCoreCustom.CustomSorterController.CustomColor.NULL);
 	}
 
 	/**
@@ -835,8 +888,10 @@ public class BlueCloseAutoOpmode extends OpMode {
 		telemetryC.addData("State Timer", String.format("%.0f ms", stateTimer.milliseconds()));
 		telemetryC.addData("Follower Busy", follower.isBusy());
 		telemetryC.addData("Launcher Spinning", launcherSpinning);
+		telemetryC.addData("RPM Mode", launcherMotors.isRPMMode());
 		telemetryC.addData("Target RPM", launcherRPM);
 		telemetryC.addData("Current RPM", String.format("%.0f", launcherMotors.getAverageRPM()));
+		telemetryC.addData("Launcher PID Output", String.format("%.3f", launcherMotors.getPIDOutput()));
 		telemetryC.addData("Intake State", intakeRunningState.toString());
 		telemetryC.addData("Balls Launched", ballsLaunched);
 		telemetryC.addData("Ball Count", sorterController.getCachedBallCount());

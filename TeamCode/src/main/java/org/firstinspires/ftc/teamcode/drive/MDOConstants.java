@@ -83,6 +83,13 @@ public class MDOConstants {
     // Boolean array indicating which lifter motors/servos should be reversed
     public static boolean[] LifterReverseMap = new boolean[]{true, false, false};
 
+    // ===== LIFTER TO PIT MAPPING =====
+    // Maps which lifter servo index corresponds to each pit
+    // Format: [pit0_lifter, pit1_lifter, pit2_lifter]
+    // Default: {0, 1, 2} means pit 0 uses lifter0, pit 1 uses lifter1, pit 2 uses lifter2
+    // Change this if your physical wiring doesn't match the expected order
+    public static int[] LifterPitMapping = new int[]{0, 1, 2};
+
     // Delay in milliseconds to wait for the lifter to reach the top position
     public static int LifterWaitToTopTimerMillis = 200;
 
@@ -104,28 +111,45 @@ public class MDOConstants {
     // ===== COLOR SENSOR CLASSIFICATION THRESHOLDS =====
     // These thresholds are used to classify ball colors and reduce false positives/negatives
 
+    // Minimum raw RGB sum required to detect a ball (0-765, where 765 = 255+255+255)
+    // This checks if there's any significant color signal from the sensor
+    // Use this instead of HSV brightness when sensors have low output
+    // Lower values = more sensitive, may get false positives from ambient light
+    // Higher values = requires stronger color signal
+    // Recommended: 3-15 for very low-output sensors, 15-50 for normal sensors
+    public static int ColorMinRawSum = 5;
+
     // Minimum brightness (HSV Value) required to detect a ball (0.0-1.0)
     // Lower values = more sensitive to dark colors but more false positives
     // Higher values = less sensitive, may miss balls in shadows
-    // Recommended: 0.15-0.30
-    public static double ColorMinBrightness = 0.20;
+    // Set to 0.0 to disable HSV brightness check (use ColorMinRawSum instead)
+    // Recommended: 0.0-0.15 for low-output sensors
+    public static double ColorMinBrightness = 0.0;
 
     // Minimum saturation required to classify a color (0.0-1.0)
     // Low saturation = gray/white, can't determine actual color
     // Higher values = more confident color detection but may miss faded balls
-    // Recommended: 0.25-0.45
-    public static double ColorMinSaturation = 0.30;
+    // Set to 0.0 to disable saturation check for very low-output sensors
+    // Recommended: 0.10-0.25 for low-output sensors, 0.25-0.40 for normal sensors
+    public static double ColorMinSaturation = 0.10;
 
     // Hue range for GREEN ball detection (HSV hue, 0-360 degrees)
     // Green is typically around 80-160 degrees
     public static double GreenHueMin = 80.0;
-    public static double GreenHueMax = 160.0;
+    public static double GreenHueMax = 190.0;
 
     // Hue range for PURPLE ball detection (HSV hue, 0-360 degrees)
     // Purple/Magenta is typically around 260-320 degrees
     // Wider range (220-330) to catch blue-purple variations
-    public static double PurpleHueMin = 220.0;
+    public static double PurpleHueMin = 200.0;
     public static double PurpleHueMax = 330.0;
+
+    // ===== COLOR SENSOR TO PIT MAPPING =====
+    // Maps which sensor indices (0-5) correspond to each pit (0, 1, 2)
+    // Each pit has 2 sensors: [pit0_sensor_a, pit0_sensor_b, pit1_sensor_a, pit1_sensor_b, pit2_sensor_a, pit2_sensor_b]
+    // Default: {0, 1, 2, 3, 4, 5} means pit 0 uses sensors 0&1, pit 1 uses sensors 2&3, pit 2 uses sensors 4&5
+    // Change this if your physical wiring doesn't match the expected order
+    public static int[] ColorSensorPitMapping = new int[]{0, 1, 4, 5, 2, 3};
 
     // Fine adjustment offset for azimuth aiming (in degrees)
     // Positive values rotate turret clockwise, negative counter-clockwise
@@ -150,7 +174,7 @@ public class MDOConstants {
     public static Double ElevationMax = 0.9;
 
     // Offset applied to handle azimuth wrap-around logic (180.0 = 1 full rotation max)
-    public static Double AzimuthWrapAroundOffset = 180.0;
+    public static Double AzimuthWrapAroundOffset = 0.0;
     // PIDF constants for controlling the azimuth servos {kP, kI, kD, kF}
     public static double[] AzimuthPIDFConstants = new double[]{4.0, 0.2, 0.0, 0.0};
 

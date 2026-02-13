@@ -72,6 +72,11 @@ public class MainDriveOpmode extends OpMode {
     Double fieldRelativeAzimuthDeg = 0.0;
     Double robotFieldRelativeAzimuthDeg = 0.0;
     Double finalAzimuthDeg = 0.0;
+
+    // Wrap-around telemetry variables
+    double preWrapAzimuth = 0.0;      // Azimuth before wrap-around is applied
+    double normalizedAzimuthDeg = 0.0; // Azimuth after normalization with offset
+
     static TelemetryManager telemetryM;
     enum intakeState {
         IN,
@@ -577,7 +582,11 @@ public class MainDriveOpmode extends OpMode {
                 telemetryC.addData("Elevation Servo Pos", elevationServoFinal);
                 telemetryC.addData("Launch Azimuth (deg)", launchAzimuthDeg);
                 telemetryC.addData("Robot Field Azimuth (deg)", robotFieldRelativeAzimuthDeg);
-                telemetryC.addData("Final Azimuth (deg)", finalAzimuthDeg);
+                telemetryC.addData("--- Azimuth Wrap-Around ---", "");
+                telemetryC.addData("Pre-Wrap Azimuth (deg)", String.format("%.2f", preWrapAzimuth));
+                telemetryC.addData("Wrap-Around Offset", String.format("%.1f", MDOConstants.AzimuthWrapAroundOffset));
+                telemetryC.addData("Normalized Azimuth (deg)", String.format("%.2f", normalizedAzimuthDeg));
+                telemetryC.addData("Final Azimuth (deg)", String.format("%.2f", finalAzimuthDeg));
                 telemetryC.addData("Manual Azimuth Offset", manualAzimuthOffset);
                 telemetryC.addData("Servo Pos (deg)", servoPosition);
                 telemetryC.addData("Servo Target (deg)", servoTarget);
@@ -605,6 +614,19 @@ public class MainDriveOpmode extends OpMode {
             telemetryC.addData("Color 0", sorterController.getCachedColor(0));
             telemetryC.addData("Color 1", sorterController.getCachedColor(1));
             telemetryC.addData("Color 2", sorterController.getCachedColor(2));
+
+            // ===== COLOR SENSOR DEBUG TELEMETRY =====
+            // Shows raw RGB and HSV values from all 6 color sensors (updated in background thread)
+            // Sensors 0,1 = Pit 0 | Sensors 4,5 = Pit 1 | Sensors 2,3 = Pit 2
+            telemetryC.addData("--- Color Sensor Debug ---", "");
+            for (int s = 0; s < 6; s++) {
+                telemetryC.addData("Sensor " + s, sorterController.getDebugString(s));
+            }
+            // Show classification thresholds for reference
+            telemetryC.addData("Thresholds", String.format("MinBright:%.2f MinSat:%.2f GreenH:[%.0f-%.0f] PurpleH:[%.0f-%.0f]",
+                    MDOConstants.ColorMinBrightness, MDOConstants.ColorMinSaturation,
+                    MDOConstants.GreenHueMin, MDOConstants.GreenHueMax,
+                    MDOConstants.PurpleHueMin, MDOConstants.PurpleHueMax));
 
 
             // ===== CPU USAGE/TEMP TELEMETRY =====
@@ -673,64 +695,113 @@ public class MainDriveOpmode extends OpMode {
             elevationServo.setPosition(elevationServoFinal);
         }
 
-        // Wrap-around for launchAzimuthDeg: Normalize to 0-360 degree range
-        launchAzimuthDeg = launchAzimuthDeg % 360.0;
-        if (launchAzimuthDeg < 0) {
-            launchAzimuthDeg += 360.0;
-        }
+        // ===== AZIMUTH WRAP-AROUND SYSTEM =====
+        // The AzimuthWrapAroundOffset shifts where the discontinuity (jump from 360->0) occurs
+        // This prevents sudden turret movements when crossing specific angles
+        //
+        // Example: With offset=180, the turret operates in range [-180, 180] instead of [0, 360]
+        // This moves the discontinuity from 0/360 degrees to -180/180 degrees
+
+        // Store raw values for telemetry
+        double rawLaunchAzimuth = launchAzimuthDeg;
+        double rawRobotHeading = robotFieldRelativeAzimuthDeg;
+
+        // Normalize launchAzimuthDeg to [-180, 180] range for consistent calculations
+        launchAzimuthDeg = normalizeAngle(launchAzimuthDeg);
 
         if (MDOConstants.EnableTurretIMUCorrection && MDOConstants.EnableTurret) {
-            // Get the robot's raw field-relative heading (no offset here - offset is for turret calibration)
+            // Get the robot's raw field-relative heading
             double robotHeadingDeg = robotFieldRelativeAzimuthDeg;
 
-            // Wrap-around for robotHeadingDeg
-            robotHeadingDeg = robotHeadingDeg % 360.0;
-            if (robotHeadingDeg < 0) {
-                robotHeadingDeg += 360.0;
-            }
+            // Normalize robot heading to [-180, 180] range
+            robotHeadingDeg = normalizeAngle(robotHeadingDeg);
 
             if (MDOConstants.EnableLauncherCalcAzimuth && hasValidLaunchVectors) {
-                // launchAzimuthDeg is the field-relative angle from robot to target
-                // To aim the turret at the target, we need: robotHeading - targetAngle (reversed direction)
-                // This gives us the robot-relative angle to the target
-                // Then add the mechanical offset (AzimuthIMUOffset) to calibrate the turret's zero position
-                // Use alliance-specific azimuth fine adjustment combined with shared adjustment
-                // Also add manual offset from D-pad left/right controls
-                finalAzimuthDeg = robotHeadingDeg - launchAzimuthDeg + MDOConstants.AzimuthIMUOffset + MDOConstants.AzimuthFineAdjustment + azimuthFineAdjust + manualAzimuthOffset;
+                // Calculate robot-relative angle to target:
+                // robotHeading - targetAngle gives us the angle from robot's perspective
+                // Add mechanical offset (AzimuthIMUOffset) to calibrate turret's zero position
+                // Add alliance-specific and shared fine adjustments
+                // Add manual offset from D-pad controls
+                finalAzimuthDeg = robotHeadingDeg - launchAzimuthDeg
+                    + MDOConstants.AzimuthIMUOffset
+                    + MDOConstants.AzimuthFineAdjustment
+                    + azimuthFineAdjust
+                    + manualAzimuthOffset;
             } else {
-                // When not using launcher calc, just maintain heading-based orientation
-                // Apply the AzimuthIMUOffset to set the turret's "forward" position
-                // Also add manual offset from D-pad left/right controls
-                finalAzimuthDeg = (robotHeadingDeg + MDOConstants.AzimuthIMUOffset + manualAzimuthOffset) * MDOConstants.AzimuthMultiplier;
+                // When not using launcher calc, maintain heading-based orientation
+                finalAzimuthDeg = (robotHeadingDeg + MDOConstants.AzimuthIMUOffset + manualAzimuthOffset)
+                    * MDOConstants.AzimuthMultiplier;
             }
 
-            // Apply wrap-around offset before normalization, then remove it after
-            // This shifts WHERE the wrap-around occurs without changing the main offset
-            finalAzimuthDeg += MDOConstants.AzimuthWrapAroundOffset;
+            // Store pre-wraparound value for telemetry (class-level variable)
+            preWrapAzimuth = finalAzimuthDeg;
 
-            // Wrap-around: Normalize final angle to 0-360 degree range
-            finalAzimuthDeg = finalAzimuthDeg % 360.0;
-            if (finalAzimuthDeg < 0) {
-                finalAzimuthDeg += 360.0;
+            // ===== WRAP-AROUND OFFSET APPLICATION =====
+            // The offset shifts where the angle wraps around
+            // Step 1: Add offset to shift the working range
+            // Step 2: Normalize to [0, 360]
+            // Step 3: Subtract offset to get final angle
+            //
+            // With offset=180: angles wrap at -180/180 instead of 0/360
+            // With offset=0: angles wrap at 0/360 (standard behavior)
+            // With offset=90: angles wrap at -90/270
+
+            double wrapOffset = MDOConstants.AzimuthWrapAroundOffset;
+
+            // Apply offset before normalization
+            double shiftedAzimuth = finalAzimuthDeg + wrapOffset;
+
+            // Normalize to [0, 360] range (store in class-level variable for telemetry)
+            normalizedAzimuthDeg = shiftedAzimuth % 360.0;
+            if (normalizedAzimuthDeg < 0) {
+                normalizedAzimuthDeg += 360.0;
             }
 
-            // Remove the wrap-around offset so it only affects where wrapping occurs
-            finalAzimuthDeg -= MDOConstants.AzimuthWrapAroundOffset;
+            // Remove offset to get final angle in the shifted range
+            // Result will be in [wrapOffset - 360, wrapOffset] range
+            finalAzimuthDeg = normalizedAzimuthDeg - wrapOffset;
 
-            // Map 0-360 degrees to -1 to 1 range for servo position
-            double servoPosition = (finalAzimuthDeg / 180.0) - 1.0;
+            // Map the final angle to servo position [-1, 1]
+            // finalAzimuthDeg range depends on wrapOffset:
+            //   offset=180: [-180, 180] -> [-1, 1] (divide by 180)
+            //   offset=0: [0, 360] -> [0, 2] -> needs different mapping
+            // Using (angle / 180.0) - 1.0 works correctly for [-180, 180] range
+            double servoPosition = (normalizedAzimuthDeg / 180.0) - 1.0;
+
+            // Invert for servo direction
+            servoPosition = -servoPosition;
 
             // Update PID coefficients if changed via Panels (has built-in change detection)
             azimuthServo.setPIDCoefficients(MDOConstants.AzimuthPIDFConstants);
 
             // Set Azimuth Servos with mapped value (-1 to 1)
             if (MDOConstants.EnableTurret) {
-                azimuthServo.setPosition(-servoPosition);
+                azimuthServo.setPosition(servoPosition);
             } else {
                 azimuthServo.setPosition(0.0);
-            }// First ratio is 96:20
-            // Second ratio is 25:120
-            // Combined ratio is 96*25 : 20*120 = 2400 : 2400 = 1:1
+            }
+
+            // Gear ratios: 96:20 then 25:120 = combined 1:1
         }
+    }
+
+    /**
+     * Normalizes an angle to the range [-180, 180] degrees.
+     * This finds the shortest path representation of any angle.
+     *
+     * @param angle The angle in degrees (can be any value)
+     * @return The normalized angle in [-180, 180] range
+     */
+    private double normalizeAngle(double angle) {
+        // First normalize to [0, 360)
+        double normalized = angle % 360.0;
+        if (normalized < 0) {
+            normalized += 360.0;
+        }
+        // Convert to [-180, 180]
+        if (normalized > 180.0) {
+            normalized -= 360.0;
+        }
+        return normalized;
     }
 }
