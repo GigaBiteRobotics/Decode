@@ -15,7 +15,7 @@ public class BlueCloseAutoConstants {
 	public static Pose finalPose = new Pose(18, 90, Math.PI);
 	public static double elevationPos = 0.1;
 	public static int targetRPM = 2000;
-	public static double azimuthPos = -0.6;
+	public static double azimuthPos = -0.64;
 
 	// Intake speeds (0.0 to 1.0)
 	public static double intakeInSpeed = 1;

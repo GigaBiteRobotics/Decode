@@ -108,6 +108,17 @@ public class MDOConstants {
     // Allow the launcher calculator to automatically control the azimuth angle
     public static boolean EnableLauncherCalcAzimuth = true;
 
+    // ===== AZIMUTH WRAP-AROUND PROTECTION =====
+    // Prevents the turret from rotating too far and tangling the cable
+
+    // Enable wrap-around protection for the azimuth turret
+    public static boolean EnableAzimuthWrapAround = true;
+
+    // Maximum allowed azimuth angle before wrap-around (in degrees, ±)
+    // If turret would exceed this limit, it will rotate the opposite direction
+    // Set to 150 to allow ±150 degrees of rotation before forcing wrap-around
+    public static double AzimuthWrapAroundLimit = 150.0;
+
     // ===== COLOR SENSOR CLASSIFICATION THRESHOLDS =====
     // These thresholds are used to classify ball colors and reduce false positives/negatives
 
@@ -173,8 +184,6 @@ public class MDOConstants {
     // Maximum physical servo position for elevation
     public static Double ElevationMax = 0.9;
 
-    // Offset applied to handle azimuth wrap-around logic (180.0 = 1 full rotation max)
-    public static Double AzimuthWrapAroundOffset = 0.0;
     // PIDF constants for controlling the azimuth servos {kP, kI, kD, kF}
     public static double[] AzimuthPIDFConstants = new double[]{4.0, 0.2, 0.0, 0.0};
 
@@ -239,6 +248,16 @@ public class MDOConstants {
 
 	// Enable RPM zones (if false, uses static LauncherRPM)
 	public static boolean EnableLauncherRPMZones = true;
+
+	// ===== RAPID FIRE SETTINGS =====
+	// Delay in milliseconds between rapid fire shots (triggered by gamepad2.right_trigger)
+	// Lower values = faster firing, Higher values = more time between shots
+	public static int RapidFireDelayMs = 400;
+
+	// Order of pits to fire in rapid fire mode (0, 1, 2)
+	// Change the order to control which balls fire first
+	// Example: {2, 1, 0} fires pit 2 first, then pit 1, then pit 0
+	public static int[] RapidFireOrder = new int[]{0, 1, 2};
 
 	// ===== EMERGENCY STOP SETTINGS =====
 	// Temperature at which OpMode automatically stops (in Celsius)

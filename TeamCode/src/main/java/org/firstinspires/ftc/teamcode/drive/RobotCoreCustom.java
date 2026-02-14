@@ -941,6 +941,25 @@ public class RobotCoreCustom {
 		}
 
 		/**
+		 * Launch a ball from a specific pit index.
+		 * Only launches if the pit is idle (not already launching) and contains a ball.
+		 * If no ball detected but pit is idle, will force launch anyway for rapid fire mode.
+		 * @param pitIndex The pit index (0, 1, or 2) to launch from
+		 * @return true if launch was initiated, false if pit was already busy
+		 */
+		public boolean launchFromPit(int pitIndex) {
+			if (pitIndex < 0 || pitIndex >= 3) {
+				return false;
+			}
+			// Only launch from idle pits (state 0) to prevent interrupting a launch in progress
+			if (lifterState[pitIndex] == 0) {
+				lifterState[pitIndex] = 1;
+				return true;
+			}
+			return false;
+		}
+
+		/**
 		 * Get the total number of slots.
 		 * @return number of slots (3)
 		 */
@@ -1280,6 +1299,14 @@ public class RobotCoreCustom {
 					}
 					lastSimplePosition = position;
 
+					// ===== WRAP-AROUND PROTECTION (Simple Mode) =====
+					// Clamp position to stay within ±limit degrees from center
+					// Position [-1, 1] maps to [-180°, +180°] from center (0 = center)
+					if (MDOConstants.EnableAzimuthWrapAround) {
+						double maxPosition = MDOConstants.AzimuthWrapAroundLimit / 180.0;
+						position = Math.max(-maxPosition, Math.min(maxPosition, position));
+					}
+
 					// Convert from our range [-1, 1] to servo's native range [0, 1]
 					double mapped = (position + 1.0) / 2.0;
 
@@ -1296,8 +1323,24 @@ public class RobotCoreCustom {
 				} else {
 					// SMART MODE: Set the target position (the PID loop will move the servo there)
 					
-					// Convert from our range [-1, 1] to degrees [0, 180]
-					targetPosition = (position + 1.0) / 2.0 * WRAP_THRESHOLD;
+					// Convert from our range [-1, 1] to degrees [0, 360]
+					// position = 0 → 180° (center)
+					// position = -1 → 0°
+					// position = +1 → 360°
+					double rawTargetPosition = (position + 1.0) / 2.0 * WRAP_THRESHOLD;
+
+					// ===== WRAP-AROUND PROTECTION (Smart Mode) =====
+					// Center is at 180°, limit how far we can go from center
+					// Limit of 150° means valid range is [180-150, 180+150] = [30°, 330°]
+					if (MDOConstants.EnableAzimuthWrapAround) {
+						double center = WRAP_THRESHOLD / 2.0; // 180°
+						double limit = MDOConstants.AzimuthWrapAroundLimit;
+						double minTarget = center - limit;
+						double maxTarget = center + limit;
+						rawTargetPosition = Math.max(minTarget, Math.min(maxTarget, rawTargetPosition));
+					}
+
+					targetPosition = rawTargetPosition;
 				}
 			}
 		}

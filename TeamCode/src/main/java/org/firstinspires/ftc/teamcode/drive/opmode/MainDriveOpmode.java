@@ -73,9 +73,7 @@ public class MainDriveOpmode extends OpMode {
     Double robotFieldRelativeAzimuthDeg = 0.0;
     Double finalAzimuthDeg = 0.0;
 
-    // Wrap-around telemetry variables
-    double preWrapAzimuth = 0.0;      // Azimuth before wrap-around is applied
-    double normalizedAzimuthDeg = 0.0; // Azimuth after normalization with offset
+
 
     static TelemetryManager telemetryM;
     enum intakeState {
@@ -88,6 +86,12 @@ public class MainDriveOpmode extends OpMode {
     // Telemetry throttling to reduce overhead
     private int telemetryLoopCounter = 0;
     private static final int TELEMETRY_UPDATE_INTERVAL = 5; // Update telemetry every N loops (higher = less lag)
+
+    // Rapid fire state machine
+    private boolean rapidFireActive = false;
+    private int rapidFireIndex = 0; // Current index in RapidFireOrder
+    private final ElapsedTime rapidFireTimer = new ElapsedTime();
+    private boolean rapidFireTriggerWasPressed = false; // For edge detection
 
     // Disable camera completely - set to false to skip all camera/AprilTag initialization
     private static final boolean ENABLE_CAMERA = false;
@@ -498,6 +502,38 @@ public class MainDriveOpmode extends OpMode {
             sorterController.launchCached(RobotCoreCustom.CustomSorterController.CustomColor.GREEN);
         }
 
+        // ===== RAPID FIRE LOGIC =====
+        // Fires balls from pits in configurable order with settable delay between shots
+        // Triggered by holding gamepad2.right_trigger
+        boolean rapidFireTriggerPressed = gamepad2.right_trigger > 0.5;
+
+        // Edge detection: Start rapid fire sequence when trigger is first pressed
+        if (rapidFireTriggerPressed && !rapidFireTriggerWasPressed && !rapidFireActive) {
+            rapidFireActive = true;
+            rapidFireIndex = 0;
+            rapidFireTimer.reset();
+            // Fire first ball immediately
+            int pitToFire = MDOConstants.RapidFireOrder[rapidFireIndex];
+            sorterController.launchFromPit(pitToFire);
+            rapidFireIndex++;
+        }
+        rapidFireTriggerWasPressed = rapidFireTriggerPressed;
+
+        // Continue rapid fire sequence if active
+        if (rapidFireActive && rapidFireIndex < MDOConstants.RapidFireOrder.length) {
+            if (rapidFireTimer.milliseconds() >= MDOConstants.RapidFireDelayMs) {
+                int pitToFire = MDOConstants.RapidFireOrder[rapidFireIndex];
+                sorterController.launchFromPit(pitToFire);
+                rapidFireIndex++;
+                rapidFireTimer.reset();
+            }
+        }
+
+        // End rapid fire when all pits have been fired
+        if (rapidFireIndex >= MDOConstants.RapidFireOrder.length) {
+            rapidFireActive = false;
+        }
+
         //launcherMotors.setPower(launcherSpinning ? MDOConstants.launchPower : 0);
 
         // Clamp target power
@@ -580,16 +616,13 @@ public class MainDriveOpmode extends OpMode {
             if (launchVectors != null) {
                 telemetryC.addData("Launch Elevation (deg)", launchElevationDeg);
                 telemetryC.addData("Elevation Servo Pos", elevationServoFinal);
-                telemetryC.addData("Launch Azimuth (deg)", launchAzimuthDeg);
-                telemetryC.addData("Robot Field Azimuth (deg)", robotFieldRelativeAzimuthDeg);
-                telemetryC.addData("--- Azimuth Wrap-Around ---", "");
-                telemetryC.addData("Pre-Wrap Azimuth (deg)", String.format("%.2f", preWrapAzimuth));
-                telemetryC.addData("Wrap-Around Offset", String.format("%.1f", MDOConstants.AzimuthWrapAroundOffset));
-                telemetryC.addData("Normalized Azimuth (deg)", String.format("%.2f", normalizedAzimuthDeg));
+                telemetryC.addData("--- AZIMUTH DEBUG ---", "");
+                telemetryC.addData("Robot Heading (raw)", String.format("%.1f", robotFieldRelativeAzimuthDeg));
+                telemetryC.addData("Target Azimuth (raw)", String.format("%.1f", launchAzimuthDeg));
                 telemetryC.addData("Final Azimuth (deg)", String.format("%.2f", finalAzimuthDeg));
                 telemetryC.addData("Manual Azimuth Offset", manualAzimuthOffset);
-                telemetryC.addData("Servo Pos (deg)", servoPosition);
-                telemetryC.addData("Servo Target (deg)", servoTarget);
+                telemetryC.addData("Servo Pos (actual)", String.format("%.3f", servoPosition));
+                telemetryC.addData("Servo Target (actual)", String.format("%.3f", servoTarget));
             } else {
                 telemetryC.addData("Launch Vectors", "Target Unreachable");
             }
@@ -695,81 +728,44 @@ public class MainDriveOpmode extends OpMode {
             elevationServo.setPosition(elevationServoFinal);
         }
 
-        // ===== AZIMUTH WRAP-AROUND SYSTEM =====
-        // The AzimuthWrapAroundOffset shifts where the discontinuity (jump from 360->0) occurs
-        // This prevents sudden turret movements when crossing specific angles
-        //
-        // Example: With offset=180, the turret operates in range [-180, 180] instead of [0, 360]
-        // This moves the discontinuity from 0/360 degrees to -180/180 degrees
-
-        // Store raw values for telemetry
-        double rawLaunchAzimuth = launchAzimuthDeg;
-        double rawRobotHeading = robotFieldRelativeAzimuthDeg;
-
-        // Normalize launchAzimuthDeg to [-180, 180] range for consistent calculations
-        launchAzimuthDeg = normalizeAngle(launchAzimuthDeg);
+        // ===== AZIMUTH CONTROL =====
+        // Calculates the turret angle needed to aim at the target
 
         if (MDOConstants.EnableTurretIMUCorrection && MDOConstants.EnableTurret) {
-            // Get the robot's raw field-relative heading
-            double robotHeadingDeg = robotFieldRelativeAzimuthDeg;
-
-            // Normalize robot heading to [-180, 180] range
-            robotHeadingDeg = normalizeAngle(robotHeadingDeg);
-
             if (MDOConstants.EnableLauncherCalcAzimuth && hasValidLaunchVectors) {
-                // Calculate robot-relative angle to target:
-                // robotHeading - targetAngle gives us the angle from robot's perspective
-                // Add mechanical offset (AzimuthIMUOffset) to calibrate turret's zero position
-                // Add alliance-specific and shared fine adjustments
-                // Add manual offset from D-pad controls
-                finalAzimuthDeg = robotHeadingDeg - launchAzimuthDeg
+                // Calculate robot-relative angle to target
+                double robotHeadingDeg = robotFieldRelativeAzimuthDeg;
+                double targetAzimuthDeg = launchAzimuthDeg;
+
+                // Calculate turret angle with all offsets
+                finalAzimuthDeg = robotHeadingDeg - targetAzimuthDeg
                     + MDOConstants.AzimuthIMUOffset
                     + MDOConstants.AzimuthFineAdjustment
                     + azimuthFineAdjust
                     + manualAzimuthOffset;
             } else {
                 // When not using launcher calc, maintain heading-based orientation
+                double robotHeadingDeg = robotFieldRelativeAzimuthDeg;
                 finalAzimuthDeg = (robotHeadingDeg + MDOConstants.AzimuthIMUOffset + manualAzimuthOffset)
                     * MDOConstants.AzimuthMultiplier;
             }
 
-            // Store pre-wraparound value for telemetry (class-level variable)
-            preWrapAzimuth = finalAzimuthDeg;
-
-            // ===== WRAP-AROUND OFFSET APPLICATION =====
-            // The offset shifts where the angle wraps around
-            // Step 1: Add offset to shift the working range
-            // Step 2: Normalize to [0, 360]
-            // Step 3: Subtract offset to get final angle
-            //
-            // With offset=180: angles wrap at -180/180 instead of 0/360
-            // With offset=0: angles wrap at 0/360 (standard behavior)
-            // With offset=90: angles wrap at -90/270
-
-            double wrapOffset = MDOConstants.AzimuthWrapAroundOffset;
-
-            // Apply offset before normalization
-            double shiftedAzimuth = finalAzimuthDeg + wrapOffset;
-
-            // Normalize to [0, 360] range (store in class-level variable for telemetry)
-            normalizedAzimuthDeg = shiftedAzimuth % 360.0;
-            if (normalizedAzimuthDeg < 0) {
-                normalizedAzimuthDeg += 360.0;
+            // Normalize angle to [-180, 180] and map to servo position [-1, 1]
+            double normalizedAngle = finalAzimuthDeg % 360.0;
+            if (normalizedAngle > 180.0) {
+                normalizedAngle -= 360.0;
+            } else if (normalizedAngle < -180.0) {
+                normalizedAngle += 360.0;
             }
 
-            // Remove offset to get final angle in the shifted range
-            // Result will be in [wrapOffset - 360, wrapOffset] range
-            finalAzimuthDeg = normalizedAzimuthDeg - wrapOffset;
+            // Wrap-around protection is handled in RobotCoreCustom.CustomAxonServoController.setPosition()
 
-            // Map the final angle to servo position [-1, 1]
-            // finalAzimuthDeg range depends on wrapOffset:
-            //   offset=180: [-180, 180] -> [-1, 1] (divide by 180)
-            //   offset=0: [0, 360] -> [0, 2] -> needs different mapping
-            // Using (angle / 180.0) - 1.0 works correctly for [-180, 180] range
-            double servoPosition = (normalizedAzimuthDeg / 180.0) - 1.0;
+            double servoPosition = -(normalizedAngle / 180.0);
+            servoPosition = Math.max(-1.0, Math.min(1.0, servoPosition));
 
-            // Invert for servo direction
-            servoPosition = -servoPosition;
+            // Update finalAzimuthDeg for telemetry
+            finalAzimuthDeg = -servoPosition * 180.0;
+
 
             // Update PID coefficients if changed via Panels (has built-in change detection)
             azimuthServo.setPIDCoefficients(MDOConstants.AzimuthPIDFConstants);
@@ -783,25 +779,5 @@ public class MainDriveOpmode extends OpMode {
 
             // Gear ratios: 96:20 then 25:120 = combined 1:1
         }
-    }
-
-    /**
-     * Normalizes an angle to the range [-180, 180] degrees.
-     * This finds the shortest path representation of any angle.
-     *
-     * @param angle The angle in degrees (can be any value)
-     * @return The normalized angle in [-180, 180] range
-     */
-    private double normalizeAngle(double angle) {
-        // First normalize to [0, 360)
-        double normalized = angle % 360.0;
-        if (normalized < 0) {
-            normalized += 360.0;
-        }
-        // Convert to [-180, 180]
-        if (normalized > 180.0) {
-            normalized -= 360.0;
-        }
-        return normalized;
     }
 }
