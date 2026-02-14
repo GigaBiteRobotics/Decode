@@ -108,17 +108,6 @@ public class MDOConstants {
     // Allow the launcher calculator to automatically control the azimuth angle
     public static boolean EnableLauncherCalcAzimuth = true;
 
-    // ===== AZIMUTH WRAP-AROUND PROTECTION =====
-    // Prevents the turret from rotating too far and tangling the cable
-
-    // Enable wrap-around protection for the azimuth turret
-    public static boolean EnableAzimuthWrapAround = true;
-
-    // Maximum allowed azimuth angle before wrap-around (in degrees, ±)
-    // If turret would exceed this limit, it will rotate the opposite direction
-    // Set to 150 to allow ±150 degrees of rotation before forcing wrap-around
-    public static double AzimuthWrapAroundLimit = 150.0;
-
     // ===== COLOR SENSOR CLASSIFICATION THRESHOLDS =====
     // These thresholds are used to classify ball colors and reduce false positives/negatives
 
@@ -196,6 +185,18 @@ public class MDOConstants {
     // Lower values = more responsive but may cause jitter; Higher values = less jitter but less precise
     // Default is 0.1 (10% of range), set lower like 0.05 (5%) for tighter control
     public static double AzimuthPIDDeadzonePercent = 0.05;
+
+    // Azimuth servo forbidden zone center (in degrees, 0-360)
+    // This is the center of the dead zone that the servo should NEVER cross
+    // Typically this is where the potentiometer wraps (0/360 boundary)
+    // The servo will always go the "long way" around to avoid crossing this zone
+    public static double AzimuthForbiddenZoneCenter = 0.0;
+
+    // Azimuth servo forbidden zone width (in degrees, total width)
+    // The servo will avoid the range [center - width/2, center + width/2]
+    // Set this wide enough to cover the potentiometer dead zone plus safety margin
+    public static double AzimuthForbiddenZoneWidth = 20.0;
+
     public static double[] CameraOffset = new double[]{-4.2, -7.5, -12.7}; // {x, y, z} offsets of the camera from robot center in inches
     // Maximum distance from an AprilTag to use it for localization (in inches)
     public static double AprilTagMaxDistance = 60.0;
@@ -216,7 +217,6 @@ public class MDOConstants {
     //   90.0 = AprilTag forward is robot right (rotate 90° CCW)
     //  -90.0 = AprilTag forward is robot left (rotate 90° CW)
     //  180.0 = AprilTag forward is robot backward
-    public static double AprilTagHeadingOffset = 90.0;
 
     // Enable threaded drive control for more responsive driving
     public static boolean EnableThreadedDrive = true;
