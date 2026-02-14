@@ -1355,7 +1355,7 @@ public class RobotCoreCustom {
 		 * WHAT IT DOES:
 		 * 1. Reads where the servo actually is (from the sensor)
 		 * 2. Compares it to where you want it to be (the target)
-		 * 3. Calculates how much power to apply to get there (avoiding forbidden zone)
+		 * 3. Calculates how much power to apply to get there
 		 * 4. Sends that power to the servos
 		 * 
 		 * HOW TO USE:
@@ -1364,9 +1364,8 @@ public class RobotCoreCustom {
 		 * - The more often you call it, the smoother the servo moves
 		 * 
 		 * BOUNDARY PROTECTION:
-		 * The servo will NEVER cross the forbidden zone (configured in MDOConstants).
-		 * If the shortest path would cross the forbidden zone, the servo goes the
-		 * "long way" around instead. This prevents cord tangling.
+		 * The servo will NEVER cross the forbidden zone center point.
+		 * Takes the shortest path unless it would cross the forbidden center.
 		 */
 		public void servoPidLoop() {
 			// Only run this if we're in smart mode with a position sensor
@@ -1376,11 +1375,43 @@ public class RobotCoreCustom {
 						// STEP 1: Read the sensor and convert voltage to degrees (0-360)
 						currentPosition = voltageToDegrees(aPosition.getVoltage());
 
-						// STEP 2: Calculate error with forbidden zone avoidance
-						double error = calculateSafeError(currentPosition, targetPosition);
+						// STEP 2: Calculate error - never cross the forbidden center
+						double forbiddenCenter = MDOConstants.AzimuthForbiddenZoneCenter;
+
+						// Calculate both possible paths
+						double directError = targetPosition - currentPosition;
+
+						// Normalize to CW path (positive, 0 to 360)
+						double cwError = directError;
+						while (cwError < 0) cwError += 360.0;
+						while (cwError >= 360.0) cwError -= 360.0;
+
+						// CCW path is the opposite direction
+						double ccwError = cwError - 360.0;
+
+						// Check if CW path crosses the forbidden center
+						boolean cwCrosses = pathCrossesPoint(currentPosition, currentPosition + cwError, forbiddenCenter);
+
+						// Check if CCW path crosses the forbidden center
+						boolean ccwCrosses = pathCrossesPoint(currentPosition, currentPosition + ccwError, forbiddenCenter);
+
+						// Choose the path
+						double error;
+						if (!cwCrosses && !ccwCrosses) {
+							// Neither crosses - use shortest
+							error = (Math.abs(cwError) <= Math.abs(ccwError)) ? cwError : ccwError;
+						} else if (!cwCrosses) {
+							// Only CW is safe
+							error = cwError;
+						} else if (!ccwCrosses) {
+							// Only CCW is safe
+							error = ccwError;
+						} else {
+							// Both cross (shouldn't happen) - use shortest
+							error = (Math.abs(cwError) <= Math.abs(ccwError)) ? cwError : ccwError;
+						}
 
 						// STEP 3: Use the PID controller to calculate power
-						// We pass (current + error) as target so the PID sees the safe path
 						double power = pidController.calculate(currentPosition + error, currentPosition, 0, 2, WRAP_THRESHOLD + 100.0);
 
 						// STEP 4: Make sure power stays within safe limits (-1 to 1)
@@ -1416,6 +1447,39 @@ public class RobotCoreCustom {
 						System.err.println("Error in servo PID loop: " + e.getMessage());
 					}
 				}
+			}
+		}
+
+		/**
+		 * Check if moving from start to end would cross through a specific point
+		 */
+		private boolean pathCrossesPoint(double start, double end, double point) {
+			// Normalize all to 0-360
+			while (start < 0) start += 360.0;
+			while (start >= 360.0) start -= 360.0;
+			while (point < 0) point += 360.0;
+			while (point >= 360.0) point -= 360.0;
+
+			// Determine direction
+			double distance = end - start;
+			if (Math.abs(distance) < 0.001) return false; // No movement
+
+			boolean movingCW = distance > 0;
+
+			if (movingCW) {
+				// Moving clockwise (increasing angle)
+				// Check if point is between start and end
+				double endNorm = start + Math.abs(distance);
+				// Point crosses if it's in the swept range
+				double pointCheck = point;
+				if (point < start) pointCheck += 360.0;
+				return pointCheck > start && pointCheck < endNorm;
+			} else {
+				// Moving counter-clockwise (decreasing angle)
+				double endNorm = start - Math.abs(distance);
+				double pointCheck = point;
+				if (point > start) pointCheck -= 360.0;
+				return pointCheck < start && pointCheck > endNorm;
 			}
 		}
 		/**
@@ -1458,103 +1522,6 @@ public class RobotCoreCustom {
 			return (voltage / aPosition.getMaxVoltage()) * WRAP_THRESHOLD;
 		}
 
-		/**
-		 * HELPER METHOD: Calculate error that avoids crossing the forbidden zone
-		 *
-		 * HOW IT WORKS:
-		 * 1. Calculate both possible paths to the target (CW and CCW)
-		 * 2. Check if each path would cross the forbidden zone
-		 * 3. Return the error for the path that doesn't cross the forbidden zone
-		 * 4. If both paths cross (shouldn't happen with proper config), use shortest
-		 *
-		 * @param current Current position in degrees (0-360)
-		 * @param target Target position in degrees (0-360)
-		 * @return Error value (positive = CW, negative = CCW)
-		 */
-		private double calculateSafeError(double current, double target) {
-			// Get forbidden zone parameters from MDOConstants
-			double forbiddenCenter = MDOConstants.AzimuthForbiddenZoneCenter;
-			double forbiddenWidth = MDOConstants.AzimuthForbiddenZoneWidth;
-			double halfWidth = forbiddenWidth / 2.0;
-
-			// Calculate both possible errors (CW and CCW paths)
-			double directError = target - current;
-
-			// Normalize to find CW (positive) and CCW (negative) paths
-			double cwError = directError;  // Clockwise error
-			double ccwError = directError; // Counter-clockwise error
-
-			// Make cwError positive (0 to 360)
-			while (cwError < 0) cwError += 360.0;
-			while (cwError >= 360.0) cwError -= 360.0;
-
-			// Make ccwError negative (-360 to 0)
-			ccwError = cwError - 360.0;
-
-			// Check if CW path crosses the forbidden zone
-			boolean cwCrossesForbidden = pathCrossesForbiddenZone(current, current + cwError, forbiddenCenter, halfWidth);
-
-			// Check if CCW path crosses the forbidden zone
-			boolean ccwCrossesForbidden = pathCrossesForbiddenZone(current, current + ccwError, forbiddenCenter, halfWidth);
-
-			// Choose the safe path
-			if (!cwCrossesForbidden && !ccwCrossesForbidden) {
-				// Neither crosses - use shortest path
-				return (Math.abs(cwError) <= Math.abs(ccwError)) ? cwError : ccwError;
-			} else if (!cwCrossesForbidden) {
-				// Only CW is safe
-				return cwError;
-			} else if (!ccwCrossesForbidden) {
-				// Only CCW is safe
-				return ccwError;
-			} else {
-				// Both cross forbidden zone - this shouldn't happen with proper config
-				// Fall back to shortest path (this indicates a config issue)
-				return (Math.abs(cwError) <= Math.abs(ccwError)) ? cwError : ccwError;
-			}
-		}
-
-		/**
-		 * HELPER METHOD: Check if a path from start to end crosses the forbidden zone
-		 *
-		 * @param start Starting angle in degrees
-		 * @param end Ending angle in degrees (can be outside 0-360 for path calculation)
-		 * @param forbiddenCenter Center of forbidden zone in degrees
-		 * @param halfWidth Half the width of the forbidden zone
-		 * @return true if the path would cross the forbidden zone
-		 */
-		private boolean pathCrossesForbiddenZone(double start, double end, double forbiddenCenter, double halfWidth) {
-			// Normalize start to 0-360
-			while (start < 0) start += 360.0;
-			while (start >= 360.0) start -= 360.0;
-
-			// Calculate the direction and distance
-			double distance = end - start;
-			if (Math.abs(distance) < 0.001) return false; // No movement
-
-			// Check each degree along the path (simple but effective)
-			// For efficiency, we check key points: start, end, and the forbidden zone boundaries
-			double step = (distance > 0) ? 1.0 : -1.0;
-			int steps = (int) Math.abs(distance);
-
-			for (int i = 0; i <= steps; i++) {
-				double pos = start + (i * step);
-				// Normalize position to 0-360
-				while (pos < 0) pos += 360.0;
-				while (pos >= 360.0) pos -= 360.0;
-
-				// Check if this position is in the forbidden zone
-				double distFromCenter = Math.abs(pos - forbiddenCenter);
-				// Handle wrap-around for forbidden zone check
-				if (distFromCenter > 180.0) distFromCenter = 360.0 - distFromCenter;
-
-				if (distFromCenter < halfWidth) {
-					return true; // Path crosses forbidden zone
-				}
-			}
-
-			return false; // Path is safe
-		}
 
 		/**
 		 * READ: Get the raw sensor reading (without accumulated rotations)

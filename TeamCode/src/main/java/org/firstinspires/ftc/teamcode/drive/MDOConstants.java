@@ -187,15 +187,11 @@ public class MDOConstants {
     public static double AzimuthPIDDeadzonePercent = 0.05;
 
     // Azimuth servo forbidden zone center (in degrees, 0-360)
-    // This is the center of the dead zone that the servo should NEVER cross
+    // This is the point that the servo should NEVER cross
     // Typically this is where the potentiometer wraps (0/360 boundary)
-    // The servo will always go the "long way" around to avoid crossing this zone
+    // The servo will always go the other way to avoid crossing this point
     public static double AzimuthForbiddenZoneCenter = 0.0;
 
-    // Azimuth servo forbidden zone width (in degrees, total width)
-    // The servo will avoid the range [center - width/2, center + width/2]
-    // Set this wide enough to cover the potentiometer dead zone plus safety margin
-    public static double AzimuthForbiddenZoneWidth = 20.0;
 
     public static double[] CameraOffset = new double[]{-4.2, -7.5, -12.7}; // {x, y, z} offsets of the camera from robot center in inches
     // Maximum distance from an AprilTag to use it for localization (in inches)
