@@ -5,7 +5,7 @@ import com.bylazar.configurables.annotations.Configurable;
 @Configurable
 public class MDOConstants {
     // Power level for the launcher mechanism (0.0 to 1.0)
-    public static double launchPower = 0.8;
+    public static double launchPower = 1;
 
     // Enable or disable AprilTag vision processing for localization
     public static boolean useAprilTags = true;
@@ -20,14 +20,11 @@ public class MDOConstants {
     // Original (-70, -70, 40) → (2, 142, 40)
     public static Double[] blueTargetLocation = new Double[]{2.0, 142.0, 40.0};
 
-    // Calibration constants for launcher trajectory calculations {velocity, gravity}
-    public static Double[] launcherCalcConstants = new Double[]{280.00, 386.09};
-
     // ===== RED SIDE CONFIGURATIONS =====
     // Fine-tuned constants specifically for red alliance side
 
     // Red side azimuth fine adjustment offset (in degrees)
-    public static Double RedAzimuthFineAdjustment = -6.0;
+    public static Double RedAzimuthFineAdjustment = 0.0;
 
     // Red side elevation offset
     public static Double RedElevationOffset = 0.0;
@@ -64,8 +61,8 @@ public class MDOConstants {
 
     // Blue side RPM zones
     public static double[][] BlueLauncherRPMZones = new double[][]{
-            {0.0, 2000},    // 0-120 inches: close range, lower RPM
-            {120.0, 2500},  // 120+ inches: far range, higher RPM
+            {0.0, 2100},    // 0-120 inches: close range, lower RPM
+            {100.0, 2700},  // 120+ inches: far range, higher RPM
     };
 
     // Blue side AprilTag heading offset (in degrees)
@@ -94,7 +91,7 @@ public class MDOConstants {
     public static int LifterWaitToTopTimerMillis = 200;
 
     // Offset in degrees for the turret azimuth relative to the robot's IMU zero
-    public static Double AzimuthIMUOffset = -5.0;
+    public static Double AzimuthIMUOffset = -190.0;
 
     // Enable correction of turret angle based on robot heading (IMU)
     public static boolean EnableTurretIMUCorrection = true;
@@ -190,9 +187,7 @@ public class MDOConstants {
     // This is the point that the servo should NEVER cross
     // Typically this is where the potentiometer wraps (0/360 boundary)
     // The servo will always go the other way to avoid crossing this point
-    public static double AzimuthForbiddenZoneCenter = 0.0;
-
-
+    public static double AzimuthForbiddenZoneCenter = 180.0;
     public static double[] CameraOffset = new double[]{-4.2, -7.5, -12.7}; // {x, y, z} offsets of the camera from robot center in inches
     // Maximum distance from an AprilTag to use it for localization (in inches)
     public static double AprilTagMaxDistance = 60.0;
@@ -228,27 +223,14 @@ public class MDOConstants {
 
     // AprilTag update frequency in milliseconds (higher = less CPU usage, lower = more responsive)
     public static int AprilTagUpdateIntervalMs = 100;
-	public static int LauncherRPM = 2300;
 	public static CustomPIDFController LauncherPIDF = new CustomPIDFController(20, 2, 0, 3);
-
-	// ===== LAUNCHER RPM ZONES =====
-	// RPM zones based on distance to target (in inches)
-	// Format: {distance threshold (inches), RPM for that zone}
-	// Distances are checked in order, first matching threshold wins
-	// Example: If distance is 50 inches and zones are {{0, 2000}, {70, 2800}}
-	// then RPM will be 2000 if distance < 70 inches, or 2800 if distance >= 70 inches
-	public static double[][] LauncherRPMZones = new double[][]{
-			{0.0, 2000},    // 0-70 inches: close range, lower RPM
-			{120.0, 2500},   // 110+ inches: far range, higher RPM
-	};
-
 	// Enable RPM zones (if false, uses static LauncherRPM)
 	public static boolean EnableLauncherRPMZones = true;
 
 	// ===== RAPID FIRE SETTINGS =====
 	// Delay in milliseconds between rapid fire shots (triggered by gamepad2.right_trigger)
 	// Lower values = faster firing, Higher values = more time between shots
-	public static int RapidFireDelayMs = 400;
+	public static int RapidFireDelayMs = 500;
 
 	// Order of pits to fire in rapid fire mode (0, 1, 2)
 	// Change the order to control which balls fire first

@@ -1321,6 +1321,15 @@ public class RobotCoreCustom {
 					// position = +1 → 360°
 					double rawTargetPosition = (position + 1.0) / 2.0 * WRAP_THRESHOLD;
 
+					// Normalize to [0, 360) to prevent full rotation errors
+					// 360° and 0° are the same physical position, so we must normalize
+					// to avoid the servo thinking it needs to rotate a full turn
+					while (rawTargetPosition >= WRAP_THRESHOLD) {
+						rawTargetPosition -= WRAP_THRESHOLD;
+					}
+					while (rawTargetPosition < 0) {
+						rawTargetPosition += WRAP_THRESHOLD;
+					}
 
 					targetPosition = rawTargetPosition;
 				}
