@@ -512,9 +512,11 @@ public class BlueCloseAutoOpmode extends OpMode {
 						launched = true;
 					}
 
-					// Always increment counters when a ball is launched
+					// Increment counters when a ball is launched
 					if (launched) {
 						ballsLaunched++;
+						// Always increment launchOrderIndex to stay in sync with launch cycles
+						// This ensures we move to the next target color regardless of how the ball was launched
 						if (launchOrderIndex < launchOrder.size()) {
 							launchOrderIndex++;
 						}
@@ -605,9 +607,11 @@ public class BlueCloseAutoOpmode extends OpMode {
 						launched = true;
 					}
 
-					// Always increment counters when a ball is launched
+					// Increment counters when a ball is launched
 					if (launched) {
 						ballsLaunched++;
+						// Always increment launchOrderIndex to stay in sync with launch cycles
+						// This ensures we move to the next target color regardless of how the ball was launched
 						if (launchOrderIndex < launchOrder.size()) {
 							launchOrderIndex++;
 						}
@@ -697,9 +701,11 @@ public class BlueCloseAutoOpmode extends OpMode {
 						launched = true;
 					}
 
-					// Always increment counters when a ball is launched
+					// Increment counters when a ball is launched
 					if (launched) {
 						ballsLaunched++;
+						// Always increment launchOrderIndex to stay in sync with launch cycles
+						// This ensures we move to the next target color regardless of how the ball was launched
 						if (launchOrderIndex < launchOrder.size()) {
 							launchOrderIndex++;
 						}
@@ -783,6 +789,8 @@ public class BlueCloseAutoOpmode extends OpMode {
 	/**
 	 * Scan for AprilTags and update the detected list and launch order.
 	 * Call this during CAMERA_LOOK state to determine ball shooting order.
+	 * Only cares about tags 21, 22, 23 - ignores all other AprilTags on the field.
+	 * Stops the camera processor immediately once a valid tag is detected.
 	 *
 	 * AprilTag ID mapping (pattern repeats for each launch cycle):
 	 * - Tag 21 = GPP (Green, Purple, Purple)
@@ -790,15 +798,22 @@ public class BlueCloseAutoOpmode extends OpMode {
 	 * - Tag 23 = PPG (Purple, Purple, Green)
 	 */
 	protected void scanForAprilTags() {
-		if (aprilTagLocalizer == null || aprilTagLocalizer.aprilTag == null) {
+		// Skip if camera already disabled or launch order already set
+		if (aprilTagLocalizer == null || aprilTagLocalizer.aprilTag == null || !launchOrder.isEmpty()) {
 			return;
 		}
 
 		try {
 			List<AprilTagDetection> currentDetections = aprilTagLocalizer.aprilTag.getDetections();
 			for (AprilTagDetection detection : currentDetections) {
-				if (detection != null && detection.metadata != null) {
+				if (detection != null) {
 					int tagId = detection.id;
+
+					// Only care about our specific target tags (21, 22, 23)
+					// Ignore all other AprilTags on the field
+					if (tagId != 21 && tagId != 22 && tagId != 23) {
+						continue;
+					}
 
 					// Add to list if not already seen
 					if (!detectedAprilTags.contains(tagId)) {
@@ -831,11 +846,31 @@ public class BlueCloseAutoOpmode extends OpMode {
 								launchOrder.add(GREEN);
 							}
 						}
+
+						// Stop the camera processor immediately to save resources
+						// We have what we need, no point in continuing to process frames
+						stopAprilTagCamera();
+						return; // Exit early since we found our tag
 					}
 				}
 			}
 		} catch (Exception e) {
 			// Ignore exceptions during AprilTag detection
+		}
+	}
+
+	/**
+	 * Stop the AprilTag camera processor to save CPU/power resources.
+	 * Called automatically once a valid target tag (21, 22, or 23) is detected.
+	 */
+	protected void stopAprilTagCamera() {
+		try {
+			if (aprilTagLocalizer != null && aprilTagLocalizer.visionPortal != null && aprilTagLocalizer.aprilTag != null) {
+				// Disable the AprilTag processor through the VisionPortal
+				aprilTagLocalizer.visionPortal.setProcessorEnabled(aprilTagLocalizer.aprilTag, false);
+			}
+		} catch (Exception e) {
+			// Ignore exceptions when stopping camera
 		}
 	}
 

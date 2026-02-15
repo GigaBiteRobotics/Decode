@@ -5,11 +5,16 @@ import android.annotation.SuppressLint;
 import com.bylazar.telemetry.PanelsTelemetry;
 import com.bylazar.telemetry.TelemetryManager;
 import com.pedropathing.follower.Follower;
+import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.geometry.Pose;
+import com.pedropathing.paths.Path;
+import com.pedropathing.paths.PathChain;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.ColorSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
+
+import java.util.function.Supplier;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.Position;
 import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
@@ -67,12 +72,10 @@ public class MainDriveOpmode extends OpMode {
 	ElapsedTime sectionTimer = new ElapsedTime();
 	double timeCaching = 0, timeUpdate = 0, timeSorter = 0, timeDrive = 0;
 	double timeAprilTag = 0, timeServo = 0, timeLauncher = 0, timeIntake = 0, timeTelemetry = 0;
-
 	Double launchAzimuthDeg = 0.0;
-	Double fieldRelativeAzimuthDeg = 0.0;
 	Double robotFieldRelativeAzimuthDeg = 0.0;
 	Double finalAzimuthDeg = 0.0;
-
+	Double previousFinalAzimuthDeg = 0.0; // Track previous value for anti-jitter
 
 	static TelemetryManager telemetryM;
 
@@ -90,12 +93,21 @@ public class MainDriveOpmode extends OpMode {
 
 	// Rapid fire state machine
 	private boolean rapidFireActive = false;
+	private boolean launcherPooping = false;
 	private int rapidFireIndex = 0; // Current index in RapidFireOrder
 	private final ElapsedTime rapidFireTimer = new ElapsedTime();
 	private boolean rapidFireTriggerWasPressed = false; // For edge detection
 
 	// Disable camera completely - set to false to skip all camera/AprilTag initialization
 	private static final boolean ENABLE_CAMERA = false;
+
+	// In-teleop automated pathing state
+	private boolean automatedDriveActive = false;
+	private boolean holdingPosition = false;  // Holds position after path completes until stick input
+	private Supplier<PathChain> launchPositionPath;  // Path to launch position
+	private Supplier<PathChain> humanPlayerPath;     // Path to human player station
+	private Supplier<PathChain> gatePositionPath;    // Path to gate position
+	private static final double STICK_OVERRIDE_THRESHOLD = 0.1; // Manual override threshold
 
 	// Threads
 	// Handles background tasks like sensor reading and servo PID to keep the main loop fast
@@ -185,6 +197,42 @@ public class MainDriveOpmode extends OpMode {
 		telemetryC.update();
 
 		follower.startTeleopDrive();
+
+		// Initialize lazy path suppliers for in-teleop automated pathing
+		// These use Supplier<PathChain> so the path is built from current position when triggered
+		launchPositionPath = () -> {
+			Pose targetPose = (team == Team.RED) ? MDOConstants.redCloseLaunchLocation : MDOConstants.blueCloseLaunchLocation;
+			return follower.pathBuilder()
+				.addPath(new Path(new BezierLine(
+						follower::getPose,
+						targetPose
+				)))
+				.setLinearHeadingInterpolation(follower.getPose().getHeading(), targetPose.getHeading())
+				.build();
+		};
+
+		humanPlayerPath = () -> {
+			Pose targetPose = (team == Team.RED) ? MDOConstants.redHumanLocation : MDOConstants.blueHumanLocation;
+			return follower.pathBuilder()
+				.addPath(new Path(new BezierLine(
+						follower::getPose,
+						targetPose
+				)))
+				.setLinearHeadingInterpolation(follower.getPose().getHeading(), targetPose.getHeading())
+				.build();
+		};
+		
+		gatePositionPath = () -> {
+			Pose targetPose = (team == Team.RED) ? MDOConstants.redGateLocation : MDOConstants.blueGateLocation;
+			return follower.pathBuilder()
+				.addPath(new Path(new BezierLine(
+						follower::getPose,
+						targetPose
+				)))
+				.setLinearHeadingInterpolation(follower.getPose().getHeading(), targetPose.getHeading())
+				.build();
+		};
+
 		gamepadTimer.reset();
 		aprilSlowdownTimer.reset();
 		lifterAutoLaunchTimer.reset();
@@ -201,6 +249,7 @@ public class MainDriveOpmode extends OpMode {
 
 	}
 
+	@SuppressLint("DefaultLocale")
 	@Override
 	public void init_loop() {
 		// Team selection
@@ -404,23 +453,82 @@ public class MainDriveOpmode extends OpMode {
 		// ===== DRIVE CONTROL =====
 		sectionTimer.reset();
 
-		if (MDOConstants.EnableThreadedDrive) {
-			// Use threaded drive for maximum responsiveness
-			// The drive thread runs at ~200Hz independently of this loop
-			customThreads.setDriveInputs(
-					-gamepad1LeftStickY,
-					-gamepad1LeftStickX,
-					gamepad1RightStickX * -0.75,
-					MDOConstants.EnableFieldCentricDrive
-			);
-		} else {
-			// Direct drive control (old method)
-			follower.setTeleOpDrive(
-					-gamepad1LeftStickY,
-					-gamepad1LeftStickX,
-					gamepad1RightStickX * -0.75,
-					MDOConstants.EnableFieldCentricDrive
-			);
+		// Check for manual override - any significant stick input cancels automated pathing/holding
+		boolean manualOverride = Math.abs(gamepad1LeftStickY) > STICK_OVERRIDE_THRESHOLD ||
+								 Math.abs(gamepad1LeftStickX) > STICK_OVERRIDE_THRESHOLD ||
+								 Math.abs(gamepad1RightStickX) > STICK_OVERRIDE_THRESHOLD;
+
+		// ===== AUTOMATED PATHING TRIGGERS =====
+		// D-pad buttons can interrupt any current path to go to a new position
+
+		// D-pad Down: Go to launch position
+		if (gamepad1.dpad_down) {
+			PathChain pathToFollow = launchPositionPath.get();
+			synchronized (customThreads) {
+				follower.followPath(pathToFollow, true);
+			}
+			automatedDriveActive = true;
+			holdingPosition = false;
+		}
+
+		// D-pad Up: Go to human player station
+		if (gamepad1.dpad_up) {
+			PathChain pathToFollow = humanPlayerPath.get();
+			synchronized (customThreads) {
+				follower.followPath(pathToFollow, true);
+			}
+			automatedDriveActive = true;
+			holdingPosition = false;
+		}
+
+		// D-pad Right: Go to gate position
+		if (gamepad1.dpad_right) {
+			PathChain pathToFollow = gatePositionPath.get();
+			synchronized (customThreads) {
+				follower.followPath(pathToFollow, true);
+			}
+			automatedDriveActive = true;
+			holdingPosition = false;
+		}
+
+		// ===== PATH COMPLETION - ENTER HOLD POSITION MODE =====
+		// When path completes, it automatically holds position due to holdPoint=true
+		// We just track state to know when to allow manual override
+		if (automatedDriveActive && !follower.isBusy()) {
+			automatedDriveActive = false;
+			holdingPosition = true; // Now holding position at destination
+		}
+
+		// ===== CANCEL AUTOMATED/HOLD MODE =====
+		// Manual stick input or B button releases control back to teleop
+		if ((automatedDriveActive || holdingPosition) && (manualOverride || gamepad1.b)) {
+			synchronized (customThreads) {
+				follower.startTeleopDrive();
+			}
+			automatedDriveActive = false;
+			holdingPosition = false;
+		}
+
+		// ===== TELEOP DRIVE (only when not in automated or hold mode) =====
+		if (!automatedDriveActive && !holdingPosition) {
+			if (MDOConstants.EnableThreadedDrive) {
+				// Use threaded drive for maximum responsiveness
+				// The drive thread runs at ~200Hz independently of this loop
+				customThreads.setDriveInputs(
+						-gamepad1LeftStickY,
+						-gamepad1LeftStickX,
+						gamepad1RightStickX * -0.75,
+						MDOConstants.EnableFieldCentricDrive
+				);
+			} else {
+				// Direct drive control (old method)
+				follower.setTeleOpDrive(
+						-gamepad1LeftStickY,
+						-gamepad1LeftStickX,
+						gamepad1RightStickX * -0.75,
+						MDOConstants.EnableFieldCentricDrive
+				);
+			}
 		}
 
 		timeDrive = sectionTimer.milliseconds();
@@ -474,6 +582,10 @@ public class MainDriveOpmode extends OpMode {
 				targetPower = 0;
 				launcherSpinning = false;
 			}
+		}
+		if (gamepad2.dpad_up && gamepadTimerMs > 300) {
+			gamepadTimer.reset();
+			launcherPooping = !launcherPooping;
 		}
 
 		// Manual azimuth offset adjustment using D-pad left/right
@@ -540,7 +652,11 @@ public class MainDriveOpmode extends OpMode {
 
 		// Clamp target power
 		targetPower = Math.max(-1.0, Math.min(1.0, targetPower));
-		launcherMotors.setRPM(launcherSpinning ? dynamicRPM : 0);
+		if (launcherPooping) {
+			launcherMotors.setRPM(500);
+		} else {
+			launcherMotors.setRPM(launcherSpinning ? dynamicRPM : 0);
+		}
 		launcherMotors.setPIDFController(MDOConstants.LauncherPIDF);
 
 		timeLauncher = sectionTimer.milliseconds();
@@ -717,6 +833,11 @@ public class MainDriveOpmode extends OpMode {
 		double elevationOffset = isRedSide ? MDOConstants.RedElevationOffset : MDOConstants.BlueElevationOffset;
 		double azimuthFineAdjust = isRedSide ? MDOConstants.RedAzimuthFineAdjustment : MDOConstants.BlueAzimuthFineAdjustment;
 
+		// Calculate distance-based elevation offset from zones
+		Double[] currentTarget = isRedSide ? MDOConstants.redTargetLocation : MDOConstants.blueTargetLocation;
+		com.pedropathing.geometry.Pose currentPose = follower.getPose();
+		double distanceElevationOffset = RobotCoreCustom.calculateElevationOffset(currentPose, currentTarget, isRedSide);
+
 		if (hasValidLaunchVectors) {
 			launchAzimuthDeg = Math.toDegrees(launchVectors[1]);
 			// Elevation is already calculated as servo position in LocalizationAutoAim, not radians
@@ -724,8 +845,8 @@ public class MainDriveOpmode extends OpMode {
 		}
 
 		if (launchElevationDeg != null) {
-			// Use alliance-specific elevation offset combined with shared offset
-			elevationServoTarget = (launchElevationDeg + MDOConstants.ElevationOffset + elevationOffset) * MDOConstants.ElevationMultiplier;
+			// Use alliance-specific elevation offset combined with shared offset and distance-based offset
+			elevationServoTarget = (launchElevationDeg + MDOConstants.ElevationOffset + elevationOffset + distanceElevationOffset) * MDOConstants.ElevationMultiplier;
 			// Fix clamp logic to correctly bound between -0.4 and 1.0
 			elevationServoFinal = Math.max(-0.4, Math.min(1.0, elevationServoTarget));
 			elevationServo.setPosition(elevationServoFinal);
@@ -761,6 +882,25 @@ public class MainDriveOpmode extends OpMode {
 		while (finalAzimuthDeg < -180.0) {
 			finalAzimuthDeg += 360.0;
 		}
+
+		// ANTI-JITTER: Use continuous tracking to prevent wrap-around jitter
+		// Calculate the angular difference using shortest path
+		double angleDiff = finalAzimuthDeg - previousFinalAzimuthDeg;
+
+		// Normalize the difference to [-180, 180] to find shortest path
+		while (angleDiff > 180.0) {
+			angleDiff -= 360.0;
+		}
+		while (angleDiff < -180.0) {
+			angleDiff += 360.0;
+		}
+
+		// Apply the change incrementally to the previous value
+		// This prevents jumping when crossing the ±180° boundary
+		finalAzimuthDeg = previousFinalAzimuthDeg + angleDiff;
+
+		// Store for next iteration
+		previousFinalAzimuthDeg = finalAzimuthDeg;
 
 		// Convert degrees to servo position [-1, 1] range
 		// The servo controller expects: -1 = 0°, 0 = 180°, +1 = 360°

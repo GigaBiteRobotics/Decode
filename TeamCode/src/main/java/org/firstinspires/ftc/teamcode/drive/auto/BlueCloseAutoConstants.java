@@ -9,13 +9,13 @@ public class BlueCloseAutoConstants {
 	public static Pose launchPose = new Pose(55, 90, 1.31);
 	public static Pose cameraLookPose = new Pose(60, 90, 1.31); // Different heading for camera view
 	public static Pose ballCollection0LineupPose = new Pose(48, 84, Math.PI);
-	public static Pose ballCollection0PickupPose = new Pose(14, 84, Math.PI);
+	public static Pose ballCollection0PickupPose = new Pose(16, 84, Math.PI);
 	public static Pose getBallCollection1LineupPose = new Pose(53, 60, Math.PI);
-	public static Pose getBallCollection1PickupPose = new Pose(8, 60, Math.PI);
+	public static Pose getBallCollection1PickupPose = new Pose(18, 60, Math.PI);
 	public static Pose finalPose = new Pose(18, 90, Math.PI);
-	public static double elevationPos = 0.1;
-	public static int targetRPM = 2000;
-	public static double azimuthPos = -0.64;
+	public static double elevationPos = 0.12;
+	public static int targetRPM = 1925;
+	public static double azimuthPos = -0.4;
 
 	// Intake speeds (0.0 to 1.0)
 	public static double intakeInSpeed = 1;

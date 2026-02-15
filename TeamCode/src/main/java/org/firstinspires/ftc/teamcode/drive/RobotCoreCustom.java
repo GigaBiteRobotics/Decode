@@ -160,6 +160,52 @@ public class RobotCoreCustom {
 		return rpm;
 	}
 
+	/**
+	 * Calculate the elevation offset based on distance to target with alliance-specific tuning
+	 * @param follower Robot follower for position
+	 * @param target Target position [x, y, z]
+	 * @param isRedSide true for red alliance, false for blue alliance
+	 * @return Elevation offset value based on distance zones
+	 */
+	public static double calculateElevationOffset(Follower follower, Double[] target, boolean isRedSide) {
+		if (follower == null) {
+			return 0.0;
+		}
+		// Get pose once and pass to thread-safe overload
+		com.pedropathing.geometry.Pose currentPose = follower.getPose();
+		return calculateElevationOffset(currentPose, target, isRedSide);
+	}
+
+	/**
+	 * Thread-safe overload that accepts a pre-fetched Pose
+	 * Use this when calling from threaded code to avoid race conditions
+	 */
+	public static double calculateElevationOffset(com.pedropathing.geometry.Pose pose, Double[] target, boolean isRedSide) {
+		// Get alliance-specific zones
+		double[][] elevationOffsetZones = isRedSide ? MDOConstants.RedElevationOffsetZones : MDOConstants.BlueElevationOffsetZones;
+
+		// Calculate distance to target
+		if (pose == null || target == null || target.length < 3) {
+			return 0.0; // Fallback to no offset
+		}
+
+		Double[] robotPos = {pose.getX(), pose.getY(), 10.0};
+		double distance = LocalizationAutoAim.getDistance(robotPos, target);
+
+		// Find appropriate elevation offset zone based on distance
+		// Zones are ordered by distance threshold, find the first one that matches
+		double offset = 0.0; // Default fallback
+
+		for (int i = elevationOffsetZones.length - 1; i >= 0; i--) {
+			if (distance >= elevationOffsetZones[i][0]) {
+				offset = elevationOffsetZones[i][1];
+				break;
+			}
+		}
+
+		return offset;
+	}
+
 	public void drawCurrent(Follower follower) {
 		try {
 			Drawing.drawRobot(follower.getPose());
@@ -1329,6 +1375,35 @@ public class RobotCoreCustom {
 					}
 					while (rawTargetPosition < 0) {
 						rawTargetPosition += WRAP_THRESHOLD;
+					}
+
+					// ANTI-JITTER FIX: Prevent wrap-around jitter when new target crosses boundary
+					// If the target would cause a large jump due to wrap-around (e.g., 359° to 1°),
+					// but the actual angular difference is small, use continuous tracking instead
+					double currentTarget = targetPosition;
+					double directDiff = rawTargetPosition - currentTarget;
+
+					// Calculate shortest angular distance considering wrap-around
+					double shortestDiff = directDiff;
+					if (shortestDiff > 180.0) {
+						shortestDiff -= 360.0;
+					} else if (shortestDiff < -180.0) {
+						shortestDiff += 360.0;
+					}
+
+					// If the actual change is small (< 10°) but the raw difference is large (> 180°),
+					// we're experiencing wrap-around jitter - use the shortest path
+					if (Math.abs(shortestDiff) < 10.0 && Math.abs(directDiff) > 180.0) {
+						// Apply the shortest path adjustment to current target
+						double adjustedTarget = currentTarget + shortestDiff;
+						// Normalize back to [0, 360)
+						while (adjustedTarget >= WRAP_THRESHOLD) {
+							adjustedTarget -= WRAP_THRESHOLD;
+						}
+						while (adjustedTarget < 0) {
+							adjustedTarget += WRAP_THRESHOLD;
+						}
+						rawTargetPosition = adjustedTarget;
 					}
 
 					targetPosition = rawTargetPosition;
