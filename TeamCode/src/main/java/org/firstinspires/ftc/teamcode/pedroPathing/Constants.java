@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode.pedroPathing;
 
+import com.bylazar.configurables.annotations.Configurable;
 import com.pedropathing.control.FilteredPIDFCoefficients;
 import com.pedropathing.control.PIDFCoefficients;
 import com.pedropathing.follower.Follower;
@@ -12,13 +13,14 @@ import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 
+@Configurable
 public class Constants {
     public static FollowerConstants followerConstants = new FollowerConstants()
 		    .forwardZeroPowerAcceleration(-32.75)
 		    .lateralZeroPowerAcceleration(-60.42)
 		    .translationalPIDFCoefficients(new PIDFCoefficients(0.25, 0, 0.03, 0))
 		    .headingPIDFCoefficients(new PIDFCoefficients(1.5, 0, 0.1, 0))
-		    .drivePIDFCoefficients(new FilteredPIDFCoefficients(0.025, 0, 0.00001, 0.6, 0.01))
+		    .drivePIDFCoefficients(new FilteredPIDFCoefficients(0.025, 0, 0.0007, 0.8, 0.01))
 		    .useSecondaryTranslationalPIDF(false)
 		    .useSecondaryDrivePIDF(false)
 		    .useSecondaryHeadingPIDF(false)

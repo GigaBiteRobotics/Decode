@@ -21,8 +21,8 @@ public class MDOConstants {
     public static Double[] BlueLauncherCalcConstants = new Double[]{280.00, 386.09};
     public static int BlueLauncherRPM = 2300;
     public static double[][] BlueLauncherRPMZones = new double[][]{
-            {0.0, 2100},
-            {110.0, 3200},
+            {0.0, 4000},
+            {110.0, 6000},
     };
 	public static double[][] BlueElevationOffsetZones = new double[][]{
 			{0.0, 0},
@@ -56,6 +56,8 @@ public class MDOConstants {
     public static double GreenHueMax = 190.0;
     public static double GreenHueMin = 80.0;
     public static CustomPIDFController LauncherPIDF = new CustomPIDFController(20, 2, 0, 3);
+    public static boolean EnableLauncherPID = true;
+    public static double LauncherManualPower = 1.0;
     public static double launchPower = 1;
     public static Double LifterPositionHigh = 0.8;
     public static Double LifterPositionLow = 0.0;
@@ -73,8 +75,8 @@ public class MDOConstants {
     public static Double[] RedLauncherCalcConstants = new Double[]{280.00, 386.09};
     public static int RedLauncherRPM = 2300;
     public static double[][] RedLauncherRPMZones = new double[][]{
-            {0.0, 2000},
-            {110.0, 3200},
+            {0.0, 4200},
+            {110.0, 6000},
     };
 	public static double[][] RedElevationOffsetZones = new double[][]{
 			{0.0, 0},

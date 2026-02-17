@@ -244,6 +244,7 @@ public class RobotCoreCustom {
 		HashMap<String, CustomMotor> motors;
 		boolean[] reverseMap;
 		boolean[] encoderReverseMap;
+		boolean[] encoderEnableMap; // Which motors have encoders enabled
 		private volatile int targetRPM = 0;
 		private volatile double targetPower = 0.0;
 		private boolean isRPMMode = false;
@@ -256,7 +257,7 @@ public class RobotCoreCustom {
 		private final Object lock = new Object();
 
 		/**
-		 * Constructor for motor group controller
+		 * Constructor for motor group controller (all motors same encoder setting)
 		 * @param hardwareMap HardwareMap to get motors
 		 * @param motorGroup Array of motor names in the group
 		 * @param reverseMap Array of booleans indicating if each motor is reversed
@@ -265,7 +266,23 @@ public class RobotCoreCustom {
 		 * @param pidfController PID controller for RPM mode (shared across all motors)
 		 */
 		public CustomMotorController(HardwareMap hardwareMap, String[] motorGroup, boolean[] reverseMap, boolean hasEncoder, double ticksPerRev, CustomPIDFController pidfController) {
-			this(hardwareMap, motorGroup, reverseMap, null, hasEncoder, ticksPerRev, pidfController);
+			this(hardwareMap, motorGroup, reverseMap, null, null, ticksPerRev, pidfController);
+			// Create encoderEnableMap with all same value
+			this.encoderEnableMap = new boolean[motorGroup.length];
+			for (int i = 0; i < motorGroup.length; i++) {
+				this.encoderEnableMap[i] = hasEncoder;
+			}
+			// Re-initialize motors with correct encoder settings
+			for (int i = 0; i < motorGroup.length; i++) {
+				String motorName = motorGroup[i];
+				boolean reverseEnc = (encoderReverseMap != null) ? encoderReverseMap[i] : false;
+				try {
+					CustomMotor motor = new CustomMotor(hardwareMap, motorName, hasEncoder, ticksPerRev, null, reverseEnc);
+					this.motors.put(motorName, motor);
+				} catch (Exception e) {
+					throw new IllegalArgumentException("Failed to initialize motor: " + motorName + " - " + e.getMessage());
+				}
+			}
 		}
 
 		/**
@@ -279,9 +296,40 @@ public class RobotCoreCustom {
 		 * @param pidfController PID controller for RPM mode (shared across all motors)
 		 */
 		public CustomMotorController(HardwareMap hardwareMap, String[] motorGroup, boolean[] reverseMap, boolean[] encoderReverseMap, boolean hasEncoder, double ticksPerRev, CustomPIDFController pidfController) {
+			this(hardwareMap, motorGroup, reverseMap, encoderReverseMap, null, ticksPerRev, pidfController);
+			// Create encoderEnableMap with all same value
+			this.encoderEnableMap = new boolean[motorGroup.length];
+			for (int i = 0; i < motorGroup.length; i++) {
+				this.encoderEnableMap[i] = hasEncoder;
+			}
+			// Re-initialize motors with correct encoder settings
+			for (int i = 0; i < motorGroup.length; i++) {
+				String motorName = motorGroup[i];
+				boolean reverseEnc = (encoderReverseMap != null) ? encoderReverseMap[i] : false;
+				try {
+					CustomMotor motor = new CustomMotor(hardwareMap, motorName, hasEncoder, ticksPerRev, null, reverseEnc);
+					this.motors.put(motorName, motor);
+				} catch (Exception e) {
+					throw new IllegalArgumentException("Failed to initialize motor: " + motorName + " - " + e.getMessage());
+				}
+			}
+		}
+
+		/**
+		 * Constructor for motor group controller with per-motor encoder enable map
+		 * @param hardwareMap HardwareMap to get motors
+		 * @param motorGroup Array of motor names in the group
+		 * @param reverseMap Array of booleans indicating if each motor is reversed
+		 * @param encoderReverseMap Array of booleans indicating if each motor's encoder is reversed (null = no reversal)
+		 * @param encoderEnableMap Array of booleans indicating which motors have encoders (null = all disabled)
+		 * @param ticksPerRev Ticks per revolution for the motors
+		 * @param pidfController PID controller for RPM mode (shared across all motors)
+		 */
+		public CustomMotorController(HardwareMap hardwareMap, String[] motorGroup, boolean[] reverseMap, boolean[] encoderReverseMap, boolean[] encoderEnableMap, double ticksPerRev, CustomPIDFController pidfController) {
 			this.motorGroup = motorGroup;
 			this.reverseMap = reverseMap;
 			this.encoderReverseMap = encoderReverseMap;
+			this.encoderEnableMap = encoderEnableMap != null ? encoderEnableMap : new boolean[motorGroup.length];
 			this.motors = new HashMap<>();
 			this.groupPidfController = pidfController;
 
@@ -291,13 +339,17 @@ public class RobotCoreCustom {
 			if (encoderReverseMap != null && motorGroup.length != encoderReverseMap.length) {
 				throw new IllegalArgumentException("Motor group and encoder reverse map must have the same length.");
 			}
+			if (encoderEnableMap != null && motorGroup.length != encoderEnableMap.length) {
+				throw new IllegalArgumentException("Motor group and encoder enable map must have the same length.");
+			}
 
 			for (int i = 0; i < motorGroup.length; i++) {
 				String motorName = motorGroup[i];
 				boolean reverseEnc = (encoderReverseMap != null) ? encoderReverseMap[i] : false;
+				boolean hasEnc = this.encoderEnableMap[i];
 				try {
 					// Motors don't need individual PIDF controllers - group controller handles PID
-					CustomMotor motor = new CustomMotor(hardwareMap, motorName, hasEncoder, ticksPerRev, null, reverseEnc);
+					CustomMotor motor = new CustomMotor(hardwareMap, motorName, hasEnc, ticksPerRev, null, reverseEnc);
 					this.motors.put(motorName, motor);
 				} catch (Exception e) {
 					throw new IllegalArgumentException("Failed to initialize motor: " + motorName + " - " + e.getMessage());
@@ -366,14 +418,17 @@ public class RobotCoreCustom {
 		}
 
 		/**
-		 * Internal method to get average RPM without locking (caller must hold lock)
+		 * Internal method to get average RPM without locking (caller must hold lock).
+		 * Only counts motors that have encoders enabled via encoderEnableMap.
+		 * Returns signed RPM value - important for PID direction control.
 		 */
 		private double getAverageRPMInternal() {
 			double sum = 0.0;
 			int count = 0;
 			for (CustomMotor motor : motors.values()) {
 				if (motor.hasEncoder) {
-					sum += motor.updateAndGetRPM(); // Force fresh read for PID
+					double rpm = motor.updateAndGetRPM(); // Force fresh read for PID
+					sum += rpm; // Keep sign for PID direction control
 					count++;
 				}
 			}
@@ -381,8 +436,9 @@ public class RobotCoreCustom {
 		}
 
 		/**
-		 * Get average RPM of all motors in the group
-		 * @return Average RPM
+		 * Get average RPM of all motors in the group.
+		 * Only counts motors that have encoders enabled via encoderEnableMap.
+		 * @return Average RPM of enabled encoders
 		 */
 		public double getAverageRPM() {
 			synchronized (lock) {
@@ -390,7 +446,8 @@ public class RobotCoreCustom {
 				int count = 0;
 				for (CustomMotor motor : motors.values()) {
 					if (motor.hasEncoder) {
-						sum += motor.getRPM();
+						double rpm = motor.getRPM();
+						sum += Math.abs(rpm); // Use absolute value to handle reversed encoders
 						count++;
 					}
 				}
@@ -457,6 +514,27 @@ public class RobotCoreCustom {
 		public boolean isRPMMode() {
 			return isRPMMode;
 		}
+
+		/**
+		 * Get debug string with raw velocity values from all motors
+		 * @return Debug string with raw ticks/sec, calculated RPM, and ticksPerRev for each motor
+		 */
+		public String getDebugString() {
+			StringBuilder sb = new StringBuilder();
+			for (String motorName : motorGroup) {
+				CustomMotor motor = motors.get(motorName);
+				if (motor != null && motor.hasEncoder) {
+					double rawVel = motor.getRawVelocity();
+					double rpm = motor.getRPM();
+					double ticksPerRev = motor.getTicksPerRev();
+					// Show expected RPM calculation: (rawVel / ticksPerRev) * 60
+					double expectedRPM = (ticksPerRev > 0) ? (rawVel / ticksPerRev) * 60.0 : 0;
+					sb.append(String.format("%s: vel=%.0f rpm=%.1f exp=%.1f tpr=%.0f | ",
+							motorName, rawVel, rpm, expectedRPM, ticksPerRev));
+				}
+			}
+			return sb.toString();
+		}
 	}
 
 	public static class CustomMotor {
@@ -468,10 +546,11 @@ public class RobotCoreCustom {
 		private int targetRPM = 0;
 		private double lastAppliedPower = 123456.0; // Impossible initial value
 
-		// Thread-safe caching for RPM
+		// Thread-safe caching for RPM using lock for atomic read/write
 		private volatile double cachedRPM = 0.0;
 		private volatile long lastRPMUpdateTime = 0;
-		private static final long RPM_CACHE_TTL_MS = 20; // Cache valid for 20ms
+		private static final long RPM_CACHE_TTL_MS = 15; // Cache valid for 15ms (reduced for tighter PID)
+		private final Object rpmCacheLock = new Object(); // Lock for thread-safe cache access
 
 		// PID coefficients
 		private CustomPIDFController pidfController = new CustomPIDFController(0.1, 0.01, 0.005, 0.0);
@@ -510,40 +589,60 @@ public class RobotCoreCustom {
 		/**
 		 * Get RPM using native Expansion Hub velocity calculation.
 		 * Reads from hardware if cache is expired, otherwise returns cached value.
+		 * Thread-safe: uses lock to prevent race conditions on cache access.
+		 * Uses ticks per second and converts to RPM using the configured TICKS_PER_REV.
+		 * @return RPM value (primitive double)
 		 */
-		public Double getRPM() {
+		public double getRPM() {
 			if (!hasEncoder) {
 				throw new IllegalStateException("Encoder disabled for this motor: " + motor.getDeviceName());
 			}
 
-			long currentTime = System.currentTimeMillis();
-			// If cache is fresh, return it (avoids hardware read)
-			if (currentTime - lastRPMUpdateTime < RPM_CACHE_TTL_MS) {
-				return cachedRPM;
+			synchronized (rpmCacheLock) {
+				long currentTime = System.currentTimeMillis();
+				// If cache is fresh, return it (avoids hardware read)
+				if (currentTime - lastRPMUpdateTime < RPM_CACHE_TTL_MS) {
+					return cachedRPM;
+				}
+
+				// Read velocity in ticks per second from hardware
+				double velocityTPS = motor.getVelocity(); // Ticks Per Second
+				// Convert ticks/second to RPM: (ticks/sec) / (ticks/rev) * 60 = RPM
+				double rpm = 0.0;
+				if (TICKS_PER_REV > 0) {
+					rpm = (velocityTPS / TICKS_PER_REV) * 60.0;
+				}
+				if (reverseEncoder) rpm = -rpm;
+
+				cachedRPM = rpm;
+				lastRPMUpdateTime = currentTime;
+
+				return rpm;
 			}
-
-			// Read from hardware (this is a USB read unless in BULK AUTO/MANUAL mode)
-			double velocityTPS = motor.getVelocity(); // Ticks Per Second
-			double rpm = (velocityTPS / TICKS_PER_REV) * 60.0;
-			if (reverseEncoder) rpm = -rpm;
-
-			cachedRPM = rpm;
-			lastRPMUpdateTime = currentTime;
-
-			return rpm;
 		}
 
 		/**
-		 * Force a fresh read of RPM from hardware
+		 * Force a fresh read of RPM from hardware.
+		 * Thread-safe: uses lock to update cache atomically.
+		 * Uses ticks per second and converts to RPM using the configured TICKS_PER_REV.
+		 * @return RPM value (primitive double)
 		 */
-		public Double updateAndGetRPM() {
+		public double updateAndGetRPM() {
 			if (!hasEncoder) return 0.0;
-			double velocityTPS = motor.getVelocity();
-			double rpm = (velocityTPS / TICKS_PER_REV) * 60.0;
-			if (reverseEncoder) rpm = -rpm;
-			cachedRPM = rpm;
-			lastRPMUpdateTime = System.currentTimeMillis();
-			return rpm;
+
+			synchronized (rpmCacheLock) {
+				// Read velocity in ticks per second from hardware
+				double velocityTPS = motor.getVelocity(); // Ticks Per Second
+				// Convert ticks/second to RPM: (ticks/sec) / (ticks/rev) * 60 = RPM
+				double rpm = 0.0;
+				if (TICKS_PER_REV > 0) {
+					rpm = (velocityTPS / TICKS_PER_REV) * 60.0;
+				}
+				if (reverseEncoder) rpm = -rpm;
+				cachedRPM = rpm;
+				lastRPMUpdateTime = System.currentTimeMillis();
+				return rpm;
+			}
 		}
 
 		public void setRPM(int rpm) {
@@ -591,6 +690,22 @@ public class RobotCoreCustom {
 
 		public void setPIDFController(CustomPIDFController pidfController) {
 			this.pidfController = pidfController;
+		}
+
+		/**
+		 * Get raw velocity in ticks per second for debugging
+		 * @return Raw velocity from encoder (ticks/second)
+		 */
+		public double getRawVelocity() {
+			return motor.getVelocity();
+		}
+
+		/**
+		 * Get the configured ticks per revolution
+		 * @return TICKS_PER_REV value
+		 */
+		public double getTicksPerRev() {
+			return TICKS_PER_REV;
 		}
 	}
 	public static class CustomTelemetry {

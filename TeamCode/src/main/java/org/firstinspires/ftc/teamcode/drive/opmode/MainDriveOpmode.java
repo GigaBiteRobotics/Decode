@@ -162,10 +162,10 @@ public class MainDriveOpmode extends OpMode {
 		launcherMotors = new RobotCoreCustom.CustomMotorController(
 				hardwareMap,
 				new String[]{"launcher0", "launcher1"},
-				new boolean[]{true, false}, // launcher1 is reversed
-				new boolean[]{true, false}, // encoder reverse map: launcher1 encoder is reversed
-				true, // has encoders
-				28.0, // ticks per rev
+				new boolean[]{true, false}, // motor reverse map: launcher0 is reversed
+				new boolean[]{true, false}, // encoder reverse map: launcher0 encoder is reversed to match motor direction
+				new boolean[]{true, false}, // encoder enable map: only launcher0 has encoder
+				32, // ticks per rev - calibrated for actual motor encoder (28 * 6700/6000)
 				new CustomPIDFController(0, 0, 0, 0)
 		);
 		intakeMotor = new RobotCoreCustom.CustomMotorController(
@@ -652,12 +652,24 @@ public class MainDriveOpmode extends OpMode {
 
 		// Clamp target power
 		targetPower = Math.max(-1.0, Math.min(1.0, targetPower));
-		if (launcherPooping) {
-			launcherMotors.setRPM(500);
+
+		// Launcher control: use PID (setRPM) or manual power (setPower) based on toggle
+		if (MDOConstants.EnableLauncherPID) {
+			// PID mode: use setRPM for closed-loop RPM control
+			if (launcherPooping) {
+				launcherMotors.setRPM(1200);
+			} else {
+				launcherMotors.setRPM(launcherSpinning ? dynamicRPM : 0);
+			}
+			launcherMotors.setPIDFController(MDOConstants.LauncherPIDF);
 		} else {
-			launcherMotors.setRPM(launcherSpinning ? dynamicRPM : 0);
+			// Manual power mode: bypass PID and use direct power
+			if (launcherPooping) {
+				launcherMotors.setPower(0.2); // Low power for pooping mode
+			} else {
+				launcherMotors.setPower(launcherSpinning ? MDOConstants.LauncherManualPower : 0);
+			}
 		}
-		launcherMotors.setPIDFController(MDOConstants.LauncherPIDF);
 
 		timeLauncher = sectionTimer.milliseconds();
 
@@ -746,6 +758,7 @@ public class MainDriveOpmode extends OpMode {
 			}
 
 			telemetryC.addData("Launcher RPM", launcherRPM);
+			telemetryC.addData("Launcher Debug", launcherMotors.getDebugString());
 			telemetryC.addData("Launcher Pressure", launcherMotors.getPIDOutput());
 			telemetryC.addData("launcherRunning", launcherSpinning);
 

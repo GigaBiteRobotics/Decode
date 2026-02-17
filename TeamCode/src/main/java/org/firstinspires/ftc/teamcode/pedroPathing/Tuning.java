@@ -26,6 +26,7 @@ import com.pedropathing.telemetry.SelectableOpMode;
 import com.pedropathing.util.*;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.util.ElapsedTime;
 import com.bylazar.configurables.annotations.Configurable;
 import com.bylazar.configurables.annotations.IgnoreConfigurable;
 import com.bylazar.configurables.PanelsConfigurables;
@@ -83,6 +84,7 @@ public class Tuning extends SelectableOpMode {
                 p.add("Line", Line::new);
                 p.add("Triangle", Triangle::new);
                 p.add("Circle", Circle::new);
+                p.add("Position Test", PositionTest::new);
             });
         });
     }
@@ -1189,3 +1191,123 @@ class Circle extends OpMode {
     }
 }
 
+/**
+ * This is the Position Test OpMode. It moves the robot to a target position, waits,
+ * returns to start, waits, and repeats. Useful for testing follower PID tuning.
+ *
+ * @version 1.0
+ */
+class PositionTest extends OpMode {
+    // Configurable positions - can be changed live
+    public static double startX = 0;
+    public static double startY = 0;
+    public static double startHeading = 0;
+
+    public static double targetX = 40;
+    public static double targetY = 0;
+    public static double targetHeading = 0;
+
+    // Configurable wait times in milliseconds
+    public static int waitAtTargetMs = 2000;
+    public static int waitAtStartMs = 2000;
+
+    private ElapsedTime waitTimer = new ElapsedTime();
+    private Path toTarget;
+    private Path toStart;
+
+    private enum State {
+        GOING_TO_TARGET,
+        WAITING_AT_TARGET,
+        GOING_TO_START,
+        WAITING_AT_START
+    }
+
+    private State currentState = State.GOING_TO_TARGET;
+
+    @Override
+    public void init() {}
+
+    @Override
+    public void init_loop() {
+        telemetryM.debug("Position Test");
+        telemetryM.debug("Robot will go to target position, wait, return to start, wait, and repeat.");
+        telemetryM.debug("Target: (" + targetX + ", " + targetY + ", " + Math.toDegrees(targetHeading) + "°)");
+        telemetryM.debug("Wait at target: " + waitAtTargetMs + "ms");
+        telemetryM.debug("Wait at start: " + waitAtStartMs + "ms");
+        telemetryM.update(telemetry);
+        follower.update();
+        drawCurrent();
+    }
+
+    @Override
+    public void start() {
+        follower.activateAllPIDFs();
+        buildPaths();
+        follower.followPath(toTarget);
+        currentState = State.GOING_TO_TARGET;
+    }
+
+    @Override
+    public void loop() {
+        follower.update();
+        drawCurrentAndHistory();
+
+        switch (currentState) {
+            case GOING_TO_TARGET:
+                if (!follower.isBusy()) {
+                    waitTimer.reset();
+                    currentState = State.WAITING_AT_TARGET;
+                }
+                break;
+
+            case WAITING_AT_TARGET:
+                if (waitTimer.milliseconds() >= waitAtTargetMs) {
+                    buildPaths(); // Rebuild paths in case values changed
+                    follower.followPath(toStart);
+                    currentState = State.GOING_TO_START;
+                }
+                break;
+
+            case GOING_TO_START:
+                if (!follower.isBusy()) {
+                    waitTimer.reset();
+                    currentState = State.WAITING_AT_START;
+                }
+                break;
+
+            case WAITING_AT_START:
+                if (waitTimer.milliseconds() >= waitAtStartMs) {
+                    buildPaths(); // Rebuild paths in case values changed
+                    follower.followPath(toTarget);
+                    currentState = State.GOING_TO_TARGET;
+                }
+                break;
+        }
+
+        // Display telemetry
+        telemetryM.debug("Current State: " + currentState.name());
+        telemetryM.debug("Current Pose: (" +
+            String.format("%.2f", follower.getPose().getX()) + ", " +
+            String.format("%.2f", follower.getPose().getY()) + ", " +
+            String.format("%.2f", Math.toDegrees(follower.getPose().getHeading())) + "°)");
+
+        if (currentState == State.WAITING_AT_TARGET || currentState == State.WAITING_AT_START) {
+            int waitTime = (currentState == State.WAITING_AT_TARGET) ? waitAtTargetMs : waitAtStartMs;
+            telemetryM.debug("Waiting: " + String.format("%.0f", waitTimer.milliseconds()) + "/" + waitTime + "ms");
+        }
+
+        telemetryM.debug("Follower Busy: " + follower.isBusy());
+        telemetryM.update(telemetry);
+    }
+
+    private void buildPaths() {
+        Pose startPose = new Pose(startX, startY, startHeading);
+        Pose targetPose = new Pose(targetX, targetY, targetHeading);
+
+        toTarget = new Path(new BezierLine(startPose, targetPose));
+        toTarget.setConstantHeadingInterpolation(targetHeading);
+
+        toStart = new Path(new BezierLine(targetPose, startPose));
+        toStart.setConstantHeadingInterpolation(startHeading);
+    }
+}
