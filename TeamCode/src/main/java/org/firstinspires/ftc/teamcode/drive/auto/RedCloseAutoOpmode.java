@@ -64,6 +64,7 @@ public class RedCloseAutoOpmode extends OpMode {
 	protected List<Integer> detectedAprilTags = new ArrayList<>(); // List of all AprilTag IDs seen
 	protected List<RobotCoreCustom.CustomSorterController.CustomColor> launchOrder = new ArrayList<>(); // Order to launch balls
 	protected int launchOrderIndex = 0; // Current index in launch order
+	protected boolean[] pitLaunched = new boolean[3]; // Track which pits have been launched this cycle
 	protected CustomThreads customThreads;
 
 	// ===== LAUNCHER CONTROL =====
@@ -286,8 +287,9 @@ public class RedCloseAutoOpmode extends OpMode {
 
 		// Path from ball 1 pickup back to launch
 		pathFromBall1ToLaunch = follower.pathBuilder()
-			.addPath(new BezierLine(
+			.addPath(new BezierCurve(
 				RedCloseAutoConstants.getBallCollection1PickupPose,
+				RedCloseAutoConstants.collection1PickupToLaunchIntermediary,
 				RedCloseAutoConstants.launchPose
 			))
 			.setLinearHeadingInterpolation(
@@ -502,13 +504,15 @@ public class RedCloseAutoOpmode extends OpMode {
 					launchOrderIndex = 0;
 					currentLaunchSlot = 0;
 					lastLaunchedColor = null;
+					pitLaunched[0] = false;
+					pitLaunched[1] = false;
+					pitLaunched[2] = false;
 					launchTimer.reset();
 					// Actively hold position at launch pose to prevent going limp
 					follower.holdPoint(RedCloseAutoConstants.launchPose);
 					// Force a sensor read BEFORE locking to ensure we know what colors are in each pit
-					// This is critical for the first set of preloaded balls
 					sorterController.updateSensors();
-					// Lock lifters to prevent balls from moving between pits
+					// Lock lifters to prevent balls from moving between pits during this launch cycle
 					sorterController.lockLiftersForLaunch(true);
 				}
 				// Calculate required delay - add extra delay if color is changing
@@ -623,12 +627,16 @@ public class RedCloseAutoOpmode extends OpMode {
 					ballsLaunched = 0;
 					currentLaunchSlot = 0;
 					lastLaunchedColor = null;
+					launchOrderIndex = 0; // Reset to start of pattern for this launch cycle
+					pitLaunched[0] = false;
+					pitLaunched[1] = false;
+					pitLaunched[2] = false;
 					launchTimer.reset();
 					// Actively hold position at launch pose to prevent going limp
 					follower.holdPoint(RedCloseAutoConstants.launchPose);
 					// Force a sensor read BEFORE locking to ensure we know what colors are in each pit
 					sorterController.updateSensors();
-					// Lock lifters to prevent balls from moving between pits
+					// Lock lifters to prevent balls from moving between pits during this launch cycle
 					sorterController.lockLiftersForLaunch(true);
 				}
 				// Calculate required delay - add extra delay if color is changing
@@ -743,6 +751,9 @@ public class RedCloseAutoOpmode extends OpMode {
 					currentLaunchSlot = 0;
 					lastLaunchedColor = null;
 					launchOrderIndex = 0; // Reset to re-use the same sorting pattern
+					pitLaunched[0] = false;
+					pitLaunched[1] = false;
+					pitLaunched[2] = false;
 					launchTimer.reset();
 					// Actively hold position at launch pose to prevent going limp
 					follower.holdPoint(RedCloseAutoConstants.launchPose);
@@ -845,39 +856,51 @@ public class RedCloseAutoOpmode extends OpMode {
 
 	/**
 	 * Launch the next ball based on current launch order pattern.
-	 * Searches through remaining colors in the launch order to find one that's available.
-	 * If target color isn't available, tries remaining colors in priority order.
+	 * Uses pitLaunched[] array to track which pits have already been launched this cycle.
+	 * Searches for target color first, then alternate color, then any remaining pit.
 	 * @param targetColor The preferred color to launch (from launchOrder)
 	 * @return The color that was launched, or null if no ball was launched
 	 */
 	protected RobotCoreCustom.CustomSorterController.CustomColor launchNextBallSorted(RobotCoreCustom.CustomSorterController.CustomColor targetColor) {
-		// Force a fresh sensor read before checking colors
-		// This ensures we have the most up-to-date information about which balls are in which pits
-		sorterController.updateSensors();
+		// Priority order: slot 2 first, then 1, then 0
+		int[] slotPriority = {2, 1, 0};
 
-		// First, try to launch the exact target color
-		if (sorterController.launchCachedStrict(targetColor)) {
-			return targetColor;
-		}
-
-		// Target color not available - try the OTHER color instead
-		// This ensures we launch a ball even if the exact order can't be maintained
 		RobotCoreCustom.CustomSorterController.CustomColor GREEN =
 			RobotCoreCustom.CustomSorterController.CustomColor.GREEN;
 		RobotCoreCustom.CustomSorterController.CustomColor PURPLE =
 			RobotCoreCustom.CustomSorterController.CustomColor.PURPLE;
 
+		// First, try to find the exact target color in a pit that hasn't been launched yet
+		for (int pit : slotPriority) {
+			if (!pitLaunched[pit] && sorterController.getCachedColor(pit) == targetColor) {
+				if (sorterController.launchFromPit(pit)) {
+					pitLaunched[pit] = true;
+					return targetColor;
+				}
+			}
+		}
+
+		// Target color not available - try the alternate color
 		RobotCoreCustom.CustomSorterController.CustomColor alternateColor =
 			(targetColor == GREEN) ? PURPLE : GREEN;
 
-		if (sorterController.launchCachedStrict(alternateColor)) {
-			return alternateColor;
+		for (int pit : slotPriority) {
+			if (!pitLaunched[pit] && sorterController.getCachedColor(pit) == alternateColor) {
+				if (sorterController.launchFromPit(pit)) {
+					pitLaunched[pit] = true;
+					return alternateColor;
+				}
+			}
 		}
 
-		// Neither color detected - try launching ANY ball that might be there
-		// This handles cases where color sensors fail to detect a ball
-		if (sorterController.launchCached(RobotCoreCustom.CustomSorterController.CustomColor.NULL)) {
-			return RobotCoreCustom.CustomSorterController.CustomColor.NULL;
+		// Neither color found - try launching from any remaining pit (sensor might not have detected)
+		for (int pit : slotPriority) {
+			if (!pitLaunched[pit]) {
+				if (sorterController.launchFromPit(pit)) {
+					pitLaunched[pit] = true;
+					return RobotCoreCustom.CustomSorterController.CustomColor.NULL;
+				}
+			}
 		}
 
 		return null;

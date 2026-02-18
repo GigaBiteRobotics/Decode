@@ -11,10 +11,9 @@ import com.pedropathing.paths.Path;
 import com.pedropathing.paths.PathChain;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-import com.qualcomm.robotcore.hardware.ColorSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
-import java.util.function.Supplier;
+import java.util.Objects;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.Position;
 import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
@@ -38,7 +37,6 @@ public class MainDriveOpmode extends OpMode {
 	double elevationServoTarget = 0.0;
 	RobotCoreCustom.CustomMotorController launcherMotors, intakeMotor;
 	RobotCoreCustom.CustomMotor drawbridgeMotor;
-	Double[] lastAprilLocalization = null;
 	double targetPower = 0.0;
 	double elevationServoFinal = 0;
 	double manualAzimuthOffset = 0.0; // Manual azimuth adjustment via D-pad
@@ -101,17 +99,24 @@ public class MainDriveOpmode extends OpMode {
 	// Disable camera completely - set to false to skip all camera/AprilTag initialization
 	private static final boolean ENABLE_CAMERA = false;
 
+	// Custom functional interface for path building (compatible with API < 24)
+	private interface PathChainSupplier {
+		PathChain get();
+	}
+
 	// In-teleop automated pathing state
 	private boolean automatedDriveActive = false;
 	private boolean holdingPosition = false;  // Holds position after path completes until stick input
-	private Supplier<PathChain> launchPositionPath;  // Path to launch position
-	private Supplier<PathChain> humanPlayerPath;     // Path to human player station
-	private Supplier<PathChain> gatePositionPath;    // Path to gate position
+	private PathChainSupplier launchPositionPath;  // Path to launch position
+	private PathChainSupplier humanPlayerPath;     // Path to human player station
+	private PathChainSupplier gatePositionPath;    // Path to gate position
 	private static final double STICK_OVERRIDE_THRESHOLD = 0.1; // Manual override threshold
 
 	// Threads
 	// Handles background tasks like sensor reading and servo PID to keep the main loop fast
 	CustomThreads customThreads;
+	private final Object followerLock = new Object(); // Dedicated lock for follower synchronization
+	boolean pathsBuilt = false;
 
 	@Override
 	public void init() {
@@ -128,6 +133,13 @@ public class MainDriveOpmode extends OpMode {
 		if (startPose == null) {
 			startPose = new Pose(0, 0, 0);
 		}
+		String teamString = dataTransfer.getAllianceColor();
+		if (Objects.equals(teamString, "BLUE")) team = Team.BLUE;
+		if (Objects.equals(teamString, "RED")) team = Team.RED;
+		if (!Objects.equals(teamString, "UNKNOWN")) {
+			buildPaths();
+		}
+
 
 		robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
 
@@ -187,7 +199,7 @@ public class MainDriveOpmode extends OpMode {
 		if (hasAutoPose) {
 			follower.setStartingPose(startPose);
 			telemetryC.addData("Starting Pose from Auto",
-					String.format("(%.1f, %.1f, %.1f°)",
+					String.format(java.util.Locale.US, "(%.1f, %.1f, %.1f°)",
 							startPose.getX(), startPose.getY(), Math.toDegrees(startPose.getHeading())));
 		} else {
 			// Temporary default, will be updated in start() based on selection
@@ -197,41 +209,6 @@ public class MainDriveOpmode extends OpMode {
 		telemetryC.update();
 
 		follower.startTeleopDrive();
-
-		// Initialize lazy path suppliers for in-teleop automated pathing
-		// These use Supplier<PathChain> so the path is built from current position when triggered
-		launchPositionPath = () -> {
-			Pose targetPose = (team == Team.RED) ? MDOConstants.redCloseLaunchLocation : MDOConstants.blueCloseLaunchLocation;
-			return follower.pathBuilder()
-				.addPath(new Path(new BezierLine(
-						follower::getPose,
-						targetPose
-				)))
-				.setLinearHeadingInterpolation(follower.getPose().getHeading(), targetPose.getHeading())
-				.build();
-		};
-
-		humanPlayerPath = () -> {
-			Pose targetPose = (team == Team.RED) ? MDOConstants.redHumanLocation : MDOConstants.blueHumanLocation;
-			return follower.pathBuilder()
-				.addPath(new Path(new BezierLine(
-						follower::getPose,
-						targetPose
-				)))
-				.setLinearHeadingInterpolation(follower.getPose().getHeading(), targetPose.getHeading())
-				.build();
-		};
-		
-		gatePositionPath = () -> {
-			Pose targetPose = (team == Team.RED) ? MDOConstants.redGateLocation : MDOConstants.blueGateLocation;
-			return follower.pathBuilder()
-				.addPath(new Path(new BezierLine(
-						follower::getPose,
-						targetPose
-				)))
-				.setLinearHeadingInterpolation(follower.getPose().getHeading(), targetPose.getHeading())
-				.build();
-		};
 
 		gamepadTimer.reset();
 		aprilSlowdownTimer.reset();
@@ -328,6 +305,7 @@ public class MainDriveOpmode extends OpMode {
 		}
 		// Start the launcher PIDF thread for RPM control
 		customThreads.startLauncherPIDThread();
+		if (!pathsBuilt) buildPaths();
 	}
 
 	@Override
@@ -415,7 +393,7 @@ public class MainDriveOpmode extends OpMode {
 		// Note: CPU heating is from intensive processing (vision, odometry, calculations)
 		// NOT from motor current - motors are on separate expansion hub boards
 		if (cpuTemp >= MDOConstants.EmergencyStopTemp && cpuTemp > 0) {
-			telemetry.addData("🚨 EMERGENCY STOP 🚨", "");
+			telemetry.addData("EMERGENCY STOP", "");
 			telemetry.addData("CPU TEMP TOO HIGH", String.format("%.1f°C", cpuTemp));
 			telemetry.addData("Critical Limit", String.format("%.1f°C", MDOConstants.EmergencyStopTemp));
 			telemetry.addData("", "OpMode stopping to prevent damage");
@@ -464,7 +442,7 @@ public class MainDriveOpmode extends OpMode {
 		// D-pad Down: Go to launch position
 		if (gamepad1.dpad_down) {
 			PathChain pathToFollow = launchPositionPath.get();
-			synchronized (customThreads) {
+			synchronized (followerLock) {
 				follower.followPath(pathToFollow, true);
 			}
 			automatedDriveActive = true;
@@ -474,7 +452,7 @@ public class MainDriveOpmode extends OpMode {
 		// D-pad Up: Go to human player station
 		if (gamepad1.dpad_up) {
 			PathChain pathToFollow = humanPlayerPath.get();
-			synchronized (customThreads) {
+			synchronized (followerLock) {
 				follower.followPath(pathToFollow, true);
 			}
 			automatedDriveActive = true;
@@ -484,7 +462,7 @@ public class MainDriveOpmode extends OpMode {
 		// D-pad Right: Go to gate position
 		if (gamepad1.dpad_right) {
 			PathChain pathToFollow = gatePositionPath.get();
-			synchronized (customThreads) {
+			synchronized (followerLock) {
 				follower.followPath(pathToFollow, true);
 			}
 			automatedDriveActive = true;
@@ -502,7 +480,7 @@ public class MainDriveOpmode extends OpMode {
 		// ===== CANCEL AUTOMATED/HOLD MODE =====
 		// Manual stick input or B button releases control back to teleop
 		if ((automatedDriveActive || holdingPosition) && (manualOverride || gamepad1.b)) {
-			synchronized (customThreads) {
+			synchronized (followerLock) {
 				follower.startTeleopDrive();
 			}
 			automatedDriveActive = false;
@@ -935,4 +913,41 @@ public class MainDriveOpmode extends OpMode {
 
 		// Gear ratios: 96:20 then 25:120 = combined 1:1
     }
+	public void buildPaths() {
+		// Initialize lazy path suppliers for in-teleop automated pathing
+		// These use Supplier<PathChain> so the path is built from current position when triggered
+		launchPositionPath = () -> {
+			Pose targetPose = (team == Team.RED) ? MDOConstants.redCloseLaunchLocation : MDOConstants.blueCloseLaunchLocation;
+			return follower.pathBuilder()
+					.addPath(new Path(new BezierLine(
+							follower::getPose,
+							targetPose
+					)))
+					.setLinearHeadingInterpolation(follower.getPose().getHeading(), targetPose.getHeading())
+					.build();
+		};
+
+		humanPlayerPath = () -> {
+			Pose targetPose = (team == Team.RED) ? MDOConstants.redHumanLocation : MDOConstants.blueHumanLocation;
+			return follower.pathBuilder()
+					.addPath(new Path(new BezierLine(
+							follower::getPose,
+							targetPose
+					)))
+					.setLinearHeadingInterpolation(follower.getPose().getHeading(), targetPose.getHeading())
+					.build();
+		};
+
+		gatePositionPath = () -> {
+			Pose targetPose = (team == Team.RED) ? MDOConstants.redGateLocation : MDOConstants.blueGateLocation;
+			return follower.pathBuilder()
+					.addPath(new Path(new BezierLine(
+							follower::getPose,
+							targetPose
+					)))
+					.setLinearHeadingInterpolation(follower.getPose().getHeading(), targetPose.getHeading())
+					.build();
+		};
+		pathsBuilt = true;
+	}
 }

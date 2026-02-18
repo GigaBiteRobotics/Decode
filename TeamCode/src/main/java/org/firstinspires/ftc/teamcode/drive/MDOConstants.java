@@ -8,10 +8,12 @@ public class MDOConstants {
     public static double AprilTagMaxDistance = 60.0;
     public static int AprilTagUpdateIntervalMs = 100;
     public static Double AzimuthFineAdjustment = 0.0;
-    public static double AzimuthForbiddenZoneCenter = 140.0;
+    public static double AzimuthForbiddenZoneCenter = 100.0;
+    public static double AzimuthForbiddenZoneWidth = 0.0; // Total width of forbidden zone in degrees (half on each side of center)
+    public static double AzimuthForbiddenZoneEscapePower = 0.5; // Power to use when escaping from inside forbidden zone
     public static Double AzimuthIMUOffset = 120.0;
     public static Double AzimuthMultiplier = 1.0;
-    public static double AzimuthPIDDeadzonePercent = 0.03;
+    public static double AzimuthPIDDeadzonePercent = 0.05;
     public static double[] AzimuthPIDFConstants = new double[]{4.0, 0.2, 0.0, 0.0};
     public static double AzimuthServoCenterOffset = 0.0;
     public static double BlueAprilTagHeadingOffset = 90.0;
@@ -75,12 +77,12 @@ public class MDOConstants {
     public static Double[] RedLauncherCalcConstants = new Double[]{280.00, 386.09};
     public static int RedLauncherRPM = 2300;
     public static double[][] RedLauncherRPMZones = new double[][]{
-            {0.0, 4200},
-            {110.0, 6000},
+            {0.0, 3400},
+            {110.0, 4200},
     };
 	public static double[][] RedElevationOffsetZones = new double[][]{
 			{0.0, 0},
-			{110, -0.2},
+			{110, -0.5},
 	};
     public static Double[] redTargetLocation = new Double[]{142.0, 142.0, 40.0};
     public static Pose redCloseLaunchLocation = new Pose(89, 90, Math.PI - 1.31);

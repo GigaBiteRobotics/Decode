@@ -1003,6 +1003,8 @@ public class RobotCoreCustom {
 			// Priority order: slot 2 first, then 1, then 0
 			int[] slotPriority = {2, 1, 0};
 			if (color == CustomColor.NULL) {
+
+
 				for (int i : slotPriority) {
 					// Only launch from idle slots (state 0) to prevent double-launching
 					if (lifterState[i] == 0 && getCachedColor(i) != CustomColor.NULL && !isLaunched) {
@@ -1347,6 +1349,14 @@ public class RobotCoreCustom {
 		// Cached simple mode position to prevent duplicate writes
 		private volatile double lastSimplePosition = Double.NaN;
 
+		// ANTI-OSCILLATION: Track committed direction to prevent flip-flopping
+		// null = no commitment, true = CW (positive), false = CCW (negative)
+		private volatile Boolean committedDirection = null;
+		// Track the last target to detect when target changes significantly
+		private volatile double lastCommittedTarget = Double.NaN;
+		// Threshold for considering target "changed" (in degrees)
+		private static final double TARGET_CHANGE_THRESHOLD = 5.0;
+
 		// THREAD SAFETY: Prevents conflicts when multiple parts of code try to use the servo at once
 		private final Object lock = new Object();
 
@@ -1492,6 +1502,39 @@ public class RobotCoreCustom {
 						rawTargetPosition += WRAP_THRESHOLD;
 					}
 
+					// FORBIDDEN ZONE CLAMPING: If target is inside the forbidden zone, clamp to nearest edge
+					// This prevents oscillation when trying to reach an unreachable position
+					double forbiddenCenter = MDOConstants.AzimuthForbiddenZoneCenter;
+					double forbiddenHalfWidth = MDOConstants.AzimuthForbiddenZoneWidth / 2.0;
+					double forbiddenMin = forbiddenCenter - forbiddenHalfWidth;
+					double forbiddenMax = forbiddenCenter + forbiddenHalfWidth;
+
+					// Normalize forbidden zone bounds
+					while (forbiddenMin < 0) forbiddenMin += 360.0;
+					while (forbiddenMin >= 360.0) forbiddenMin -= 360.0;
+					while (forbiddenMax < 0) forbiddenMax += 360.0;
+					while (forbiddenMax >= 360.0) forbiddenMax -= 360.0;
+
+					// Check if target is inside forbidden zone
+					double distToCenter = rawTargetPosition - forbiddenCenter;
+					// Normalize to [-180, 180]
+					while (distToCenter > 180.0) distToCenter -= 360.0;
+					while (distToCenter < -180.0) distToCenter += 360.0;
+
+					if (Math.abs(distToCenter) <= forbiddenHalfWidth) {
+						// Target is inside forbidden zone - clamp to nearest edge
+						if (distToCenter <= 0) {
+							// Closer to min edge, clamp to just outside min
+							rawTargetPosition = forbiddenMin - 1.0;
+						} else {
+							// Closer to max edge, clamp to just outside max
+							rawTargetPosition = forbiddenMax + 1.0;
+						}
+						// Normalize after clamping
+						while (rawTargetPosition < 0) rawTargetPosition += 360.0;
+						while (rawTargetPosition >= 360.0) rawTargetPosition -= 360.0;
+					}
+
 					// ANTI-JITTER FIX: Prevent wrap-around jitter when new target crosses boundary
 					// If the target would cause a large jump due to wrap-around (e.g., 359° to 1°),
 					// but the actual angular difference is small, use continuous tracking instead
@@ -1574,8 +1617,62 @@ public class RobotCoreCustom {
 						// STEP 1: Read the sensor and convert voltage to degrees (0-360)
 						currentPosition = voltageToDegrees(aPosition.getVoltage());
 
-						// STEP 2: Calculate error - never cross the forbidden center
+						// STEP 2: Calculate error - never cross the forbidden zone
 						double forbiddenCenter = MDOConstants.AzimuthForbiddenZoneCenter;
+						double forbiddenHalfWidth = MDOConstants.AzimuthForbiddenZoneWidth / 2.0;
+						double forbiddenMin = forbiddenCenter - forbiddenHalfWidth;
+						double forbiddenMax = forbiddenCenter + forbiddenHalfWidth;
+
+						// Normalize forbidden zone bounds to 0-360
+						while (forbiddenMin < 0) forbiddenMin += 360.0;
+						while (forbiddenMin >= 360.0) forbiddenMin -= 360.0;
+						while (forbiddenMax < 0) forbiddenMax += 360.0;
+						while (forbiddenMax >= 360.0) forbiddenMax -= 360.0;
+
+						// Check if we're currently INSIDE the forbidden zone (stuck with cable)
+						boolean insideForbiddenZone = isInForbiddenZone(currentPosition, forbiddenCenter, forbiddenHalfWidth);
+
+						if (insideForbiddenZone) {
+							// ESCAPE MODE: We're stuck in the forbidden zone, push out!
+							// Determine which edge is closer and push toward that edge
+							double distToMin = angularDistance(currentPosition, forbiddenMin);
+							double distToMax = angularDistance(currentPosition, forbiddenMax);
+
+							// Apply escape power in the direction of the nearest edge
+							double escapePower = MDOConstants.AzimuthForbiddenZoneEscapePower;
+
+							// Determine which way to escape (toward the closer boundary)
+							// If closer to min, go toward min (positive direction from center)
+							// If closer to max, go toward max (negative direction from center)
+							double power;
+							if (distToMin <= distToMax) {
+								// Escape toward the min boundary (clockwise)
+								power = escapePower;
+							} else {
+								// Escape toward the max boundary (counter-clockwise)
+								power = -escapePower;
+							}
+
+							// STEP 5: If sensor direction is backwards, flip the power direction
+							if (invertServoDirection) {
+								power = -power;
+							}
+
+							lastAppliedPower = power;
+
+							// Send escape power to servos
+							for (int i = 0; i < servoGroup.length; i++) {
+								String servoName = servoGroup[i];
+								Servo s = this.servo.get(servoName);
+								if (s != null) {
+									double finalPower = reverseMap[i] ? -power : power;
+									double mapped = (finalPower + 1.0) / 2.0 + MDOConstants.AzimuthServoCenterOffset;
+									mapped = Math.max(0.0, Math.min(1.0, mapped));
+									s.setPosition(mapped);
+								}
+							}
+							return; // Exit early - don't do normal PID when escaping
+						}
 
 						// Calculate both possible paths
 						double directError = targetPosition - currentPosition;
@@ -1588,26 +1685,80 @@ public class RobotCoreCustom {
 						// CCW path is the opposite direction
 						double ccwError = cwError - 360.0;
 
-						// Check if CW path crosses the forbidden center
-						boolean cwCrosses = pathCrossesPoint(currentPosition, currentPosition + cwError, forbiddenCenter);
+						// Check if CW path crosses the forbidden zone
+						boolean cwCrosses = pathCrossesForbiddenZone(currentPosition, currentPosition + cwError, forbiddenCenter, forbiddenHalfWidth);
 
-						// Check if CCW path crosses the forbidden center
-						boolean ccwCrosses = pathCrossesPoint(currentPosition, currentPosition + ccwError, forbiddenCenter);
+						// Check if CCW path crosses the forbidden zone
+						boolean ccwCrosses = pathCrossesForbiddenZone(currentPosition, currentPosition + ccwError, forbiddenCenter, forbiddenHalfWidth);
 
-						// Choose the path
+						// Choose the path with COMMITTED DIRECTION to prevent oscillation
+						// Once we pick a direction, stick with it until we reach target or target changes
 						double error;
-						if (!cwCrosses && !ccwCrosses) {
-							// Neither crosses - use shortest
+
+						// Check if target has changed significantly (requires recalculating direction)
+						boolean targetChanged = Double.isNaN(lastCommittedTarget) ||
+							angularDistance(targetPosition, lastCommittedTarget) > TARGET_CHANGE_THRESHOLD;
+
+						// ANTI-JITTER: If both errors are small (we're close to target), stop moving
+						double minError = Math.min(Math.abs(cwError), Math.abs(ccwError));
+						if (minError < 2.0) {
+							// We're very close - clear commitment and use smallest error
+							committedDirection = null;
+							lastCommittedTarget = targetPosition;
 							error = (Math.abs(cwError) <= Math.abs(ccwError)) ? cwError : ccwError;
+						} else if (committedDirection != null && !targetChanged) {
+							// We have a committed direction and target hasn't changed - STICK WITH IT
+							// This is the key anti-oscillation fix: don't reconsider direction every loop
+							if (committedDirection) {
+								// Committed to CW - only switch if CW now crosses forbidden zone
+								if (!cwCrosses) {
+									error = cwError;
+								} else if (!ccwCrosses) {
+									// CW now blocked, must switch to CCW
+									error = ccwError;
+									committedDirection = false;
+								} else {
+									// Both blocked, use shortest
+									error = (Math.abs(cwError) <= Math.abs(ccwError)) ? cwError : ccwError;
+								}
+							} else {
+								// Committed to CCW - only switch if CCW now crosses forbidden zone
+								if (!ccwCrosses) {
+									error = ccwError;
+								} else if (!cwCrosses) {
+									// CCW now blocked, must switch to CW
+									error = cwError;
+									committedDirection = true;
+								} else {
+									// Both blocked, use shortest
+									error = (Math.abs(cwError) <= Math.abs(ccwError)) ? cwError : ccwError;
+								}
+							}
+						} else if (!cwCrosses && !ccwCrosses) {
+							// Neither crosses - pick shortest and COMMIT to it
+							if (Math.abs(cwError) <= Math.abs(ccwError)) {
+								error = cwError;
+								committedDirection = true; // Commit to CW
+							} else {
+								error = ccwError;
+								committedDirection = false; // Commit to CCW
+							}
+							lastCommittedTarget = targetPosition;
 						} else if (!cwCrosses) {
-							// Only CW is safe
+							// Only CW is safe - commit to it
 							error = cwError;
+							committedDirection = true;
+							lastCommittedTarget = targetPosition;
 						} else if (!ccwCrosses) {
-							// Only CCW is safe
+							// Only CCW is safe - commit to it
 							error = ccwError;
+							committedDirection = false;
+							lastCommittedTarget = targetPosition;
 						} else {
-							// Both cross (shouldn't happen) - use shortest
+							// Both cross (shouldn't happen normally) - use shortest
 							error = (Math.abs(cwError) <= Math.abs(ccwError)) ? cwError : ccwError;
+							committedDirection = (error > 0);
+							lastCommittedTarget = targetPosition;
 						}
 
 						// STEP 3: Use the PID controller to calculate power
@@ -1681,6 +1832,71 @@ public class RobotCoreCustom {
 				return pointCheck < start && pointCheck > endNorm;
 			}
 		}
+
+		/**
+		 * Check if a position is inside the forbidden zone (where the cable is)
+		 * @param position The current position in degrees (0-360)
+		 * @param center The center of the forbidden zone
+		 * @param halfWidth Half the width of the forbidden zone
+		 * @return true if position is inside the forbidden zone
+		 */
+		private boolean isInForbiddenZone(double position, double center, double halfWidth) {
+			// Normalize position to 0-360
+			while (position < 0) position += 360.0;
+			while (position >= 360.0) position -= 360.0;
+
+			// Calculate angular distance from center
+			double dist = angularDistance(position, center);
+			return dist <= halfWidth;
+		}
+
+		/**
+		 * Calculate the shortest angular distance between two angles (0-360)
+		 * @param angle1 First angle in degrees
+		 * @param angle2 Second angle in degrees
+		 * @return The shortest distance between the angles (0 to 180)
+		 */
+		private double angularDistance(double angle1, double angle2) {
+			// Normalize both to 0-360
+			while (angle1 < 0) angle1 += 360.0;
+			while (angle1 >= 360.0) angle1 -= 360.0;
+			while (angle2 < 0) angle2 += 360.0;
+			while (angle2 >= 360.0) angle2 -= 360.0;
+
+			double diff = Math.abs(angle1 - angle2);
+			return Math.min(diff, 360.0 - diff);
+		}
+
+		/**
+		 * Check if moving from start to end would cross through the forbidden zone
+		 * @param start Starting position in degrees
+		 * @param end Ending position in degrees
+		 * @param forbiddenCenter Center of the forbidden zone
+		 * @param halfWidth Half the width of the forbidden zone
+		 * @return true if the path crosses any part of the forbidden zone
+		 */
+		private boolean pathCrossesForbiddenZone(double start, double end, double forbiddenCenter, double halfWidth) {
+			// Check if path crosses any point within the forbidden zone
+			// We check the center and both edges
+			double forbiddenMin = forbiddenCenter - halfWidth;
+			double forbiddenMax = forbiddenCenter + halfWidth;
+
+			// Normalize edges
+			while (forbiddenMin < 0) forbiddenMin += 360.0;
+			while (forbiddenMin >= 360.0) forbiddenMin -= 360.0;
+			while (forbiddenMax < 0) forbiddenMax += 360.0;
+			while (forbiddenMax >= 360.0) forbiddenMax -= 360.0;
+
+			// If path crosses center, it definitely crosses the zone
+			if (pathCrossesPoint(start, end, forbiddenCenter)) return true;
+
+			// Also check if path crosses either edge
+			if (pathCrossesPoint(start, end, forbiddenMin)) return true;
+			if (pathCrossesPoint(start, end, forbiddenMax)) return true;
+
+			return false;
+		}
+
 		/**
 		 * READ: Get the servo's current position (0-360 degrees)
 		 *
