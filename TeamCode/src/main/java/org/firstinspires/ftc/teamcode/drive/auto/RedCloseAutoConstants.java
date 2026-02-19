@@ -12,11 +12,11 @@ public class RedCloseAutoConstants {
 	public static Pose ballCollection0LineupPose = new Pose(96, 86, 0);
 	public static Pose ballCollection0PickupPose = new Pose(128, 86, 0);
 	public static Pose getBallCollection1LineupPose = new Pose(91, 62, 0);
-	public static Pose getBallCollection1PickupPose = new Pose(135, 62, 0);
+	public static Pose getBallCollection1PickupPose = new Pose(137, 62, 0);
 	public static Pose collection1PickupToLaunchIntermediary = new Pose(103, 62, 0);
 	public static Pose finalPose = new Pose(144 - 18, 90, 0);
 	public static double elevationPos = 0.12;
-	public static int targetRPM = 3300;
+	public static int targetRPM = 3250;
 	public static double azimuthPos = 1;
 
 	// Intake speeds (0.0 to 1.0)

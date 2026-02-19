@@ -12,8 +12,8 @@ public class RedFarAutoConstants {
 	public static Pose ballCollection1LineupPose = new Pose(115, 13, 0);
 	public static Pose ballCollection1PickupPose = new Pose(131, 13, 0);
 	public static double elevationPos = -0.1;
-	public static int targetRPM = 4200;
-	public static double azimuthPos = -0.05;
+	public static int targetRPM = 4300;
+	public static double azimuthPos = -0.3;
 
 	// Intake speeds (0.0 to 1.0)
 	public static double intakeInSpeed = 1;
@@ -31,7 +31,7 @@ public class RedFarAutoConstants {
 	public static int shotDelayMs = 1100;
 
 	// Delay after launching before moving to next position in milliseconds
-	public static int postLaunchDelayMs = 0;
+	public static int postLaunchDelayMs = 1100;
 
 	// Time to wait for ball collection at each position in milliseconds
 	public static int intakeCollect0TimeMs = 1800;

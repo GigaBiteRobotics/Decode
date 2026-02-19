@@ -8,7 +8,7 @@ public class MDOConstants {
     public static double AprilTagMaxDistance = 60.0;
     public static int AprilTagUpdateIntervalMs = 100;
     public static Double AzimuthFineAdjustment = 0.0;
-    public static double AzimuthForbiddenZoneCenter = 100.0;
+    public static double AzimuthForbiddenZoneCenter = 50;
     public static double AzimuthForbiddenZoneWidth = 0.0; // Total width of forbidden zone in degrees (half on each side of center)
     public static double AzimuthForbiddenZoneEscapePower = 0.5; // Power to use when escaping from inside forbidden zone
     public static Double AzimuthIMUOffset = 120.0;
