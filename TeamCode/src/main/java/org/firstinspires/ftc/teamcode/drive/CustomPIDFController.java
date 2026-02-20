@@ -11,7 +11,6 @@ public class CustomPIDFController {
 	// Internal state variables
 	private double errorSum = 0;    // Integral term accumulator
 	private double lastError = 0;  // For derivative term
-	private double lastDerivative = 0; // For derivative filtering
 	private long lastTime = System.currentTimeMillis(); // Time tracking
 	private double lastOutput = 0; // Last calculated output
 
@@ -23,7 +22,8 @@ public class CustomPIDFController {
 		this.kF = kF;
 	}
 
-	/**
+	/**+
+	 *
 	 * Calculates motor power based on target position and current position.
 	 * @param targetPosition The desired encoder position.
 	 * @param currentPosition The current encoder position.
@@ -89,7 +89,6 @@ public class CustomPIDFController {
 		boolean errorDirectionChanged = (error > 0 && lastError < 0) || (error < 0 && lastError > 0);
 		if (errorDirectionChanged) {
 			errorSum = 0;  // Reset integral on any zero-crossing to prevent overshoot
-			lastDerivative = 0; // Also reset derivative filter on direction change
 		}
 
 		errorSum += error * deltaTime;
@@ -123,11 +122,7 @@ public class CustomPIDFController {
 
 		double derivative = errorChange / deltaTime;
 
-		// Low-pass filter on derivative to reduce noise-induced jitter
-		// This blends the current derivative with the previous one
-		double filteredDerivative = derivative * 0.7 + lastDerivative * 0.3;
-		lastDerivative = filteredDerivative; // Store for next iteration
-		double dTerm = kD * filteredDerivative;
+		double dTerm = kD * derivative;
 
 		// Feedforward term
 		double fTerm = kF * targetVelocity;

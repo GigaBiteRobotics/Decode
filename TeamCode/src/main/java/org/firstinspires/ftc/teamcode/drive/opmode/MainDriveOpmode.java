@@ -73,7 +73,6 @@ public class MainDriveOpmode extends OpMode {
 	Double launchAzimuthDeg = 0.0;
 	Double robotFieldRelativeAzimuthDeg = 0.0;
 	Double finalAzimuthDeg = 0.0;
-	Double previousFinalAzimuthDeg = 0.0; // Track previous value for anti-jitter
 
 	static TelemetryManager telemetryM;
 
@@ -159,6 +158,7 @@ public class MainDriveOpmode extends OpMode {
 				new double[]{0, 0, 0},
 				null
 		);
+		elevationServo.setAllowWrapAround(false); // Elevation should not wrap around 0/360 boundary
 		azimuthServo = new RobotCoreCustom.CustomAxonServoController(
 				hardwareMap,
 				new String[]{"azimuthServo0", "azimuthServo1"},
@@ -838,8 +838,8 @@ public class MainDriveOpmode extends OpMode {
 		if (launchElevationDeg != null) {
 			// Use alliance-specific elevation offset combined with shared offset and distance-based offset
 			elevationServoTarget = (launchElevationDeg + MDOConstants.ElevationOffset + elevationOffset + distanceElevationOffset) * MDOConstants.ElevationMultiplier;
-			// Fix clamp logic to correctly bound between -0.4 and 1.0
-			elevationServoFinal = Math.max(-0.4, Math.min(1.0, elevationServoTarget));
+			// Clamp elevation to the configured clamp min/max from MDOConstants
+			elevationServoFinal = Math.max(MDOConstants.ElevationClampMin, Math.min(MDOConstants.ElevationClampMax, elevationServoTarget));
 			elevationServo.setPosition(elevationServoFinal);
 		}
 
@@ -866,7 +866,8 @@ public class MainDriveOpmode extends OpMode {
 			}
 		}
 		// Normalize finalAzimuthDeg to [-180, 180] range to find shortest path
-		// This allows the turret to wrap around instead of hitting limits
+		// The servo controller handles continuous tracking internally,
+		// so we just need a clean normalized angle here.
 		while (finalAzimuthDeg > 180.0) {
 			finalAzimuthDeg -= 360.0;
 		}
@@ -874,24 +875,6 @@ public class MainDriveOpmode extends OpMode {
 			finalAzimuthDeg += 360.0;
 		}
 
-		// ANTI-JITTER: Use continuous tracking to prevent wrap-around jitter
-		// Calculate the angular difference using shortest path
-		double angleDiff = finalAzimuthDeg - previousFinalAzimuthDeg;
-
-		// Normalize the difference to [-180, 180] to find shortest path
-		while (angleDiff > 180.0) {
-			angleDiff -= 360.0;
-		}
-		while (angleDiff < -180.0) {
-			angleDiff += 360.0;
-		}
-
-		// Apply the change incrementally to the previous value
-		// This prevents jumping when crossing the ±180° boundary
-		finalAzimuthDeg = previousFinalAzimuthDeg + angleDiff;
-
-		// Store for next iteration
-		previousFinalAzimuthDeg = finalAzimuthDeg;
 
 		// Convert degrees to servo position [-1, 1] range
 		// The servo controller expects: -1 = 0°, 0 = 180°, +1 = 360°

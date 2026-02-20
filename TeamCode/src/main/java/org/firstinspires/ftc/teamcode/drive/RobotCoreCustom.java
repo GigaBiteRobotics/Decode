@@ -1328,34 +1328,27 @@ public class RobotCoreCustom {
 		boolean invertServoDirection;
 		
 		// PID TUNING: Numbers that control how aggressively the servo corrects its position
-		// (Think of it like a thermostat - how quickly it reacts to being off-target)
 		double[] pidCoefficients;
 		CustomPIDFController pidController;
 		
 		// TARGET: Where we want the servo to be (in degrees, 0-360)
 		private volatile double targetPosition;
 
-		// POSITION TRACKING: The servo position wraps at 360 degrees (full circle)
-		// This prevents cord tangling by not tracking multiple rotations
+		// The current position we read from the sensor (0-360 degrees)
+		private volatile double currentPosition = 0.0;
 
 		// The maximum reading from the sensor (360 degrees = full circle)
 		private static final double WRAP_THRESHOLD = 360.0;
-
-		// The current position we read from the sensor (0-360 degrees)
-		private volatile double currentPosition = 0.0;
 
 		// The last power level we sent to the servos (-1 to 1, where 0 is stopped)
 		private volatile double lastAppliedPower = 0.0;
 		// Cached simple mode position to prevent duplicate writes
 		private volatile double lastSimplePosition = Double.NaN;
 
-		// ANTI-OSCILLATION: Track committed direction to prevent flip-flopping
-		// null = no commitment, true = CW (positive), false = CCW (negative)
-		private volatile Boolean committedDirection = null;
-		// Track the last target to detect when target changes significantly
-		private volatile double lastCommittedTarget = Double.NaN;
-		// Threshold for considering target "changed" (in degrees)
-		private static final double TARGET_CHANGE_THRESHOLD = 5.0;
+		// SETTINGS: Whether to allow wrap-around (0/360 boundary crossing)
+		// true = shortest-path wrap-around (default, good for turrets that can spin freely)
+		// false = no wrap-around, uses raw linear error (good for limited-range servos like elevation)
+		private boolean allowWrapAround = true;
 
 		// THREAD SAFETY: Prevents conflicts when multiple parts of code try to use the servo at once
 		private final Object lock = new Object();
@@ -1428,16 +1421,11 @@ public class RobotCoreCustom {
 			}
 
 			// STEP 5: If using smart mode, read the starting position from the sensor
-			// This sets our "zero point" so we know where we're starting from
 			if (useAnalogPositionSensors && aPosition != null) {
 				try {
-					// Read the sensor and convert voltage to degrees (0-360)
 					currentPosition = voltageToDegrees(aPosition.getVoltage());
-
-					// Set our target to current position (don't move yet)
 					targetPosition = currentPosition;
 				} catch (Exception e) {
-					// If sensor reading fails, start at safe zero position
 					currentPosition = 0.0;
 					targetPosition = 0.0;
 				}
@@ -1487,84 +1475,33 @@ public class RobotCoreCustom {
 					// SMART MODE: Set the target position (the PID loop will move the servo there)
 
 					// Convert from our range [-1, 1] to degrees [0, 360]
-					// position = 0 → 180° (center)
-					// position = -1 → 0°
-					// position = +1 → 360°
-					double rawTargetPosition = (position + 1.0) / 2.0 * WRAP_THRESHOLD;
+					double rawTargetDeg = (position + 1.0) / 2.0 * WRAP_THRESHOLD;
 
-					// Normalize to [0, 360) to prevent full rotation errors
-					// 360° and 0° are the same physical position, so we must normalize
-					// to avoid the servo thinking it needs to rotate a full turn
-					while (rawTargetPosition >= WRAP_THRESHOLD) {
-						rawTargetPosition -= WRAP_THRESHOLD;
-					}
-					while (rawTargetPosition < 0) {
-						rawTargetPosition += WRAP_THRESHOLD;
-					}
+					if (allowWrapAround) {
+						// Normalize to [0, 360)
+						rawTargetDeg = normalizeDeg(rawTargetDeg);
 
-					// FORBIDDEN ZONE CLAMPING: If target is inside the forbidden zone, clamp to nearest edge
-					// This prevents oscillation when trying to reach an unreachable position
-					double forbiddenCenter = MDOConstants.AzimuthForbiddenZoneCenter;
-					double forbiddenHalfWidth = MDOConstants.AzimuthForbiddenZoneWidth / 2.0;
-					double forbiddenMin = forbiddenCenter - forbiddenHalfWidth;
-					double forbiddenMax = forbiddenCenter + forbiddenHalfWidth;
+						// FORBIDDEN ZONE CLAMPING: If target is inside the forbidden zone, clamp to nearest edge
+						double forbiddenCenter = MDOConstants.AzimuthForbiddenZoneCenter;
+						double forbiddenHalfWidth = MDOConstants.AzimuthForbiddenZoneWidth / 2.0;
 
-					// Normalize forbidden zone bounds
-					while (forbiddenMin < 0) forbiddenMin += 360.0;
-					while (forbiddenMin >= 360.0) forbiddenMin -= 360.0;
-					while (forbiddenMax < 0) forbiddenMax += 360.0;
-					while (forbiddenMax >= 360.0) forbiddenMax -= 360.0;
-
-					// Check if target is inside forbidden zone
-					double distToCenter = rawTargetPosition - forbiddenCenter;
-					// Normalize to [-180, 180]
-					while (distToCenter > 180.0) distToCenter -= 360.0;
-					while (distToCenter < -180.0) distToCenter += 360.0;
-
-					if (Math.abs(distToCenter) <= forbiddenHalfWidth) {
-						// Target is inside forbidden zone - clamp to nearest edge
-						if (distToCenter <= 0) {
-							// Closer to min edge, clamp to just outside min
-							rawTargetPosition = forbiddenMin - 1.0;
-						} else {
-							// Closer to max edge, clamp to just outside max
-							rawTargetPosition = forbiddenMax + 1.0;
+						if (forbiddenHalfWidth > 0) {
+							double distToCenter = shortestAngularDiff(rawTargetDeg, forbiddenCenter);
+							if (Math.abs(distToCenter) <= forbiddenHalfWidth) {
+								double forbiddenMin = normalizeDeg(forbiddenCenter - forbiddenHalfWidth - 1.0);
+								double forbiddenMax = normalizeDeg(forbiddenCenter + forbiddenHalfWidth + 1.0);
+								if (distToCenter <= 0) {
+									rawTargetDeg = forbiddenMin;
+								} else {
+									rawTargetDeg = forbiddenMax;
+								}
+							}
 						}
-						// Normalize after clamping
-						while (rawTargetPosition < 0) rawTargetPosition += 360.0;
-						while (rawTargetPosition >= 360.0) rawTargetPosition -= 360.0;
 					}
+					// When allowWrapAround is false, rawTargetDeg is used as-is (no normalization, no forbidden zone)
 
-					// ANTI-JITTER FIX: Prevent wrap-around jitter when new target crosses boundary
-					// If the target would cause a large jump due to wrap-around (e.g., 359° to 1°),
-					// but the actual angular difference is small, use continuous tracking instead
-					double currentTarget = targetPosition;
-					double directDiff = rawTargetPosition - currentTarget;
-
-					// Calculate shortest angular distance considering wrap-around
-					double shortestDiff = directDiff;
-					if (shortestDiff > 180.0) {
-						shortestDiff -= 360.0;
-					} else if (shortestDiff < -180.0) {
-						shortestDiff += 360.0;
-					}
-
-					// If the actual change is small (< 10°) but the raw difference is large (> 180°),
-					// we're experiencing wrap-around jitter - use the shortest path
-					if (Math.abs(shortestDiff) < 10.0 && Math.abs(directDiff) > 180.0) {
-						// Apply the shortest path adjustment to current target
-						double adjustedTarget = currentTarget + shortestDiff;
-						// Normalize back to [0, 360)
-						while (adjustedTarget >= WRAP_THRESHOLD) {
-							adjustedTarget -= WRAP_THRESHOLD;
-						}
-						while (adjustedTarget < 0) {
-							adjustedTarget += WRAP_THRESHOLD;
-						}
-						rawTargetPosition = adjustedTarget;
-					}
-
-					targetPosition = rawTargetPosition;
+					// Set the target position directly
+					targetPosition = rawTargetDeg;
 				}
 			}
 		}
@@ -1617,187 +1554,137 @@ public class RobotCoreCustom {
 						// STEP 1: Read the sensor and convert voltage to degrees (0-360)
 						currentPosition = voltageToDegrees(aPosition.getVoltage());
 
-						// STEP 2: Calculate error - never cross the forbidden zone
-						double forbiddenCenter = MDOConstants.AzimuthForbiddenZoneCenter;
-						double forbiddenHalfWidth = MDOConstants.AzimuthForbiddenZoneWidth / 2.0;
-						double forbiddenMin = forbiddenCenter - forbiddenHalfWidth;
-						double forbiddenMax = forbiddenCenter + forbiddenHalfWidth;
+						// STEP 2: Check if we're in the forbidden zone and need to escape
+						// (Only applies when wrap-around is enabled — forbidden zones are a rotational concept)
+						if (allowWrapAround) {
+							double forbiddenCenter = MDOConstants.AzimuthForbiddenZoneCenter;
+							double forbiddenHalfWidth = MDOConstants.AzimuthForbiddenZoneWidth / 2.0;
 
-						// Normalize forbidden zone bounds to 0-360
-						while (forbiddenMin < 0) forbiddenMin += 360.0;
-						while (forbiddenMin >= 360.0) forbiddenMin -= 360.0;
-						while (forbiddenMax < 0) forbiddenMax += 360.0;
-						while (forbiddenMax >= 360.0) forbiddenMax -= 360.0;
+							if (forbiddenHalfWidth > 0 && isInForbiddenZone(currentPosition, forbiddenCenter, forbiddenHalfWidth)) {
+								// ESCAPE MODE: Push toward the nearest edge of the forbidden zone
+								double forbiddenMin = normalizeDeg(forbiddenCenter - forbiddenHalfWidth);
+								double forbiddenMax = normalizeDeg(forbiddenCenter + forbiddenHalfWidth);
+								double distToMin = angularDistance(currentPosition, forbiddenMin);
+								double distToMax = angularDistance(currentPosition, forbiddenMax);
 
-						// Check if we're currently INSIDE the forbidden zone (stuck with cable)
-						boolean insideForbiddenZone = isInForbiddenZone(currentPosition, forbiddenCenter, forbiddenHalfWidth);
+								double escapePower = MDOConstants.AzimuthForbiddenZoneEscapePower;
+								double power = (distToMin <= distToMax) ? escapePower : -escapePower;
 
-						if (insideForbiddenZone) {
-							// ESCAPE MODE: We're stuck in the forbidden zone, push out!
-							// Determine which edge is closer and push toward that edge
-							double distToMin = angularDistance(currentPosition, forbiddenMin);
-							double distToMax = angularDistance(currentPosition, forbiddenMax);
-
-							// Apply escape power in the direction of the nearest edge
-							double escapePower = MDOConstants.AzimuthForbiddenZoneEscapePower;
-
-							// Determine which way to escape (toward the closer boundary)
-							// If closer to min, go toward min (positive direction from center)
-							// If closer to max, go toward max (negative direction from center)
-							double power;
-							if (distToMin <= distToMax) {
-								// Escape toward the min boundary (clockwise)
-								power = escapePower;
-							} else {
-								// Escape toward the max boundary (counter-clockwise)
-								power = -escapePower;
-							}
-
-							// STEP 5: If sensor direction is backwards, flip the power direction
-							if (invertServoDirection) {
-								power = -power;
-							}
-
-							lastAppliedPower = power;
-
-							// Send escape power to servos
-							for (int i = 0; i < servoGroup.length; i++) {
-								String servoName = servoGroup[i];
-								Servo s = this.servo.get(servoName);
-								if (s != null) {
-									double finalPower = reverseMap[i] ? -power : power;
-									double mapped = (finalPower + 1.0) / 2.0 + MDOConstants.AzimuthServoCenterOffset;
-									mapped = Math.max(0.0, Math.min(1.0, mapped));
-									s.setPosition(mapped);
+								if (invertServoDirection) {
+									power = -power;
 								}
+
+								lastAppliedPower = power;
+								applyPowerToServos(power);
+								return;
 							}
-							return; // Exit early - don't do normal PID when escaping
 						}
 
-						// Calculate both possible paths
-						double directError = targetPosition - currentPosition;
+						// STEP 3: Compute error from current to target
+						double error = targetPosition - currentPosition;
 
-						// Normalize to CW path (positive, 0 to 360)
-						double cwError = directError;
-						while (cwError < 0) cwError += 360.0;
-						while (cwError >= 360.0) cwError -= 360.0;
+						if (allowWrapAround) {
+							// WRAP-AROUND MODE: Normalize to [-180, 180] — always gives shortest path
+							// This is the core wrap-around fix: instead of subtracting raw values
+							// (which breaks at the 0/360 boundary), we compute the shortest path.
+							// Example: current=350°, target=10° → error=+20° (not -340°)
+							// Example: current=10°, target=350° → error=-20° (not +340°)
+							while (error > 180.0) error -= 360.0;
+							while (error < -180.0) error += 360.0;
 
-						// CCW path is the opposite direction
-						double ccwError = cwError - 360.0;
-
-						// Check if CW path crosses the forbidden zone
-						boolean cwCrosses = pathCrossesForbiddenZone(currentPosition, currentPosition + cwError, forbiddenCenter, forbiddenHalfWidth);
-
-						// Check if CCW path crosses the forbidden zone
-						boolean ccwCrosses = pathCrossesForbiddenZone(currentPosition, currentPosition + ccwError, forbiddenCenter, forbiddenHalfWidth);
-
-						// Choose the path with COMMITTED DIRECTION to prevent oscillation
-						// Once we pick a direction, stick with it until we reach target or target changes
-						double error;
-
-						// Check if target has changed significantly (requires recalculating direction)
-						boolean targetChanged = Double.isNaN(lastCommittedTarget) ||
-							angularDistance(targetPosition, lastCommittedTarget) > TARGET_CHANGE_THRESHOLD;
-
-						// ANTI-JITTER: If both errors are small (we're close to target), stop moving
-						double minError = Math.min(Math.abs(cwError), Math.abs(ccwError));
-						if (minError < 2.0) {
-							// We're very close - clear commitment and use smallest error
-							committedDirection = null;
-							lastCommittedTarget = targetPosition;
-							error = (Math.abs(cwError) <= Math.abs(ccwError)) ? cwError : ccwError;
-						} else if (committedDirection != null && !targetChanged) {
-							// We have a committed direction and target hasn't changed - STICK WITH IT
-							// This is the key anti-oscillation fix: don't reconsider direction every loop
-							if (committedDirection) {
-								// Committed to CW - only switch if CW now crosses forbidden zone
-								if (!cwCrosses) {
-									error = cwError;
-								} else if (!ccwCrosses) {
-									// CW now blocked, must switch to CCW
-									error = ccwError;
-									committedDirection = false;
-								} else {
-									// Both blocked, use shortest
-									error = (Math.abs(cwError) <= Math.abs(ccwError)) ? cwError : ccwError;
-								}
-							} else {
-								// Committed to CCW - only switch if CCW now crosses forbidden zone
-								if (!ccwCrosses) {
-									error = ccwError;
-								} else if (!cwCrosses) {
-									// CCW now blocked, must switch to CW
-									error = cwError;
-									committedDirection = true;
-								} else {
-									// Both blocked, use shortest
-									error = (Math.abs(cwError) <= Math.abs(ccwError)) ? cwError : ccwError;
+							// STEP 3b: If forbidden zone enabled, check if shortest path crosses it
+							double forbiddenCenter = MDOConstants.AzimuthForbiddenZoneCenter;
+							double forbiddenHalfWidth = MDOConstants.AzimuthForbiddenZoneWidth / 2.0;
+							if (forbiddenHalfWidth > 0) {
+								boolean shortestCrosses = pathCrossesForbiddenZone(
+										currentPosition, currentPosition + error, forbiddenCenter, forbiddenHalfWidth);
+								if (shortestCrosses) {
+									// Use the long way around (opposite direction)
+									if (error > 0) {
+										error -= 360.0;
+									} else {
+										error += 360.0;
+									}
 								}
 							}
-						} else if (!cwCrosses && !ccwCrosses) {
-							// Neither crosses - pick shortest and COMMIT to it
-							if (Math.abs(cwError) <= Math.abs(ccwError)) {
-								error = cwError;
-								committedDirection = true; // Commit to CW
-							} else {
-								error = ccwError;
-								committedDirection = false; // Commit to CCW
-							}
-							lastCommittedTarget = targetPosition;
-						} else if (!cwCrosses) {
-							// Only CW is safe - commit to it
-							error = cwError;
-							committedDirection = true;
-							lastCommittedTarget = targetPosition;
-						} else if (!ccwCrosses) {
-							// Only CCW is safe - commit to it
-							error = ccwError;
-							committedDirection = false;
-							lastCommittedTarget = targetPosition;
-						} else {
-							// Both cross (shouldn't happen normally) - use shortest
-							error = (Math.abs(cwError) <= Math.abs(ccwError)) ? cwError : ccwError;
-							committedDirection = (error > 0);
-							lastCommittedTarget = targetPosition;
 						}
+						// When allowWrapAround is false, error is raw (target - current) with no normalization.
+						// This means the servo will NOT cross the 0/360 boundary — it uses linear error directly.
 
-						// STEP 3: Use the PID controller to calculate power
-						double power = pidController.calculate(currentPosition + error, currentPosition, 0, 2, WRAP_THRESHOLD + 100.0);
+						// STEP 4: Use the PID controller to calculate power.
+						// We pass (error, 0) so the PID sees our pre-computed error directly.
+						// Scale=361 (just above 360) avoids the PID's internal wrap-around
+						// normalization (which triggers at scale<=360), while still giving
+						// proper output scaling: kP*error/scale → 4*90/361 ≈ 1.0 at 90° error.
+						double power = pidController.calculate(
+								error, 0, 0, 2, 361.0);
 
-						// STEP 4: Make sure power stays within safe limits (-1 to 1)
+						// STEP 5: Clamp power to [-1, 1]
 						power = Math.max(-1.0, Math.min(1.0, power));
 
-						// STEP 5: If sensor direction is backwards, flip the power direction
+						// STEP 6: If sensor direction is backwards, flip
 						if (invertServoDirection) {
 							power = -power;
 						}
 
-						// Remember what power we applied (useful for debugging)
+						// STEP 7: Slew-rate limit — cap how fast power can change between
+						// iterations to prevent mechanical shaking/jitter at wrap boundaries.
+						double maxDelta = MDOConstants.AzimuthSlewRate; // max change per loop
+						double delta = power - lastAppliedPower;
+						if (delta > maxDelta) {
+							power = lastAppliedPower + maxDelta;
+						} else if (delta < -maxDelta) {
+							power = lastAppliedPower - maxDelta;
+						}
+
 						lastAppliedPower = power;
 
-						// STEP 6: Send power to each servo in the group
-						for (int i = 0; i < servoGroup.length; i++) {
-							String servoName = servoGroup[i];
-							Servo s = this.servo.get(servoName);
-							if (s != null) {
-								// If this specific servo is reversed, flip its power
-								double finalPower = reverseMap[i] ? -power : power;
-								
-								// Convert power from [-1, 1] to servo range [0, 1]
-								// Add center offset to correct for asymmetric dead band in continuous rotation servos
-								double mapped = (finalPower + 1.0) / 2.0 + MDOConstants.AzimuthServoCenterOffset;
-								mapped = Math.max(0.0, Math.min(1.0, mapped)); // Safety clamp
-
-								// Send the command to the servo
-								s.setPosition(mapped);
-							}
-						}
+						// STEP 8: Send power to servos
+						applyPowerToServos(power);
 					} catch (Exception e) {
-						// If anything goes wrong (sensor error, etc.), don't crash - just print error
 						System.err.println("Error in servo PID loop: " + e.getMessage());
 					}
 				}
 			}
+		}
+
+		/**
+		 * Sends calculated power to all servos in the group, respecting reverse maps and center offset.
+		 */
+		private void applyPowerToServos(double power) {
+			for (int i = 0; i < servoGroup.length; i++) {
+				String servoName = servoGroup[i];
+				Servo s = this.servo.get(servoName);
+				if (s != null) {
+					double finalPower = reverseMap[i] ? -power : power;
+					// Convert power from [-1, 1] to servo range [0, 1]
+					// Add center offset to correct for asymmetric dead band in continuous rotation servos
+					double mapped = (finalPower + 1.0) / 2.0 + MDOConstants.AzimuthServoCenterOffset;
+					mapped = Math.max(0.0, Math.min(1.0, mapped)); // Safety clamp
+					s.setPosition(mapped);
+				}
+			}
+		}
+
+		/**
+		 * Normalize an angle to [0, 360) range
+		 */
+		private double normalizeDeg(double deg) {
+			deg = deg % 360.0;
+			if (deg < 0) deg += 360.0;
+			return deg;
+		}
+
+		/**
+		 * Calculate the shortest signed angular difference from angle1 to angle2.
+		 * Returns a value in [-180, 180].
+		 * Positive means angle2 is clockwise from angle1.
+		 */
+		private double shortestAngularDiff(double angle1, double angle2) {
+			double diff = normalizeDeg(angle1) - normalizeDeg(angle2);
+			while (diff > 180.0) diff -= 360.0;
+			while (diff < -180.0) diff += 360.0;
+			return diff;
 		}
 
 		/**
@@ -1914,7 +1801,6 @@ public class RobotCoreCustom {
 		public double getPosition() {
 			synchronized (lock) {
 				if (useAnalog) {
-					// Return current position (0-360 degrees, no accumulation)
 					return currentPosition;
 				} else {
 					throw new IllegalStateException("Analog position sensors are not enabled for this servo group.");
@@ -2016,7 +1902,7 @@ public class RobotCoreCustom {
 	 * This is where the servo is TRYING to reach, not where it currently is
 	 */
 	public double getTargetPosition() {
-		return targetPosition;  // volatile read is atomic
+		return targetPosition;
 	}
 	
 
@@ -2093,6 +1979,25 @@ public class RobotCoreCustom {
 
 			this.pidCoefficients = pidCoefficients;
 			this.pidController = new CustomPIDFController(pidCoefficients[0], pidCoefficients[1], pidCoefficients[2], 0.0);
+		}
+	}
+
+	/**
+	 * TOGGLE: Enable or disable wrap-around (0°/360° boundary crossing)
+	 *
+	 * WHAT IT DOES:
+	 * - true (default): Uses shortest-path wrap-around. The servo takes the shortest route,
+	 *   even if it means crossing the 0°/360° boundary. Good for turrets that can spin freely.
+	 * - false: No wrap-around. Error is computed as a raw linear difference (target - current).
+	 *   The servo will NOT cross the 0°/360° boundary. Good for limited-range servos like elevation.
+	 *
+	 * NOTE: This only affects Smart Mode (useAnalog = true). Simple mode has no wrap-around logic.
+	 *
+	 * @param allow - true to enable wrap-around, false to disable it
+	 */
+	public void setAllowWrapAround(boolean allow) {
+		synchronized (lock) {
+			this.allowWrapAround = allow;
 		}
 	}
 }

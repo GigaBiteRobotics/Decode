@@ -8,7 +8,7 @@ public class MDOConstants {
     public static double AprilTagMaxDistance = 60.0;
     public static int AprilTagUpdateIntervalMs = 100;
     public static Double AzimuthFineAdjustment = 0.0;
-    public static double AzimuthForbiddenZoneCenter = 50;
+    public static double AzimuthForbiddenZoneCenter = 30;
     public static double AzimuthForbiddenZoneWidth = 0.0; // Total width of forbidden zone in degrees (half on each side of center)
     public static double AzimuthForbiddenZoneEscapePower = 0.5; // Power to use when escaping from inside forbidden zone
     public static Double AzimuthIMUOffset = 120.0;
@@ -16,14 +16,15 @@ public class MDOConstants {
     public static double AzimuthPIDDeadzonePercent = 0.05;
     public static double[] AzimuthPIDFConstants = new double[]{4.0, 0.2, 0.0, 0.0};
     public static double AzimuthServoCenterOffset = 0.0;
+    public static double AzimuthSlewRate = 1; // Max power change per PID loop iteration (prevents shaking)
     public static double BlueAprilTagHeadingOffset = 90.0;
     public static Double BlueAzimuthFineAdjustment = 0.0;
     public static double[] BlueCloseStartPose = new double[]{22.85, 124.85, -40.7};
     public static double[] BlueFarStartPose = new double[]{72.0, 72.0, -90.0};
     public static Double[] BlueLauncherCalcConstants = new Double[]{280.00, 386.09};
-    public static int BlueLauncherRPM = 2300;
+    public static int BlueLauncherRPM = 3800;
     public static double[][] BlueLauncherRPMZones = new double[][]{
-            {0.0, 4000},
+            {0.0, 3700},
             {110.0, 6000},
     };
 	public static double[][] BlueElevationOffsetZones = new double[][]{
@@ -39,6 +40,8 @@ public class MDOConstants {
     public static int ColorMinRawSum = 5;
     public static double ColorMinSaturation = 0.10;
     public static int[] ColorSensorPitMapping = new int[]{0, 1, 4, 5, 2, 3};
+    public static Double ElevationClampMax = 0.2;
+    public static Double ElevationClampMin = -1.0;
     public static Double ElevationMax = 0.9;
     public static Double ElevationMaxIN = 14.0;
     public static Double ElevationMin = -0.4;

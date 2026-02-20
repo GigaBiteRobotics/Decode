@@ -36,7 +36,7 @@ public class RedCloseAutoConstants {
 	public static int shotDelayMs = 700;
 
 	// Additional delay when launching a ball of a different color than the previous one
-	public static int colorChangeDelayMs = 200;
+	public static int colorChangeDelayMs = 300;
 
 	// Delay after launching before moving to next position in milliseconds
 	public static int postLaunchDelayMs = 1000;

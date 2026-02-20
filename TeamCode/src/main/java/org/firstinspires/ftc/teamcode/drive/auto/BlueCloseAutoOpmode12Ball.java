@@ -3,6 +3,7 @@ package org.firstinspires.ftc.teamcode.drive.auto;
 import com.bylazar.telemetry.PanelsTelemetry;
 import com.bylazar.telemetry.TelemetryManager;
 import com.pedropathing.follower.Follower;
+import com.pedropathing.geometry.BezierCurve;
 import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.geometry.Pose;
 import com.pedropathing.paths.PathChain;
@@ -25,7 +26,7 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 	// 1. Launch preloaded
 	// 2. Pickup Set 1 -> Launch
 	// 3. Pickup from gate -> Launch
-	// 4. Pickup from gate -> Launch
+	// 4. Pickup Set 0 -> Launch
 	// 5. Final pose
 	protected enum AutoState {
 		IDLE,
@@ -40,13 +41,15 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 		DRIVE_TO_LAUNCH_2,
 		LAUNCH_2,
 		// Launch 3: Pickup from gate -> Launch
-		DRIVE_TO_GATE_PICKUP_1,
-		COLLECT_GATE_1,
+		DRIVE_TO_GATE_PICKUP,
+		SHAKE_AT_GATE,
+		COLLECT_GATE,
 		DRIVE_TO_LAUNCH_3,
 		LAUNCH_3,
-		// Launch 4: Pickup from gate -> Launch
-		DRIVE_TO_GATE_PICKUP_2,
-		COLLECT_GATE_2,
+		// Launch 4: Pickup Set 0 -> Launch
+		DRIVE_TO_SET0_LINEUP,
+		DRIVE_TO_SET0_PICKUP,
+		COLLECT_SET0,
 		DRIVE_TO_LAUNCH_4,
 		LAUNCH_4,
 		// Final
@@ -89,11 +92,20 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 	protected PathChain pathToLaunch;
 	protected PathChain pathToSet1Lineup, pathToSet1Pickup, pathFromSet1ToLaunch;
 	protected PathChain pathToGatePickup, pathFromGateToLaunch;
+	protected PathChain pathGateShakeForward, pathGateShakeBackward;
+	protected PathChain pathToSet0Lineup, pathToSet0Pickup, pathFromSet0ToLaunch;
 	protected PathChain pathToFinal;
 
 	// ===== LAUNCH TRACKING =====
 	protected int ballsLaunched = 0;
 	protected int currentLaunchSlot = 0;
+	protected boolean initialLaunchDone = false;
+	protected ElapsedTime recheckTimer = new ElapsedTime();
+
+	// ===== GATE SHAKE TRACKING =====
+	protected boolean gateShakeForward = true;
+	protected int gateShakesCompleted = 0;
+	protected ElapsedTime gateShakeTimer = new ElapsedTime();
 
 	@Override
 	public void init() {
@@ -174,25 +186,80 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 
 	protected void buildPaths() {
 		// Start to launch
-		pathToLaunch = buildPath(BlueCloseAutoConstants12Ball.startPose, BlueCloseAutoConstants12Ball.launchPose);
+		pathToLaunch = follower.pathBuilder()
+			.addPath(new BezierLine(BlueCloseAutoConstants12Ball.startPose, BlueCloseAutoConstants12Ball.launchPose))
+			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.startPose.getHeading(), BlueCloseAutoConstants12Ball.launchPose.getHeading())
+			.build();
 
 		// Set 1 paths
-		pathToSet1Lineup = buildPath(BlueCloseAutoConstants12Ball.launchPose, BlueCloseAutoConstants12Ball.set1LineupPose);
-		pathToSet1Pickup = buildPath(BlueCloseAutoConstants12Ball.set1LineupPose, BlueCloseAutoConstants12Ball.set1PickupPose);
-		pathFromSet1ToLaunch = buildPath(BlueCloseAutoConstants12Ball.set1PickupPose, BlueCloseAutoConstants12Ball.launchPose);
+		pathToSet1Lineup = follower.pathBuilder()
+			.addPath(new BezierLine(BlueCloseAutoConstants12Ball.launchPose, BlueCloseAutoConstants12Ball.set1LineupPose))
+			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.launchPose.getHeading(), BlueCloseAutoConstants12Ball.set1LineupPose.getHeading())
+			.build();
+
+		pathToSet1Pickup = follower.pathBuilder()
+			.addPath(new BezierLine(BlueCloseAutoConstants12Ball.set1LineupPose, BlueCloseAutoConstants12Ball.set1PickupPose))
+			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.set1LineupPose.getHeading(), BlueCloseAutoConstants12Ball.set1PickupPose.getHeading())
+			.build();
+
+		pathFromSet1ToLaunch = follower.pathBuilder()
+			.addPath(new BezierCurve(BlueCloseAutoConstants12Ball.set1PickupPose, BlueCloseAutoConstants12Ball.set1PkupToLaunchBezierPoint, BlueCloseAutoConstants12Ball.launchPose))
+			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.set1PickupPose.getHeading(), BlueCloseAutoConstants12Ball.launchPose.getHeading())
+			.build();
 
 		// Gate paths
-		pathToGatePickup = buildPath(BlueCloseAutoConstants12Ball.launchPose, BlueCloseAutoConstants12Ball.gatePickupPose);
-		pathFromGateToLaunch = buildPath(BlueCloseAutoConstants12Ball.gatePickupPose, BlueCloseAutoConstants12Ball.launchPose);
+		pathToGatePickup = follower.pathBuilder()
+			.addPath(new BezierCurve(BlueCloseAutoConstants12Ball.launchPose,BlueCloseAutoConstants12Ball.launchToGateBezierPoint, BlueCloseAutoConstants12Ball.gatePickupPose))
+			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.launchPose.getHeading(), BlueCloseAutoConstants12Ball.gatePickupPose.getHeading())
+			.build();
+
+		pathFromGateToLaunch = follower.pathBuilder()
+			.addPath(new BezierCurve(BlueCloseAutoConstants12Ball.gatePickupPose,BlueCloseAutoConstants12Ball.gateToLaunchBezierPoint, BlueCloseAutoConstants12Ball.launchPose))
+			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.gatePickupPose.getHeading(), BlueCloseAutoConstants12Ball.launchPose.getHeading())
+			.build();
+
+		// Gate shake paths - oscillate forward/backward from gate pickup pose along its heading
+		double shakeHeading = BlueCloseAutoConstants12Ball.gatePickupPose.getHeading() + BlueCloseAutoConstants12Ball.gateShakeOffset.getHeading();
+		double shakeDist = BlueCloseAutoConstants12Ball.gateShakeDistance;
+		Pose gateShakeBasePose = new Pose(
+			BlueCloseAutoConstants12Ball.gatePickupPose.getX() + BlueCloseAutoConstants12Ball.gateShakeOffset.getX(),
+			BlueCloseAutoConstants12Ball.gatePickupPose.getY() + BlueCloseAutoConstants12Ball.gateShakeOffset.getY(),
+			shakeHeading
+		);
+		Pose gateShakeForwardPose = new Pose(
+			gateShakeBasePose.getX() + shakeDist * Math.cos(shakeHeading),
+			gateShakeBasePose.getY() + shakeDist * Math.sin(shakeHeading),
+			shakeHeading
+		);
+		pathGateShakeForward = follower.pathBuilder()
+			.addPath(new BezierLine(gateShakeBasePose, gateShakeForwardPose))
+			.setConstantHeadingInterpolation(shakeHeading)
+			.build();
+		pathGateShakeBackward = follower.pathBuilder()
+			.addPath(new BezierLine(gateShakeForwardPose, gateShakeBasePose))
+			.setConstantHeadingInterpolation(shakeHeading)
+			.build();
+
+		// Set 0 paths
+		pathToSet0Lineup = follower.pathBuilder()
+			.addPath(new BezierLine(BlueCloseAutoConstants12Ball.launchPose, BlueCloseAutoConstants12Ball.set0LineupPose))
+			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.launchPose.getHeading(), BlueCloseAutoConstants12Ball.set0LineupPose.getHeading())
+			.build();
+
+		pathToSet0Pickup = follower.pathBuilder()
+			.addPath(new BezierLine(BlueCloseAutoConstants12Ball.set0LineupPose, BlueCloseAutoConstants12Ball.set0PickupPose))
+			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.set0LineupPose.getHeading(), BlueCloseAutoConstants12Ball.set0PickupPose.getHeading())
+			.build();
+
+		pathFromSet0ToLaunch = follower.pathBuilder()
+			.addPath(new BezierLine(BlueCloseAutoConstants12Ball.set0PickupPose, BlueCloseAutoConstants12Ball.launchPose))
+			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.set0PickupPose.getHeading(), BlueCloseAutoConstants12Ball.launchPose.getHeading())
+			.build();
 
 		// Final
-		pathToFinal = buildPath(BlueCloseAutoConstants12Ball.launchPose, BlueCloseAutoConstants12Ball.finalPose);
-	}
-
-	protected PathChain buildPath(Pose from, Pose to) {
-		return follower.pathBuilder()
-			.addPath(new BezierLine(from, to))
-			.setLinearHeadingInterpolation(from.getHeading(), to.getHeading())
+		pathToFinal = follower.pathBuilder()
+			.addPath(new BezierLine(BlueCloseAutoConstants12Ball.launchPose, BlueCloseAutoConstants12Ball.finalPose))
+			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.launchPose.getHeading(), BlueCloseAutoConstants12Ball.finalPose.getHeading())
 			.build();
 	}
 
@@ -304,20 +371,51 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 				break;
 
 			case LAUNCH_2:
-				handleLaunch(stateChanged, AutoState.DRIVE_TO_GATE_PICKUP_1);
+				handleLaunch(stateChanged, AutoState.DRIVE_TO_GATE_PICKUP);
 				break;
 
 			// ===== LAUNCH 3: Gate Pickup -> Launch =====
-			case DRIVE_TO_GATE_PICKUP_1:
+			case DRIVE_TO_GATE_PICKUP:
 				if (stateChanged) {
 					intakeRunningState = IntakeState.IN;
 					follower.followPath(pathToGatePickup, BlueCloseAutoConstants12Ball.pickupSpeed, true);
 				}
-				if (pathDone()) setState(AutoState.COLLECT_GATE_1);
+				if (pathDone()) setState(AutoState.SHAKE_AT_GATE);
 				break;
 
-			case COLLECT_GATE_1:
-				if (stateTimer.milliseconds() > BlueCloseAutoConstants12Ball.lingerTimeMs) {
+			case SHAKE_AT_GATE:
+				if (stateChanged) {
+					gateShakeForward = true;
+					gateShakesCompleted = 0;
+					gateShakeTimer.reset();
+					follower.followPath(pathGateShakeForward, BlueCloseAutoConstants12Ball.gateShakeSpeed, true);
+				}
+				// Max time safety - move on regardless
+				if (stateTimer.milliseconds() > BlueCloseAutoConstants12Ball.gateShakeMaxTimeMs) {
+					setState(AutoState.COLLECT_GATE);
+				}
+				// Switch direction every period
+				else if (gateShakeTimer.milliseconds() > BlueCloseAutoConstants12Ball.gateShakePeriodMs) {
+					gateShakeTimer.reset();
+					if (gateShakeForward) {
+						// Finished forward leg, go backward
+						gateShakeForward = false;
+						follower.followPath(pathGateShakeBackward, BlueCloseAutoConstants12Ball.gateShakeSpeed, true);
+					} else {
+						// Finished backward leg = one full shake
+						gateShakesCompleted++;
+						if (gateShakesCompleted >= BlueCloseAutoConstants12Ball.gateShakeCount) {
+							setState(AutoState.COLLECT_GATE);
+						} else {
+							gateShakeForward = true;
+							follower.followPath(pathGateShakeForward, BlueCloseAutoConstants12Ball.gateShakeSpeed, true);
+						}
+					}
+				}
+				break;
+
+			case COLLECT_GATE:
+				if (stateTimer.milliseconds() > BlueCloseAutoConstants12Ball.gateLingerTimeMs) {
 					intakeOffTimer.reset();
 					intakeOffTimerActive = true;
 					setState(AutoState.DRIVE_TO_LAUNCH_3);
@@ -333,19 +431,26 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 				break;
 
 			case LAUNCH_3:
-				handleLaunch(stateChanged, AutoState.DRIVE_TO_GATE_PICKUP_2);
+				handleLaunch(stateChanged, AutoState.DRIVE_TO_SET0_LINEUP);
 				break;
 
-			// ===== LAUNCH 4: Gate Pickup -> Launch =====
-			case DRIVE_TO_GATE_PICKUP_2:
+			// ===== LAUNCH 4: Set 0 -> Launch =====
+			case DRIVE_TO_SET0_LINEUP:
 				if (stateChanged) {
 					intakeRunningState = IntakeState.IN;
-					follower.followPath(pathToGatePickup, BlueCloseAutoConstants12Ball.pickupSpeed, true);
+					follower.followPath(pathToSet0Lineup, BlueCloseAutoConstants12Ball.defaultSpeed, true);
 				}
-				if (pathDone()) setState(AutoState.COLLECT_GATE_2);
+				if (pathDone()) setState(AutoState.DRIVE_TO_SET0_PICKUP);
 				break;
 
-			case COLLECT_GATE_2:
+			case DRIVE_TO_SET0_PICKUP:
+				if (stateChanged) {
+					follower.followPath(pathToSet0Pickup, BlueCloseAutoConstants12Ball.pickupSpeed, true);
+				}
+				if (pathDone()) setState(AutoState.COLLECT_SET0);
+				break;
+
+			case COLLECT_SET0:
 				if (stateTimer.milliseconds() > BlueCloseAutoConstants12Ball.lingerTimeMs) {
 					intakeOffTimer.reset();
 					intakeOffTimerActive = true;
@@ -356,7 +461,7 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 			case DRIVE_TO_LAUNCH_4:
 				if (stateChanged) {
 					launcherSpinning = true;
-					follower.followPath(pathFromGateToLaunch, BlueCloseAutoConstants12Ball.defaultSpeed, true);
+					follower.followPath(pathFromSet0ToLaunch, BlueCloseAutoConstants12Ball.defaultSpeed, true);
 				}
 				if (pathDone()) setState(AutoState.LAUNCH_4);
 				break;
@@ -389,22 +494,53 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 		if (stateChanged) {
 			ballsLaunched = 0;
 			currentLaunchSlot = 0;
+			initialLaunchDone = false;
 			launchTimer.reset();
+			recheckTimer.reset();
 			follower.holdPoint(BlueCloseAutoConstants12Ball.launchPose);
 			sorterController.lockLiftersForLaunch(true);
 		}
 
-		int pitDelay = getPitDelay(currentLaunchSlot);
-		if (launchTimer.milliseconds() > pitDelay && currentLaunchSlot < 3) {
-			sorterController.forceLaunchSlot(currentLaunchSlot);
-			currentLaunchSlot++;
-			ballsLaunched++;
-			launchTimer.reset();
+		// Phase 1: Fire all 3 pits sequentially
+		if (!initialLaunchDone) {
+			int pitDelay = getPitDelay(currentLaunchSlot);
+			if (launchTimer.milliseconds() > pitDelay && currentLaunchSlot < 3) {
+				sorterController.forceLaunchSlot(currentLaunchSlot);
+				currentLaunchSlot++;
+				ballsLaunched++;
+				launchTimer.reset();
+			}
+			if (ballsLaunched >= 3) {
+				initialLaunchDone = true;
+				launchTimer.reset();
+				recheckTimer.reset();
+			}
 		}
 
-		if (ballsLaunched >= 3 && launchTimer.milliseconds() > BlueCloseAutoConstants12Ball.postLaunchDelayMs) {
-			sorterController.lockLiftersForLaunch(false);
-			setState(nextState);
+		// Phase 2: During post-launch delay, double-check pits for remaining balls and fire them
+		if (initialLaunchDone) {
+			// Periodically check for remaining balls using sensor data
+			if (recheckTimer.milliseconds() > BlueCloseAutoConstants12Ball.shotDelayMs) {
+				sorterController.updateSensors();
+				if (sorterController.getCachedBallCount() > 0) {
+					// Force-launch ALL pits that still have a ball detected
+					for (int i = 0; i < 3; i++) {
+						if (sorterController.getCachedColor(i) != RobotCoreCustom.CustomSorterController.CustomColor.NULL) {
+							sorterController.forceLaunchSlot(i);
+						}
+					}
+					launchTimer.reset(); // Reset timer to allow these extra launches to complete
+				}
+				recheckTimer.reset();
+			}
+
+			// Transition: post-launch delay passed AND no balls remain, or safety timeout
+			if ((launchTimer.milliseconds() > BlueCloseAutoConstants12Ball.postLaunchDelayMs
+					&& sorterController.getCachedBallCount() == 0)
+					|| stateTimer.milliseconds() > BlueCloseAutoConstants12Ball.maxLaunchStateTimeMs) {
+				sorterController.lockLiftersForLaunch(false);
+				setState(nextState);
+			}
 		}
 	}
 
