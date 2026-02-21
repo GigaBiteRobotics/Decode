@@ -16,8 +16,8 @@ import org.firstinspires.ftc.teamcode.drive.MDOConstants;
 import org.firstinspires.ftc.teamcode.drive.RobotCoreCustom;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
-@Autonomous(name = "Red Far Auto", group = "Auto")
-public class RedFarAutoOpmode extends OpMode {
+@Autonomous(name = "Blue Far Auto", group = "Auto")
+public class BlueFarAutoOpmode extends OpMode {
 
 	// ===== STATE MACHINE =====
 	protected enum AutoState {
@@ -52,7 +52,7 @@ public class RedFarAutoOpmode extends OpMode {
 
 	// ===== LAUNCHER CONTROL =====
 	protected boolean launcherSpinning = false;
-	protected int launcherRPM = RedFarAutoConstants.targetRPM;
+	protected int launcherRPM = BlueFarAutoConstants.targetRPM;
 
 	// ===== INTAKE CONTROL =====
 	protected enum IntakeState {
@@ -97,7 +97,7 @@ public class RedFarAutoOpmode extends OpMode {
 
 		// Initialize follower with Pedro Pathing
 		follower = Constants.createFollower(hardwareMap);
-		follower.setStartingPose(RedFarAutoConstants.startPose);
+		follower.setStartingPose(BlueFarAutoConstants.startPose);
 
 		// Initialize robot core
 		robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
@@ -157,9 +157,9 @@ public class RedFarAutoOpmode extends OpMode {
 
 		telemetryC.addData("Status", "Initialized");
 		telemetryC.addData("Start Pose", String.format("(%.1f, %.1f, %.1f°)",
-			RedFarAutoConstants.startPose.getX(),
-			RedFarAutoConstants.startPose.getY(),
-			Math.toDegrees(RedFarAutoConstants.startPose.getHeading())));
+			BlueFarAutoConstants.startPose.getX(),
+			BlueFarAutoConstants.startPose.getY(),
+			Math.toDegrees(BlueFarAutoConstants.startPose.getHeading())));
 		telemetryC.update();
 	}
 
@@ -167,78 +167,78 @@ public class RedFarAutoOpmode extends OpMode {
 		// Path from start to launch position
 		pathToLaunch = follower.pathBuilder()
 			.addPath(new BezierLine(
-				RedFarAutoConstants.startPose,
-				RedFarAutoConstants.launchPose
+				BlueFarAutoConstants.startPose,
+				BlueFarAutoConstants.launchPose
 			))
 			.setLinearHeadingInterpolation(
-				RedFarAutoConstants.startPose.getHeading(),
-				RedFarAutoConstants.launchPose.getHeading()
+				BlueFarAutoConstants.startPose.getHeading(),
+				BlueFarAutoConstants.launchPose.getHeading()
 			)
 			.build();
 
 		// Path to ball 0 lineup (from launch)
 		pathToBall0Lineup = follower.pathBuilder()
 			.addPath(new BezierLine(
-				RedFarAutoConstants.launchPose,
-				RedFarAutoConstants.ballCollection0LineupPose
+				BlueFarAutoConstants.launchPose,
+				BlueFarAutoConstants.ballCollection0LineupPose
 			))
 			.setLinearHeadingInterpolation(
-				RedFarAutoConstants.launchPose.getHeading(),
-				RedFarAutoConstants.ballCollection0LineupPose.getHeading()
+				BlueFarAutoConstants.launchPose.getHeading(),
+				BlueFarAutoConstants.ballCollection0LineupPose.getHeading()
 			)
 			.build();
 
 		// Path to ball 0 pickup
 		pathToBall0Pickup = follower.pathBuilder()
 			.addPath(new BezierLine(
-				RedFarAutoConstants.ballCollection0LineupPose,
-				RedFarAutoConstants.ballCollection0PickupPose
+				BlueFarAutoConstants.ballCollection0LineupPose,
+				BlueFarAutoConstants.ballCollection0PickupPose
 			))
-			.setConstantHeadingInterpolation(RedFarAutoConstants.ballCollection0PickupPose.getHeading())
+			.setConstantHeadingInterpolation(BlueFarAutoConstants.ballCollection0PickupPose.getHeading())
 			.build();
 
 		// Path from ball 0 pickup back to launch
 		pathFromBall0ToLaunch = follower.pathBuilder()
 			.addPath(new BezierLine(
-				RedFarAutoConstants.ballCollection0PickupPose,
-				RedFarAutoConstants.launchPose
+				BlueFarAutoConstants.ballCollection0PickupPose,
+				BlueFarAutoConstants.launchPose
 			))
 			.setLinearHeadingInterpolation(
-				RedFarAutoConstants.ballCollection0PickupPose.getHeading(),
-				RedFarAutoConstants.launchPose.getHeading()
+				BlueFarAutoConstants.ballCollection0PickupPose.getHeading(),
+				BlueFarAutoConstants.launchPose.getHeading()
 			)
 			.build();
 
 		// Path to ball 1 lineup (from launch)
 		pathToBall1Lineup = follower.pathBuilder()
 			.addPath(new BezierLine(
-				RedFarAutoConstants.launchPose,
-				RedFarAutoConstants.ballCollection1LineupPose
+				BlueFarAutoConstants.launchPose,
+				BlueFarAutoConstants.ballCollection1LineupPose
 			))
 			.setLinearHeadingInterpolation(
-				RedFarAutoConstants.launchPose.getHeading(),
-				RedFarAutoConstants.ballCollection1LineupPose.getHeading()
+				BlueFarAutoConstants.launchPose.getHeading(),
+				BlueFarAutoConstants.ballCollection1LineupPose.getHeading()
 			)
 			.build();
 
 		// Path to ball 1 pickup
 		pathToBall1Pickup = follower.pathBuilder()
 			.addPath(new BezierLine(
-				RedFarAutoConstants.ballCollection1LineupPose,
-				RedFarAutoConstants.ballCollection1PickupPose
+				BlueFarAutoConstants.ballCollection1LineupPose,
+				BlueFarAutoConstants.ballCollection1PickupPose
 			))
-			.setConstantHeadingInterpolation(RedFarAutoConstants.ballCollection1PickupPose.getHeading())
+			.setConstantHeadingInterpolation(BlueFarAutoConstants.ballCollection1PickupPose.getHeading())
 			.build();
 
 		// Path from ball 1 pickup back to launch
 		pathFromBall1ToLaunch = follower.pathBuilder()
 			.addPath(new BezierLine(
-				RedFarAutoConstants.ballCollection1PickupPose,
-				RedFarAutoConstants.launchPose
+				BlueFarAutoConstants.ballCollection1PickupPose,
+				BlueFarAutoConstants.launchPose
 			))
 			.setLinearHeadingInterpolation(
-				RedFarAutoConstants.ballCollection1PickupPose.getHeading(),
-				RedFarAutoConstants.launchPose.getHeading()
+				BlueFarAutoConstants.ballCollection1PickupPose.getHeading(),
+				BlueFarAutoConstants.launchPose.getHeading()
 			)
 			.build();
 	}
@@ -260,7 +260,7 @@ public class RedFarAutoOpmode extends OpMode {
 		customThreads.startSorterThread();
 
 		// Set azimuth to fixed position once at start (stays here for entire auto)
-		azimuthServo.setPosition(RedFarAutoConstants.azimuthPos);
+		azimuthServo.setPosition(BlueFarAutoConstants.azimuthPos);
 
 		// Begin state machine
 		setState(AutoState.SPIN_UP_LAUNCHER);
@@ -276,7 +276,7 @@ public class RedFarAutoOpmode extends OpMode {
 		previousState = currentState;
 
 		// Check auto time limit - interrupt everything and drive to final pose
-		if (runtime.seconds() >= RedFarAutoConstants.autoTimeLimitSeconds
+		if (runtime.seconds() >= BlueFarAutoConstants.autoTimeLimitSeconds
 				&& currentState != AutoState.DRIVE_TO_FINAL && currentState != AutoState.IDLE) {
 			// Stop launcher and intake
 			launcherSpinning = false;
@@ -285,7 +285,7 @@ public class RedFarAutoOpmode extends OpMode {
 			sorterController.lockLiftersForLaunch(false);
 
 			// Drive to final pose using holdPoint (actively drives to and holds position)
-			follower.holdPoint(RedFarAutoConstants.finalPose);
+			follower.holdPoint(BlueFarAutoConstants.finalPose);
 			setState(AutoState.DRIVE_TO_FINAL);
 			stateChanged = true;
 		}
@@ -301,11 +301,11 @@ public class RedFarAutoOpmode extends OpMode {
 		azimuthServo.servoPidLoop();
 
 		// Set elevation to fixed position from constants
-		elevationServo.setPosition(RedFarAutoConstants.elevationPos);
+		elevationServo.setPosition(BlueFarAutoConstants.elevationPos);
 
 		// Check if intake should be turned off after timer expires (while driving)
 		int intakeCollectTime = (currentIntakePosition == 0) ?
-			RedFarAutoConstants.intakeCollect0TimeMs : RedFarAutoConstants.intakeCollect1TimeMs;
+			BlueFarAutoConstants.intakeCollect0TimeMs : BlueFarAutoConstants.intakeCollect1TimeMs;
 		if (intakeOffTimerActive && intakeOffTimer.milliseconds() > intakeCollectTime) {
 			intakeRunningState = IntakeState.STOP;
 			intakeOffTimerActive = false;
@@ -314,7 +314,7 @@ public class RedFarAutoOpmode extends OpMode {
 		// Update intake motor based on state (only IN or STOP, never OUT)
 		switch (intakeRunningState) {
 			case IN:
-				intakeMotor.setPower(RedFarAutoConstants.intakeInSpeed);
+				intakeMotor.setPower(BlueFarAutoConstants.intakeInSpeed);
 				break;
 			case OUT:
 			case STOP:
@@ -350,7 +350,7 @@ public class RedFarAutoOpmode extends OpMode {
 
 			case DRIVE_TO_LAUNCH:
 				if (stateChanged) {
-					follower.followPath(pathToLaunch, RedFarAutoConstants.startToLaunchSpeed, true);
+					follower.followPath(pathToLaunch, BlueFarAutoConstants.startToLaunchSpeed, true);
 				}
 				// Must wait at least 500ms before checking isBusy (give path time to start)
 				// OR timeout after 3 seconds as fallback
@@ -367,7 +367,7 @@ public class RedFarAutoOpmode extends OpMode {
 					currentLaunchSlot = 0;
 					launchTimer.reset();
 					// Actively hold position at launch pose to prevent going limp
-					follower.holdPoint(RedFarAutoConstants.launchPose);
+					follower.holdPoint(BlueFarAutoConstants.launchPose);
 					// Lock lifters to prevent balls from moving between pits during this launch cycle
 					sorterController.lockLiftersForLaunch(true);
 				}
@@ -378,8 +378,8 @@ public class RedFarAutoOpmode extends OpMode {
 				}
 				// Fire the next pit that has a ball - wait until RPM is at threshold
 				if (currentLaunchSlot < 3
-						&& launchTimer.milliseconds() > RedFarAutoConstants.minShotDelayMs
-						&& launcherMotors.getAverageRPM() >= launcherRPM * RedFarAutoConstants.rpmThresholdPercent) {
+						&& launchTimer.milliseconds() > BlueFarAutoConstants.minShotDelayMs
+						&& launcherMotors.getAverageRPM() >= launcherRPM * BlueFarAutoConstants.rpmThresholdPercent) {
 					sorterController.forceLaunchSlot(currentLaunchSlot);
 					ballsLaunched++;
 					currentLaunchSlot++;
@@ -387,7 +387,7 @@ public class RedFarAutoOpmode extends OpMode {
 				}
 				// After all 3 pits checked, wait postLaunchDelayMs for balls to settle, then re-check
 				if (currentLaunchSlot >= 3) {
-					if (launchTimer.milliseconds() > RedFarAutoConstants.postLaunchDelayMs) {
+					if (launchTimer.milliseconds() > BlueFarAutoConstants.postLaunchDelayMs) {
 						// Check if new balls appeared (sorter moved them into pits)
 						if (sorterController.getCachedBallCount() > 0) {
 							// Re-fire all 3 pits again
@@ -407,7 +407,7 @@ public class RedFarAutoOpmode extends OpMode {
 					// Turn on intake early so it's running before reaching pickup
 					intakeRunningState = IntakeState.IN;
 					// Always coming from launch position
-					follower.followPath(pathToBall0Lineup, RedFarAutoConstants.launchToCollection0LineupSpeed, true);
+					follower.followPath(pathToBall0Lineup, BlueFarAutoConstants.launchToCollection0LineupSpeed, true);
 				}
 				// Wait for path to start (minimum 100ms) and complete
 				if (!follower.isBusy() && stateTimer.milliseconds() > 100) {
@@ -419,7 +419,7 @@ public class RedFarAutoOpmode extends OpMode {
 				if (stateChanged) {
 					// Intake already running from lineup state
 					// Slow down for ball pickup using maxPower parameter
-					follower.followPath(pathToBall0Pickup, RedFarAutoConstants.collection0LineupToPickupSpeed, true);
+					follower.followPath(pathToBall0Pickup, BlueFarAutoConstants.collection0LineupToPickupSpeed, true);
 				}
 				// Wait for path to start (minimum 100ms) and complete
 				if (!follower.isBusy() && stateTimer.milliseconds() > 100) {
@@ -430,7 +430,7 @@ public class RedFarAutoOpmode extends OpMode {
 
 			case COLLECT_BALL_0:
 				// Linger at position with intake running for the configured time
-				if (stateTimer.milliseconds() > RedFarAutoConstants.linger0TimeMs) {
+				if (stateTimer.milliseconds() > BlueFarAutoConstants.linger0TimeMs) {
 					// Start intake off timer for while driving
 					intakeOffTimer.reset();
 					intakeOffTimerActive = true;
@@ -443,7 +443,7 @@ public class RedFarAutoOpmode extends OpMode {
 				if (stateChanged) {
 					// Spin up launcher (intake will be stopped by timer)
 					launcherSpinning = true;
-					follower.followPath(pathFromBall0ToLaunch, RedFarAutoConstants.collection0PickupToLaunchSpeed, true);
+					follower.followPath(pathFromBall0ToLaunch, BlueFarAutoConstants.collection0PickupToLaunchSpeed, true);
 				}
 				// Wait for path to start (minimum 100ms) and complete
 				if (!follower.isBusy() && stateTimer.milliseconds() > 100) {
@@ -457,7 +457,7 @@ public class RedFarAutoOpmode extends OpMode {
 					currentLaunchSlot = 0;
 					launchTimer.reset();
 					// Actively hold position at launch pose to prevent going limp
-					follower.holdPoint(RedFarAutoConstants.launchPose);
+					follower.holdPoint(BlueFarAutoConstants.launchPose);
 					// Lock lifters to prevent balls from moving between pits during this launch cycle
 					sorterController.lockLiftersForLaunch(true);
 				}
@@ -468,8 +468,8 @@ public class RedFarAutoOpmode extends OpMode {
 				}
 				// Fire the next pit that has a ball - wait until RPM is at threshold
 				if (currentLaunchSlot < 3
-						&& launchTimer.milliseconds() > RedFarAutoConstants.minShotDelayMs
-						&& launcherMotors.getAverageRPM() >= launcherRPM * RedFarAutoConstants.rpmThresholdPercent) {
+						&& launchTimer.milliseconds() > BlueFarAutoConstants.minShotDelayMs
+						&& launcherMotors.getAverageRPM() >= launcherRPM * BlueFarAutoConstants.rpmThresholdPercent) {
 					sorterController.forceLaunchSlot(currentLaunchSlot);
 					ballsLaunched++;
 					currentLaunchSlot++;
@@ -477,7 +477,7 @@ public class RedFarAutoOpmode extends OpMode {
 				}
 				// After all 3 pits checked, wait postLaunchDelayMs for balls to settle, then re-check
 				if (currentLaunchSlot >= 3) {
-					if (launchTimer.milliseconds() > RedFarAutoConstants.postLaunchDelayMs) {
+					if (launchTimer.milliseconds() > BlueFarAutoConstants.postLaunchDelayMs) {
 						// Check if new balls appeared (sorter moved them into pits)
 						if (sorterController.getCachedBallCount() > 0) {
 							// Re-fire all 3 pits again
@@ -496,7 +496,7 @@ public class RedFarAutoOpmode extends OpMode {
 				if (stateChanged) {
 					// Turn on intake early so it's running before reaching pickup
 					intakeRunningState = IntakeState.IN;
-					follower.followPath(pathToBall1Lineup, RedFarAutoConstants.launchToCollection1LineupSpeed, true);
+					follower.followPath(pathToBall1Lineup, BlueFarAutoConstants.launchToCollection1LineupSpeed, true);
 				}
 				// Wait for path to start (minimum 100ms) and complete
 				if (!follower.isBusy() && stateTimer.milliseconds() > 100) {
@@ -508,7 +508,7 @@ public class RedFarAutoOpmode extends OpMode {
 				if (stateChanged) {
 					// Intake already running from lineup state
 					// Slow down for ball pickup using maxPower parameter
-					follower.followPath(pathToBall1Pickup, RedFarAutoConstants.collection1LineupToPickupSpeed, true);
+					follower.followPath(pathToBall1Pickup, BlueFarAutoConstants.collection1LineupToPickupSpeed, true);
 				}
 				// Wait for path to start (minimum 100ms) and complete
 				if (!follower.isBusy() && stateTimer.milliseconds() > 100) {
@@ -519,7 +519,7 @@ public class RedFarAutoOpmode extends OpMode {
 
 			case COLLECT_BALL_1:
 				// Linger at position with intake running for the configured time
-				if (stateTimer.milliseconds() > RedFarAutoConstants.linger1TimeMs) {
+				if (stateTimer.milliseconds() > BlueFarAutoConstants.linger1TimeMs) {
 					// Start intake off timer for while driving
 					intakeOffTimer.reset();
 					intakeOffTimerActive = true;
@@ -532,7 +532,7 @@ public class RedFarAutoOpmode extends OpMode {
 				if (stateChanged) {
 					// Spin up launcher (intake will be stopped by timer)
 					launcherSpinning = true;
-					follower.followPath(pathFromBall1ToLaunch, RedFarAutoConstants.collection1PickupToFinalSpeed, true);
+					follower.followPath(pathFromBall1ToLaunch, BlueFarAutoConstants.collection1PickupToFinalSpeed, true);
 				}
 				// Wait for path to start (minimum 100ms) and complete
 				if (!follower.isBusy() && stateTimer.milliseconds() > 100) {
@@ -546,7 +546,7 @@ public class RedFarAutoOpmode extends OpMode {
 					currentLaunchSlot = 0;
 					launchTimer.reset();
 					// Actively hold position at launch pose to prevent going limp
-					follower.holdPoint(RedFarAutoConstants.launchPose);
+					follower.holdPoint(BlueFarAutoConstants.launchPose);
 					// Lock lifters to prevent balls from moving between pits
 					sorterController.lockLiftersForLaunch(true);
 				}
@@ -557,8 +557,8 @@ public class RedFarAutoOpmode extends OpMode {
 				}
 				// Fire the next pit that has a ball - wait until RPM is at threshold
 				if (currentLaunchSlot < 3
-						&& launchTimer.milliseconds() > RedFarAutoConstants.minShotDelayMs
-						&& launcherMotors.getAverageRPM() >= launcherRPM * RedFarAutoConstants.rpmThresholdPercent) {
+						&& launchTimer.milliseconds() > BlueFarAutoConstants.minShotDelayMs
+						&& launcherMotors.getAverageRPM() >= launcherRPM * BlueFarAutoConstants.rpmThresholdPercent) {
 					sorterController.forceLaunchSlot(currentLaunchSlot);
 					ballsLaunched++;
 					currentLaunchSlot++;
@@ -566,7 +566,7 @@ public class RedFarAutoOpmode extends OpMode {
 				}
 				// After all 3 pits checked, wait postLaunchDelayMs for balls to settle, then re-check
 				if (currentLaunchSlot >= 3) {
-					if (launchTimer.milliseconds() > RedFarAutoConstants.postLaunchDelayMs) {
+					if (launchTimer.milliseconds() > BlueFarAutoConstants.postLaunchDelayMs) {
 						// Check if new balls appeared (sorter moved them into pits)
 						if (sorterController.getCachedBallCount() > 0) {
 							// Re-fire all 3 pits again
@@ -649,8 +649,9 @@ public class RedFarAutoOpmode extends OpMode {
 			dataTransfer.setEndPose(follower.getPose());
 			follower.breakFollowing();
 		}
-		dataTransfer.setAllianceColor("RED");
+		dataTransfer.setAllianceColor("BLUE");
 		dataTransfer.setAutoCompleted(true); // Auto loops until stopped
 		dataTransfer.setAutoRuntime(runtime.seconds());
 	}
 }
+

@@ -306,6 +306,7 @@ public class MainDriveOpmode extends OpMode {
 		// Start the launcher PIDF thread for RPM control
 		customThreads.startLauncherPIDThread();
 		if (!pathsBuilt) buildPaths();
+
 	}
 
 	@Override
@@ -826,7 +827,16 @@ public class MainDriveOpmode extends OpMode {
 
 		// Calculate distance-based elevation offset from zones
 		Double[] currentTarget = isRedSide ? MDOConstants.redTargetLocation : MDOConstants.blueTargetLocation;
-		com.pedropathing.geometry.Pose currentPose = follower.getPose();
+		// Use thread-safe pose access to prevent NPE and race conditions with follower update thread
+		com.pedropathing.geometry.Pose currentPose;
+		if (MDOConstants.EnableThreadedFollowerUpdate) {
+			currentPose = customThreads.getThreadSafePose();
+		} else {
+			currentPose = follower.getPose();
+		}
+		if (currentPose == null) {
+			currentPose = new com.pedropathing.geometry.Pose(0, 0, 0);
+		}
 		double distanceElevationOffset = RobotCoreCustom.calculateElevationOffset(currentPose, currentTarget, isRedSide);
 
 		if (hasValidLaunchVectors) {

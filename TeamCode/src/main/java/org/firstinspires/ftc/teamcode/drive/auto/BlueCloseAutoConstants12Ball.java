@@ -8,11 +8,11 @@ public class BlueCloseAutoConstants12Ball {
 	public static Pose startPose = new Pose(22.85, 124.85, -0.71);
 	public static Pose launchPose = new Pose(55, 90, 1.5708);
 	public static Pose gatePickupPose = new Pose(9, 64, -3.53); // Position to pickup from gate
-	public static Pose launchToGateBezierPoint = new Pose(45, 77, 0);
-	public static Pose gateToLaunchBezierPoint = new Pose(45, 77, 0);
+	public static Pose launchToGateBezierPoint = new Pose(55, 77, 0);
+	public static Pose gateToLaunchBezierPoint = new Pose(55, 77, 0);
 	public static Pose set1LineupPose = new Pose(40, 60, Math.PI);
 	public static Pose set1PickupPose = new Pose(10, 60, Math.PI);
-	public static Pose set1PkupToLaunchBezierPoint = new Pose(50, 80, 0);
+	public static Pose set1PkupToLaunchBezierPoint = new Pose(60, 80, 0);
 	public static Pose set0LineupPose = new Pose(48, 83, Math.PI);
 	public static Pose set0PickupPose = new Pose(18, 83, Math.PI);
 	public static Pose finalPose = new Pose(20, 90, Math.PI);
@@ -49,12 +49,14 @@ public class BlueCloseAutoConstants12Ball {
 
 	// Gate shake parameters - robot oscillates back and forth to help collect balls
 	public static Pose gateShakeOffset = new Pose(0, -2, 0.1); // Offset applied to both shake endpoints (x, y, heading)
-	public static double gateShakeDistance = 2.0; // Distance to shake forward/backward (inches)
+	public static double gateShakeDistance = 3.0; // Distance to shake forward/backward (inches)
 	public static int gateShakePeriodMs = 300; // Time per direction before switching (milliseconds)
-	public static int gateShakeCount = 50; // Number of full back-and-forth shakes
 	public static double gateShakeSpeed = 1; // Speed during shaking (0.0 to 1.0)
-	public static int gateShakeMaxTimeMs = 1200; // Max time for shaking before moving on (milliseconds)
+	public static int gateShakeMaxTimeMs = 1400; // Max time for shaking before moving on (milliseconds)
 
 	// Maximum time in each launch state before moving on (prevents infinite loops)
 	public static long maxLaunchStateTimeMs = 12000;
+
+	// Maximum total auto time in seconds before emergency drive to final pose
+	public static double autoTimeLimitSeconds = 28.0;
 }

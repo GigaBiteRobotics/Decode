@@ -4,17 +4,18 @@ import com.bylazar.configurables.annotations.Configurable;
 import com.pedropathing.geometry.Pose;
 
 @Configurable
-public class RedFarAutoConstants {
-	public static Pose startPose = new Pose(97.8, 11.2, 0);
-	public static Pose launchPose = new Pose(85, 16, 0);
-	public static Pose ballCollection0LineupPose = new Pose(99, 37.5, 0);
-	public static Pose ballCollection0PickupPose = new Pose(131, 37.5, 0);
-	public static Pose ballCollection1LineupPose = new Pose(115, 13, 0);
-	public static Pose ballCollection1PickupPose = new Pose(131, 13, 0);
-	public static Pose finalPose = new Pose(100, 32, 0);
+public class BlueFarAutoConstants {
+	// Mirrored from RedFarAutoConstants across x=72: X -> 144-X, Y same, heading -> Math.PI - heading
+	public static Pose startPose = new Pose(144 - 97.8, 11.2, Math.PI);
+	public static Pose launchPose = new Pose(144 - 85, 16, Math.PI);
+	public static Pose ballCollection0LineupPose = new Pose(144 - 99, 37.5, Math.PI);
+	public static Pose ballCollection0PickupPose = new Pose(144 - 131, 37.5, Math.PI);
+	public static Pose ballCollection1LineupPose = new Pose(144 - 115, 13, Math.PI);
+	public static Pose ballCollection1PickupPose = new Pose(144 - 131, 13, Math.PI);
+	public static Pose finalPose = new Pose(144 - 100, 32, Math.PI);
 	public static double elevationPos = -0.1;
-	public static int targetRPM = 4400;
-	public static double azimuthPos = -0.29;
+	public static int targetRPM = 4300;
+	public static double azimuthPos = 0.95;
 
 	// Intake speeds (0.0 to 1.0)
 	public static double intakeInSpeed = 1;
@@ -48,3 +49,6 @@ public class RedFarAutoConstants {
 	// Auto time limit in seconds - when reached, interrupt everything and drive to final pose
 	public static double autoTimeLimitSeconds = 28.0;
 }
+
+
+

@@ -14,7 +14,7 @@ public class MDOConstants {
     public static Double AzimuthIMUOffset = 120.0;
     public static Double AzimuthMultiplier = 1.0;
     public static double AzimuthPIDDeadzonePercent = 0.05;
-    public static double[] AzimuthPIDFConstants = new double[]{4.0, 0.2, 0.0, 0.0};
+    public static double[] AzimuthPIDFConstants = new double[]{4.0, 0.0, 0.0, 0.0};
     public static double AzimuthServoCenterOffset = 0.0;
     public static double AzimuthSlewRate = 1; // Max power change per PID loop iteration (prevents shaking)
     public static double BlueAprilTagHeadingOffset = 90.0;
@@ -24,7 +24,7 @@ public class MDOConstants {
     public static Double[] BlueLauncherCalcConstants = new Double[]{280.00, 386.09};
     public static int BlueLauncherRPM = 3800;
     public static double[][] BlueLauncherRPMZones = new double[][]{
-            {0.0, 3700},
+            {0.0, 3400},
             {110.0, 6000},
     };
 	public static double[][] BlueElevationOffsetZones = new double[][]{
@@ -42,7 +42,7 @@ public class MDOConstants {
     public static int[] ColorSensorPitMapping = new int[]{0, 1, 4, 5, 2, 3};
     public static Double ElevationClampMax = 0.2;
     public static Double ElevationClampMin = -1.0;
-    public static Double ElevationMax = 0.9;
+    public static Double ElevationMax = 0.3;
     public static Double ElevationMaxIN = 14.0;
     public static Double ElevationMin = -0.4;
     public static Double ElevationMinIN = 2.0;

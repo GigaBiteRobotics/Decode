@@ -735,7 +735,7 @@ public class RobotCoreCustom {
 			NULL
 		}
 		int[] lifterState = new int[3];
-		ElapsedTime lifterTimer;
+		ElapsedTime[] lifterTimers = new ElapsedTime[3];
 		private final Servo[] lifter = new Servo[3];
 		private final ColorSensor[] colorSensor = new ColorSensor[6];
 		private CustomRGBController RGBPrism;
@@ -762,7 +762,9 @@ public class RobotCoreCustom {
 			colorSensor[4] = hardwareMap.get(ColorSensor.class, "colorSensor2");
 			colorSensor[5] = hardwareMap.get(ColorSensor.class, "colorSensor2-1");
 			RGBPrism = new CustomRGBController(hardwareMap, 6);
-			lifterTimer = new ElapsedTime();
+			lifterTimers[0] = new ElapsedTime();
+			lifterTimers[1] = new ElapsedTime();
+			lifterTimers[2] = new ElapsedTime();
 
 			// Initialize lifters to low position
 			int[] lifterMapping = MDOConstants.LifterPitMapping;
@@ -1137,10 +1139,10 @@ public class RobotCoreCustom {
 				int lifterIndex = lifterMapping[i];
 				if (lifterState[i] == 1) {
 					lifterState[i] = 2;
-					lifterTimer.reset();
+					lifterTimers[i].reset();
 					lifter[lifterIndex].setPosition(reverseMap[lifterIndex] ? 1 - MDOConstants.LifterPositionHigh : MDOConstants.LifterPositionHigh);
 				}
-				else if (lifterState[i] == 2 && lifterTimer.milliseconds() > MDOConstants.LifterWaitToTopTimerMillis) {
+				else if (lifterState[i] == 2 && lifterTimers[i].milliseconds() > MDOConstants.LifterWaitToTopTimerMillis) {
 					lifterState[i] = 0;
 					lifter[lifterIndex].setPosition(reverseMap[lifterIndex] ? 1 - MDOConstants.LifterPositionLow : MDOConstants.LifterPositionLow);
 				}

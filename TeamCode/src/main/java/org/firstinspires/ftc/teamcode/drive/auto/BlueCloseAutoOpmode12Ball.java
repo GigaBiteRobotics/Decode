@@ -54,6 +54,7 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 		LAUNCH_4,
 		// Final
 		DRIVE_TO_FINAL,
+		EMERGENCY_DRIVE_TO_FINAL,
 		FINISHED
 	}
 	protected AutoState currentState = AutoState.IDLE;
@@ -288,6 +289,27 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 	public void loop() {
 		follower.update();
 
+		// Emergency timer: if auto time limit reached, stop everything and go to final pose
+		if (runtime.seconds() >= BlueCloseAutoConstants12Ball.autoTimeLimitSeconds
+				&& currentState != AutoState.EMERGENCY_DRIVE_TO_FINAL
+				&& currentState != AutoState.DRIVE_TO_FINAL
+				&& currentState != AutoState.FINISHED) {
+			// Stop launcher and intake immediately
+			launcherSpinning = false;
+			intakeRunningState = IntakeState.STOP;
+			intakeOffTimerActive = false;
+			sorterController.lockLiftersForLaunch(false);
+
+			// Build an emergency path from current position to final pose
+			Pose currentPose = follower.getPose();
+			PathChain emergencyPath = follower.pathBuilder()
+				.addPath(new BezierLine(currentPose, BlueCloseAutoConstants12Ball.finalPose))
+				.setLinearHeadingInterpolation(currentPose.getHeading(), BlueCloseAutoConstants12Ball.finalPose.getHeading())
+				.build();
+			follower.followPath(emergencyPath, BlueCloseAutoConstants12Ball.defaultSpeed, true);
+			setState(AutoState.EMERGENCY_DRIVE_TO_FINAL);
+		}
+
 		boolean stateChanged = (currentState != previousState);
 		previousState = currentState;
 
@@ -378,7 +400,7 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 			case DRIVE_TO_GATE_PICKUP:
 				if (stateChanged) {
 					intakeRunningState = IntakeState.IN;
-					follower.followPath(pathToGatePickup, BlueCloseAutoConstants12Ball.pickupSpeed, true);
+					follower.followPath(pathToGatePickup, BlueCloseAutoConstants12Ball.defaultSpeed, true);
 				}
 				if (pathDone()) setState(AutoState.SHAKE_AT_GATE);
 				break;
@@ -394,22 +416,15 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 				if (stateTimer.milliseconds() > BlueCloseAutoConstants12Ball.gateShakeMaxTimeMs) {
 					setState(AutoState.COLLECT_GATE);
 				}
-				// Switch direction every period
+				// Switch direction every period (keeps shaking until max time timer expires)
 				else if (gateShakeTimer.milliseconds() > BlueCloseAutoConstants12Ball.gateShakePeriodMs) {
 					gateShakeTimer.reset();
 					if (gateShakeForward) {
-						// Finished forward leg, go backward
 						gateShakeForward = false;
 						follower.followPath(pathGateShakeBackward, BlueCloseAutoConstants12Ball.gateShakeSpeed, true);
 					} else {
-						// Finished backward leg = one full shake
-						gateShakesCompleted++;
-						if (gateShakesCompleted >= BlueCloseAutoConstants12Ball.gateShakeCount) {
-							setState(AutoState.COLLECT_GATE);
-						} else {
-							gateShakeForward = true;
-							follower.followPath(pathGateShakeForward, BlueCloseAutoConstants12Ball.gateShakeSpeed, true);
-						}
+						gateShakeForward = true;
+						follower.followPath(pathGateShakeForward, BlueCloseAutoConstants12Ball.gateShakeSpeed, true);
 					}
 				}
 				break;
@@ -475,6 +490,11 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 				if (stateChanged) {
 					follower.followPath(pathToFinal, BlueCloseAutoConstants12Ball.defaultSpeed, true);
 				}
+				if (pathDone()) setState(AutoState.FINISHED);
+				break;
+
+			case EMERGENCY_DRIVE_TO_FINAL:
+				// Path was already set when entering this state from the emergency timer
 				if (pathDone()) setState(AutoState.FINISHED);
 				break;
 
