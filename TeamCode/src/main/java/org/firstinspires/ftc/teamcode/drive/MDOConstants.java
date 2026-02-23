@@ -24,7 +24,7 @@ public class MDOConstants {
     public static Double[] BlueLauncherCalcConstants = new Double[]{280.00, 386.09};
     public static int BlueLauncherRPM = 3800;
     public static double[][] BlueLauncherRPMZones = new double[][]{
-            {0.0, 3400},
+            {0.0, 3300},
             {110.0, 6000},
     };
 	public static double[][] BlueElevationOffsetZones = new double[][]{
@@ -80,7 +80,7 @@ public class MDOConstants {
     public static Double[] RedLauncherCalcConstants = new Double[]{280.00, 386.09};
     public static int RedLauncherRPM = 2300;
     public static double[][] RedLauncherRPMZones = new double[][]{
-            {0.0, 3400},
+            {0.0, 3300},
             {110.0, 4200},
     };
 	public static double[][] RedElevationOffsetZones = new double[][]{
