@@ -1,3 +1,15 @@
+buildscript {
+    repositories {
+        mavenCentral()
+        maven {
+            url "https://repo.dairy.foundation/releases"
+        }
+    }
+    dependencies {
+        classpath "dev.frozenmilk:Load:0.2.4"
+    }
+}
+
  //
 // build.gradle in TeamCode
 //
@@ -14,8 +26,16 @@
 // Include common definitions from above.
 apply from: '../build.common.gradle'
 apply from: '../build.dependencies.gradle'
+apply plugin: 'dev.frozenmilk.sinister.sloth.load'
 
-
+repositories {
+    maven {
+        url = "https://repo.dairy.foundation/releases"
+    }
+    maven {
+        url = "https://repo.dairy.foundation/snapshots"
+    }
+}
 
 android {
     namespace = 'org.firstinspires.ftc.teamcode'
@@ -27,4 +47,6 @@ android {
 
  dependencies {
      implementation project(':FtcRobotController')
+     implementation("dev.frozenmilk.sinister:Sloth:0.2.4")
+     implementation("com.acmerobotics.slothboard:dashboard:0.2.4+0.5.1")
  }

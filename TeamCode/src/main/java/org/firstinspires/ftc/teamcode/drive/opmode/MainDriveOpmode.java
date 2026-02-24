@@ -2,8 +2,7 @@ package org.firstinspires.ftc.teamcode.drive.opmode;
 
 import android.annotation.SuppressLint;
 
-import com.bylazar.telemetry.PanelsTelemetry;
-import com.bylazar.telemetry.TelemetryManager;
+import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.geometry.Pose;
@@ -74,7 +73,7 @@ public class MainDriveOpmode extends OpMode {
 	Double robotFieldRelativeAzimuthDeg = 0.0;
 	Double finalAzimuthDeg = 0.0;
 
-	static TelemetryManager telemetryM;
+	static DashboardTelemetryManager telemetryM;
 
 	enum intakeState {
 		IN,
@@ -119,7 +118,7 @@ public class MainDriveOpmode extends OpMode {
 
 	@Override
 	public void init() {
-		telemetryM = PanelsTelemetry.INSTANCE.getTelemetry();
+		telemetryM = DashboardTelemetryManager.create();
 		telemetryC = new RobotCoreCustom.CustomTelemetry(telemetry, telemetryM);
 
 		// Sorting Initialization
@@ -266,7 +265,6 @@ public class MainDriveOpmode extends OpMode {
 			telemetryC.addData("Start Pose Preview",
 					String.format("(%.1f, %.1f, %.1f°)", selectedPose[0], selectedPose[1], selectedPose[2]));
 		}
-
 		telemetryC.update();
 	}
 

@@ -1,9 +1,9 @@
 package org.firstinspires.ftc.teamcode.drive.auto;
 
-import com.bylazar.configurables.annotations.Configurable;
+import com.acmerobotics.dashboard.config.Config;
 import com.pedropathing.geometry.Pose;
 
-@Configurable
+@Config
 public class BlueCloseAutoConstants {
  	public static Pose startPose = new Pose(22.85, 124.85, -0.71);
 	public static Pose launchPose = new Pose(55, 90, 1.5708);

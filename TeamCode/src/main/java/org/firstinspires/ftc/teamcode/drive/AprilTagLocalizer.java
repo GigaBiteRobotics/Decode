@@ -2,7 +2,7 @@ package org.firstinspires.ftc.teamcode.drive;
 
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
-import com.bylazar.camerastream.PanelsCameraStream;
+import com.acmerobotics.dashboard.FtcDashboard;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import org.firstinspires.ftc.robotcore.external.function.Consumer;
 import org.firstinspires.ftc.robotcore.external.function.Continuation;
@@ -161,7 +161,7 @@ public class AprilTagLocalizer {
 
 		// Start camera stream if enabled
 		if (enableStreaming && streamProcessor != null) {
-			PanelsCameraStream.INSTANCE.startStream(streamProcessor, null);
+			FtcDashboard.getInstance().startCameraStream(streamProcessor, 0);
 		}
 
 		// Disable or re-enable the aprilTag processor at any time.
@@ -275,7 +275,7 @@ public class AprilTagLocalizer {
 	 */
 	public void stopStream() {
 		if (streamingEnabled) {
-			PanelsCameraStream.INSTANCE.stopStream();
+			FtcDashboard.getInstance().stopCameraStream();
 		}
 	}
 }

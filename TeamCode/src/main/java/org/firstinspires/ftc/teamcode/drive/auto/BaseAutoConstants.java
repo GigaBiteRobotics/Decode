@@ -1,9 +1,9 @@
 package org.firstinspires.ftc.teamcode.drive.auto;
 
-import com.bylazar.configurables.annotations.Configurable;
+import com.acmerobotics.dashboard.config.Config;
 import com.pedropathing.geometry.Pose;
 
-@Configurable
+@Config
 public class BaseAutoConstants {
 	public static Pose startPose = new Pose(0, 0, 0);
 	public static Pose pose0 = new Pose(0, 0, 0);

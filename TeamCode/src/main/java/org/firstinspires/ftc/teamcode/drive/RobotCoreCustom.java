@@ -2,7 +2,7 @@ package org.firstinspires.ftc.teamcode.drive;
 
 import static org.firstinspires.ftc.robotcore.external.BlocksOpModeCompanion.hardwareMap;
 
-import com.bylazar.telemetry.TelemetryManager;
+import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.util.PoseHistory;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
@@ -709,22 +709,19 @@ public class RobotCoreCustom {
 		}
 	}
 	public static class CustomTelemetry {
-		private final Telemetry telemetry;
-		private final TelemetryManager telemetryM;
+		private final Telemetry combined;
 
-		public CustomTelemetry(Telemetry telemetry, TelemetryManager telemetryM) {
-			this.telemetry = telemetry;
-			this.telemetryM = telemetryM;
+		public CustomTelemetry(Telemetry telemetry, DashboardTelemetryManager ignored) {
+			this.combined = new com.acmerobotics.dashboard.telemetry.MultipleTelemetry(
+					telemetry, com.acmerobotics.dashboard.FtcDashboard.getInstance().getTelemetry());
 		}
 
 		public void addData(String caption, Object value) {
-			telemetry.addData(caption, value);
-			telemetryM.debug(caption + ": " + value.toString());
+			combined.addData(caption, value);
 		}
 
 		public void update() {
-			telemetry.update();
-			telemetryM.update();
+			combined.update();
 		}
 
 	}

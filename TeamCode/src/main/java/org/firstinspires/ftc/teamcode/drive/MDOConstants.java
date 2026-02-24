@@ -1,9 +1,9 @@
 package org.firstinspires.ftc.teamcode.drive;
 
-import com.bylazar.configurables.annotations.Configurable;
+import com.acmerobotics.dashboard.config.Config;
 import com.pedropathing.geometry.Pose;
 
-@Configurable
+@Config
 public class MDOConstants {
     public static double AprilTagMaxDistance = 60.0;
     public static int AprilTagUpdateIntervalMs = 100;

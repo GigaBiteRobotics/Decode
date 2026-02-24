@@ -1,7 +1,6 @@
 package org.firstinspires.ftc.teamcode.drive.auto;
 
-import com.bylazar.telemetry.PanelsTelemetry;
-import com.bylazar.telemetry.TelemetryManager;
+import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.Pose;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
@@ -66,7 +65,7 @@ public class BaseAutoOpmode extends OpMode {
 	// Starting pose - override in child classes
 	protected Pose startPose = new Pose(0, 0, 0);
 	RobotCoreCustom.CustomTelemetry telemetryC;
-	static TelemetryManager telemetryM;
+	static DashboardTelemetryManager telemetryM;
 
 	// State tracking for OpMode
 	protected boolean autoSequenceStarted = false;
@@ -87,7 +86,7 @@ public class BaseAutoOpmode extends OpMode {
 
 		// Initialize robot core
 		robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
-		telemetryM = PanelsTelemetry.INSTANCE.getTelemetry();
+		telemetryM = DashboardTelemetryManager.create();
 		telemetryC = new RobotCoreCustom.CustomTelemetry(telemetry, telemetryM);
 
 		// Initialize AprilTag localizer

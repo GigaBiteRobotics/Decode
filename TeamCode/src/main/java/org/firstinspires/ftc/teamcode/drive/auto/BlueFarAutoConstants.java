@@ -1,9 +1,9 @@
 package org.firstinspires.ftc.teamcode.drive.auto;
 
-import com.bylazar.configurables.annotations.Configurable;
+import com.acmerobotics.dashboard.config.Config;
 import com.pedropathing.geometry.Pose;
 
-@Configurable
+@Config
 public class BlueFarAutoConstants {
 	// Mirrored from RedFarAutoConstants across x=72: X -> 144-X, Y same, heading -> Math.PI - heading
 	public static Pose startPose = new Pose(144 - 97.8, 11.2, Math.PI);

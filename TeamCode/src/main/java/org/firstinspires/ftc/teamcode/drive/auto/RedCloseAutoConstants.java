@@ -1,9 +1,9 @@
 package org.firstinspires.ftc.teamcode.drive.auto;
 
-import com.bylazar.configurables.annotations.Configurable;
+import com.acmerobotics.dashboard.config.Config;
 import com.pedropathing.geometry.Pose;
 
-@Configurable
+@Config
 public class RedCloseAutoConstants {
 	// Mirrored from BlueCloseAutoConstants around x=72: X -> 144-X, Y same, heading -> π-heading
 	public static Pose startPose = new Pose(144 - 22.85, 124.85, Math.PI - (-0.71));

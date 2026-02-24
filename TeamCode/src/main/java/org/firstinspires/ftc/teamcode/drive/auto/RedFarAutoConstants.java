@@ -1,9 +1,9 @@
 package org.firstinspires.ftc.teamcode.drive.auto;
 
-import com.bylazar.configurables.annotations.Configurable;
+import com.acmerobotics.dashboard.config.Config;
 import com.pedropathing.geometry.Pose;
 
-@Configurable
+@Config
 public class RedFarAutoConstants {
 	public static Pose startPose = new Pose(97.8, 11.2, 0);
 	public static Pose launchPose = new Pose(85, 16, 0);

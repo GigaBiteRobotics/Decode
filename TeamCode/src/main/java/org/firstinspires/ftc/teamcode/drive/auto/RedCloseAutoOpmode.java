@@ -1,7 +1,6 @@
 package org.firstinspires.ftc.teamcode.drive.auto;
 
-import com.bylazar.telemetry.PanelsTelemetry;
-import com.bylazar.telemetry.TelemetryManager;
+import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.*;
 import com.pedropathing.paths.*;
@@ -89,7 +88,7 @@ public class RedCloseAutoOpmode extends OpMode {
 
 	// ===== TELEMETRY =====
 	protected RobotCoreCustom.CustomTelemetry telemetryC;
-	protected static TelemetryManager telemetryM;
+	protected static DashboardTelemetryManager telemetryM;
 
 	// ===== PATHS =====
 	protected PathChain pathToCameraLook; // From start to camera look (first thing)
@@ -115,7 +114,7 @@ public class RedCloseAutoOpmode extends OpMode {
 	@Override
 	public void init() {
 		// Initialize telemetry
-		telemetryM = PanelsTelemetry.INSTANCE.getTelemetry();
+		telemetryM = DashboardTelemetryManager.create();
 		telemetryC = new RobotCoreCustom.CustomTelemetry(telemetry, telemetryM);
 		telemetryC.addData("Status", "Initializing...");
 		telemetryC.update();
