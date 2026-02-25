@@ -11,7 +11,7 @@ public class CustomPIDFController {
 	// Internal state variables
 	private double errorSum = 0;    // Integral term accumulator
 	private double lastError = 0;  // For derivative term
-	private long lastTime = System.currentTimeMillis(); // Time tracking
+	private long lastTimeNano = System.nanoTime(); // Time tracking (nanosecond precision)
 	private double lastOutput = 0; // Last calculated output
 
 	// Constructor
@@ -60,13 +60,13 @@ public class CustomPIDFController {
 			}
 		}
 
-		// Calculate time delta
-		long currentTime = System.currentTimeMillis();
-		double deltaTime = (currentTime - lastTime) / 1000.0; // Convert to seconds
+		// Calculate time delta (nanosecond precision)
+		long currentTimeNano = System.nanoTime();
+		double deltaTime = (currentTimeNano - lastTimeNano) / 1.0e9; // Convert nanoseconds to seconds
 
 		// Prevent division by zero or negative time
 		if (deltaTime <= 0.0) {
-			deltaTime = 0.001; // 1ms minimum
+			deltaTime = 0.000001; // 1 microsecond minimum
 		}
 
 		// Deadzone: if error is very small, set output to zero to prevent jitter
@@ -76,7 +76,7 @@ public class CustomPIDFController {
 		if (Math.abs(error) < deadzone) {
 			errorSum = 0; // Clear integral when in deadzone
 			lastError = error;
-			lastTime = currentTime;
+			lastTimeNano = currentTimeNano;
 			lastOutput = 0.0;
 			return 0.0;
 		}
@@ -138,7 +138,7 @@ public class CustomPIDFController {
 
 		// Save current state for next calculation
 		lastError = error;
-		lastTime = currentTime;
+		lastTimeNano = currentTimeNano;
 		lastOutput = scaledOutput;
 
 		return lastOutput;

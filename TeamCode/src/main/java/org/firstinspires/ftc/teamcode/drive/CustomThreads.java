@@ -234,8 +234,13 @@ public class CustomThreads {
     }
 
     /**
-     * Starts the azimuth servo PID control thread
-     * Must call setAzimuthServo() before starting this thread
+     * Starts the azimuth servo PID control thread with maximum reaction time.
+     *
+     * Runs at ~300-500Hz with a minimal 1ms sleep to prevent I2C bus flooding.
+     * The I2C analog read takes ~1-2ms, so total loop time is ~2-3ms.
+     * No lock contention — targetPosition is volatile, read/write is lock-free.
+     *
+     * Must call setAzimuthServo() before starting this thread.
      */
     public void startAzimuthPIDThread() {
         if (azimuthServo == null) {
@@ -251,22 +256,27 @@ public class CustomThreads {
         azimuthPIDThread = new Thread(() -> {
             while (azimuthPIDThreadRunning) {
                 try {
-                    // Only run PID loop if turret is enabled in MDOConstants
                     if (MDOConstants.EnableTurret) {
                         azimuthServo.servoPidLoop();
                     } else {
                         azimuthServo.stopServo();
                     }
-                    Thread.sleep(5); // Run PID loop every 5ms for responsive control
+                    // Minimal sleep to prevent I2C bus flooding.
+                    // Without this, back-to-back analog reads overwhelm the REV hub USB pipeline,
+                    // causing reads to queue up and reaction time to spike to >1 second.
+                    // 1ms sleep + ~1-2ms I2C read = ~2-3ms total = ~300-500Hz.
+                    Thread.sleep(1);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;
                 } catch (Exception e) {
-                    // Log error but don't crash the thread
                     System.err.println("Error in azimuth PID loop: " + e.getMessage());
                 }
             }
         });
+        azimuthPIDThread.setPriority(Thread.MAX_PRIORITY);
+        azimuthPIDThread.setName("AzimuthPID-RT");
+        azimuthPIDThread.setDaemon(true);
         azimuthPIDThread.start();
     }
 

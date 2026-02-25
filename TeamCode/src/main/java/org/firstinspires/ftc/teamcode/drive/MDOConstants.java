@@ -16,6 +16,8 @@ public class MDOConstants {
     public static double AzimuthPIDDeadzonePercent = 0.05;
     public static double[] AzimuthPIDFConstants = new double[]{4.0, 0.0, 0.0, 0.0};
     public static double AzimuthServoCenterOffset = 0.0;
+    public static double AzimuthServoDeadBandPositive = 0.05; // Minimum power to overcome dead band when moving in positive direction
+    public static double AzimuthServoDeadBandNegative = 0.05; // Minimum power to overcome dead band when moving in negative direction
     public static double AzimuthSlewRate = 1; // Max power change per PID loop iteration (prevents shaking)
     public static double BlueAprilTagHeadingOffset = 90.0;
     public static Double BlueAzimuthFineAdjustment = 0.0;
