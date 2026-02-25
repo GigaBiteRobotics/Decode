@@ -254,9 +254,9 @@ public class MainDrivePedro extends LinearOpMode {
             if (isLaunchingBall) {
                 // Set different powers for each motor in the group
                 // Motor 0: intake at 80%, Motor 1: intake stage2 at 60%
-                intakeController.setPower(0.8);
+                intakeController.setPower(1);
             } else {
-                intakeController.setPower(0.45);
+                intakeController.setPower(1);
             }
         } else {
             // When not running intake, check if launching
