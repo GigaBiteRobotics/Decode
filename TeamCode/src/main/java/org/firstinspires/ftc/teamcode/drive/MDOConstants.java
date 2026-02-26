@@ -13,12 +13,12 @@ public class MDOConstants {
     public static double AzimuthForbiddenZoneEscapePower = 0.5; // Power to use when escaping from inside forbidden zone
     public static Double AzimuthIMUOffset = 120.0;
     public static Double AzimuthMultiplier = 1.0;
-    public static double AzimuthPIDDeadzonePercent = 0.05;
-    public static double[] AzimuthPIDFConstants = new double[]{4.0, 0.0, 0.0, 0.0};
+    public static double AzimuthPIDDeadzonePercent = 0.08;
+    public static double[] AzimuthPIDFConstants = new double[]{1.5, 0.0, 0.3, 0.0};
     public static double AzimuthServoCenterOffset = 0.0;
     public static double AzimuthServoDeadBandPositive = 0.05; // Minimum power to overcome dead band when moving in positive direction
     public static double AzimuthServoDeadBandNegative = 0.05; // Minimum power to overcome dead band when moving in negative direction
-    public static double AzimuthSlewRate = 1; // Max power change per PID loop iteration (prevents shaking)
+    public static double AzimuthSlewRate = 0.1; // Max power change per PID loop iteration (prevents shaking)
     public static double BlueAprilTagHeadingOffset = 90.0;
     public static Double BlueAzimuthFineAdjustment = 0.0;
     public static double[] BlueCloseStartPose = new double[]{22.85, 124.85, -40.7};
@@ -64,6 +64,7 @@ public class MDOConstants {
     public static double GreenHueMin = 80.0;
     public static CustomPIDFController LauncherPIDF = new CustomPIDFController(20, 2, 0, 3);
     public static boolean EnableLauncherPID = true;
+    public static int LauncherReverseRPM = 800;
     public static double LauncherManualPower = 1.0;
     public static double launchPower = 1;
     public static Double LifterPositionHigh = 0.8;

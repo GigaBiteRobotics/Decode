@@ -22,6 +22,9 @@ public class Drawing {
     private static final String ROBOT_COLOR = "#3F51B5";
     private static final String HISTORY_COLOR = "#4CAF50";
 
+    // Pedro uses (0,0) at corner with range 0-144; Dashboard uses (0,0) at center with range -72 to 72
+    private static final double FIELD_OFFSET = -72.0;
+
     private static TelemetryPacket currentPacket = new TelemetryPacket();
 
     /**
@@ -58,16 +61,21 @@ public class Drawing {
             return;
         }
 
+        // Convert Pedro coordinates to Dashboard coordinates (swap X/Y axes, then offset)
+        // Pedro X (forward) -> Dashboard Y (up), Pedro Y (left) -> Dashboard X (left)
+        double dashX = pose.getY() + FIELD_OFFSET;
+        double dashY = pose.getX() + FIELD_OFFSET;
+
         canvas.setStroke(color);
         canvas.setStrokeWidth(2);
-        canvas.strokeCircle(pose.getX(), pose.getY(), ROBOT_RADIUS);
+        canvas.strokeCircle(dashX, dashY, ROBOT_RADIUS);
 
         Vector v = pose.getHeadingAsUnitVector();
         v.setMagnitude(v.getMagnitude() * ROBOT_RADIUS);
-        double x1 = pose.getX() + v.getXComponent() / 2;
-        double y1 = pose.getY() + v.getYComponent() / 2;
-        double x2 = pose.getX() + v.getXComponent();
-        double y2 = pose.getY() + v.getYComponent();
+        double x1 = dashX + v.getYComponent() / 2;
+        double y1 = dashY + v.getXComponent() / 2;
+        double x2 = dashX + v.getYComponent();
+        double y2 = dashY + v.getXComponent();
 
         canvas.strokeLine(x1, y1, x2, y2);
     }
@@ -97,7 +105,7 @@ public class Drawing {
 
         canvas.setStroke(color);
         canvas.setStrokeWidth(2);
-        canvas.strokeLine(points[0][0], points[0][1], points[1][0], points[1][1]);
+        canvas.strokeLine(points[0][1] + FIELD_OFFSET, points[0][0] + FIELD_OFFSET, points[1][1] + FIELD_OFFSET, points[1][0] + FIELD_OFFSET);
     }
 
     /**
@@ -119,8 +127,8 @@ public class Drawing {
         int size = poseTracker.getXPositionsArray().length;
         for (int i = 0; i < size - 1; i++) {
             canvas.strokeLine(
-                    poseTracker.getXPositionsArray()[i], poseTracker.getYPositionsArray()[i],
-                    poseTracker.getXPositionsArray()[i + 1], poseTracker.getYPositionsArray()[i + 1]
+                    poseTracker.getYPositionsArray()[i] + FIELD_OFFSET, poseTracker.getXPositionsArray()[i] + FIELD_OFFSET,
+                    poseTracker.getYPositionsArray()[i + 1] + FIELD_OFFSET, poseTracker.getXPositionsArray()[i + 1] + FIELD_OFFSET
             );
         }
     }

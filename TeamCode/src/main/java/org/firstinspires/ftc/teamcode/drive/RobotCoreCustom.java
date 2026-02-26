@@ -708,19 +708,40 @@ public class RobotCoreCustom {
 			return TICKS_PER_REV;
 		}
 	}
+/**
+	 * Thread-safe telemetry wrapper that buffers addData calls from any thread
+	 * and flushes them in insertion order when update() is called.
+	 *
+	 * Usage: call addData() from any thread at any time. Call update() from the
+	 * main loop thread to push all buffered entries to the driver station / dashboard.
+	 */
 	public static class CustomTelemetry {
 		private final Telemetry combined;
+		private final java.util.concurrent.ConcurrentLinkedQueue<String[]> buffer =
+				new java.util.concurrent.ConcurrentLinkedQueue<>();
 
 		public CustomTelemetry(Telemetry telemetry, DashboardTelemetryManager ignored) {
 			this.combined = new com.acmerobotics.dashboard.telemetry.MultipleTelemetry(
 					telemetry, com.acmerobotics.dashboard.FtcDashboard.getInstance().getTelemetry());
 		}
 
+		/**
+		 * Thread-safe: buffers a telemetry entry. Can be called from any thread.
+		 * Entries are displayed in the order they were added when update() is called.
+		 */
 		public void addData(String caption, Object value) {
-			combined.addData(caption, value);
+			buffer.add(new String[]{caption, String.valueOf(value)});
 		}
 
+		/**
+		 * Drains all buffered entries in insertion order to the underlying telemetry,
+		 * then pushes the update. Should be called from the main loop thread.
+		 */
 		public void update() {
+			String[] entry;
+			while ((entry = buffer.poll()) != null) {
+				combined.addData(entry[0], entry[1]);
+			}
 			combined.update();
 		}
 
@@ -1613,20 +1634,30 @@ public class RobotCoreCustom {
 					// STEP 5: Clamp power to [-1, 1]
 					power = Math.max(-1.0, Math.min(1.0, power));
 
-						// STEP 5b: Asymmetric dead band compensation for continuous rotation servo.
+					// STEP 5b: Asymmetric dead band compensation for continuous rotation servo.
 					// The servo has a mechanical dead band around center (0.5) where
 					// small power values produce no movement. This dead band is often
 					// different in each direction — one direction needs more power to
 					// start moving than the other, causing "stepping" / overshoot in
 					// that direction.
-					// Fix: use separate dead band thresholds for positive and negative
-					// power so each direction is tuned independently.
+					// Fix: if PID output is below the dead band threshold, output zero
+					// instead of boosting (boosting causes overshoot → jitter).
+					// If PID output is above the dead band, add the dead band offset
+					// so the servo actually moves proportionally.
 					double deadBandPos = MDOConstants.AzimuthServoDeadBandPositive;
 					double deadBandNeg = MDOConstants.AzimuthServoDeadBandNegative;
-					if (power > 0 && power < deadBandPos) {
-						power = deadBandPos;
-					} else if (power < 0 && power > -deadBandNeg) {
-						power = -deadBandNeg;
+					if (power > 0) {
+						if (power < deadBandPos) {
+							power = 0;
+						} else {
+							power = power + deadBandPos;
+						}
+					} else if (power < 0) {
+						if (power > -deadBandNeg) {
+							power = 0;
+						} else {
+							power = power - deadBandNeg;
+						}
 					}
 
 					// STEP 6: If sensor direction is backwards, flip

@@ -11,6 +11,7 @@ public class CustomPIDFController {
 	// Internal state variables
 	private double errorSum = 0;    // Integral term accumulator
 	private double lastError = 0;  // For derivative term
+	private double filteredDerivative = 0; // Low-pass filtered derivative to reduce noise
 	private long lastTimeNano = System.nanoTime(); // Time tracking (nanosecond precision)
 	private double lastOutput = 0; // Last calculated output
 
@@ -122,7 +123,12 @@ public class CustomPIDFController {
 
 		double derivative = errorChange / deltaTime;
 
-		double dTerm = kD * derivative;
+		// Low-pass filter on derivative to reduce noise-induced jitter
+		// Alpha = 0.3: 30% new measurement, 70% previous filtered value
+		double alpha = 0.3;
+		filteredDerivative = alpha * derivative + (1.0 - alpha) * filteredDerivative;
+
+		double dTerm = kD * filteredDerivative;
 
 		// Feedforward term
 		double fTerm = kF * targetVelocity;

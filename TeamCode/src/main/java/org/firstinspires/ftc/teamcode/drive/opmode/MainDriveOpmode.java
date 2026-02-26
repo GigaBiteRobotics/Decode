@@ -90,6 +90,8 @@ public class MainDriveOpmode extends OpMode {
 	// Rapid fire state machine
 	private boolean rapidFireActive = false;
 	private boolean launcherPooping = false;
+	private boolean launcherReverseActive = false;
+	private boolean prevLeftTriggerPressed = false;
 	private int rapidFireIndex = 0; // Current index in RapidFireOrder
 	private final ElapsedTime rapidFireTimer = new ElapsedTime();
 	private boolean rapidFireTriggerWasPressed = false; // For edge detection
@@ -565,6 +567,13 @@ public class MainDriveOpmode extends OpMode {
 			launcherPooping = !launcherPooping;
 		}
 
+		// Left trigger toggle: launcher reverse at settable RPM (MDOConstants.LauncherReverseRPM)
+		boolean leftTriggerPressed = gamepad2.left_trigger > 0.5;
+		if (leftTriggerPressed && !prevLeftTriggerPressed) {
+			launcherReverseActive = !launcherReverseActive;
+		}
+		prevLeftTriggerPressed = leftTriggerPressed;
+
 		// Manual azimuth offset adjustment using D-pad left/right
 		// Adjusts in small increments (1 degree) with a 150ms delay between adjustments
 		if (azimuthAdjustTimer.milliseconds() > 150) {
@@ -633,7 +642,9 @@ public class MainDriveOpmode extends OpMode {
 		// Launcher control: use PID (setRPM) or manual power (setPower) based on toggle
 		if (MDOConstants.EnableLauncherPID) {
 			// PID mode: use setRPM for closed-loop RPM control
-			if (launcherPooping) {
+			if (launcherReverseActive) {
+				launcherMotors.setRPM(-MDOConstants.LauncherReverseRPM);
+			} else if (launcherPooping) {
 				launcherMotors.setRPM(1200);
 			} else {
 				launcherMotors.setRPM(launcherSpinning ? dynamicRPM : 0);
@@ -641,7 +652,9 @@ public class MainDriveOpmode extends OpMode {
 			launcherMotors.setPIDFController(MDOConstants.LauncherPIDF);
 		} else {
 			// Manual power mode: bypass PID and use direct power
-			if (launcherPooping) {
+			if (launcherReverseActive) {
+				launcherMotors.setPower(-MDOConstants.LauncherManualPower);
+			} else if (launcherPooping) {
 				launcherMotors.setPower(0.2); // Low power for pooping mode
 			} else {
 				launcherMotors.setPower(launcherSpinning ? MDOConstants.LauncherManualPower : 0);
@@ -738,6 +751,7 @@ public class MainDriveOpmode extends OpMode {
 			telemetryC.addData("Launcher Debug", launcherMotors.getDebugString());
 			telemetryC.addData("Launcher Pressure", launcherMotors.getPIDOutput());
 			telemetryC.addData("launcherRunning", launcherSpinning);
+			telemetryC.addData("Launcher Reverse", launcherReverseActive ? "ON (" + MDOConstants.LauncherReverseRPM + " RPM)" : "OFF");
 
 			// Distance to target and dynamic RPM
 			if (currentTarget != null) {
