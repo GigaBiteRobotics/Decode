@@ -19,33 +19,43 @@ import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
 import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
 import org.firstinspires.ftc.teamcode.drive.CustomPIDFController;
 import org.firstinspires.ftc.teamcode.drive.CustomThreads;
+import org.firstinspires.ftc.teamcode.drive.GamepadEventHandler;
+import org.firstinspires.ftc.teamcode.drive.LauncherCalculations;
 import org.firstinspires.ftc.teamcode.drive.LocalizationAutoAim;
 import org.firstinspires.ftc.teamcode.drive.MDOConstants;
-import org.firstinspires.ftc.teamcode.drive.RobotCoreCustom;
+import org.firstinspires.ftc.teamcode.drive.HubInitializer;
+import org.firstinspires.ftc.teamcode.drive.CustomAxonServoController;
+import org.firstinspires.ftc.teamcode.drive.CustomMotorController;
+import org.firstinspires.ftc.teamcode.drive.CustomMotor;
+import org.firstinspires.ftc.teamcode.drive.CustomTelemetry;
+import org.firstinspires.ftc.teamcode.drive.CustomSorterController;
+import org.firstinspires.ftc.teamcode.drive.TurretSubsystem;
+import org.firstinspires.ftc.teamcode.drive.ElevationSubsystem;
+import org.firstinspires.ftc.teamcode.drive.LauncherSubsystem;
+import org.firstinspires.ftc.teamcode.drive.IntakeSubsystem;
+import org.firstinspires.ftc.teamcode.drive.DrawbridgeSubsystem;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
 @TeleOp(name = "Drive", group = "!advanced")
 public class MainDriveOpmode extends OpMode {
+	// Core robot
 	AprilTagLocalizer localizer;
-	//IMU imuEX;
-	RobotCoreCustom robotCoreCustom;
 	Follower follower;
-	RobotCoreCustom.CustomAxonServoController elevationServo;
-	RobotCoreCustom.CustomAxonServoController azimuthServo;
-	Double launchElevationDeg = 0.0;
-	double elevationServoTarget = 0.0;
-	RobotCoreCustom.CustomMotorController launcherMotors, intakeMotor;
-	RobotCoreCustom.CustomMotor drawbridgeMotor;
-	double targetPower = 0.0;
-	double elevationServoFinal = 0;
-	double manualAzimuthOffset = 0.0; // Manual azimuth adjustment via D-pad
-	ElapsedTime gamepadTimer = new ElapsedTime();
-	ElapsedTime azimuthAdjustTimer = new ElapsedTime(); // Timer for D-pad azimuth adjustment
-	RobotCoreCustom.CustomTelemetry telemetryC;
-	RobotCoreCustom.CustomSorterController sorterController;
-	boolean launcherSpinning = false;
+
+	// Subsystems
+	TurretSubsystem turret;
+	ElevationSubsystem elevation;
+	LauncherSubsystem launcher;
+	IntakeSubsystem intake;
+	DrawbridgeSubsystem drawbridge;
+	CustomSorterController sorterController;
+
+	// Telemetry
+	CustomTelemetry telemetryC;
+	static DashboardTelemetryManager telemetryM;
+
+	// Cached per-loop data
 	private Double[] launchVectors;
-	int prevBallCount = 0;
 
 	enum Team {
 		RED,
@@ -61,40 +71,16 @@ public class MainDriveOpmode extends OpMode {
 
 	StartPosition startPosition = StartPosition.CLOSE;
 	boolean hasAutoPose = false;
-	ElapsedTime lifterAutoLaunchTimer = new ElapsedTime();
 	ElapsedTime aprilSlowdownTimer = new ElapsedTime();
 	ElapsedTime loopTimer = new ElapsedTime();
-	ElapsedTime intakeInputTimer = new ElapsedTime();
 	double loopTimeMs = 0;
 	ElapsedTime sectionTimer = new ElapsedTime();
 	double timeCaching = 0, timeUpdate = 0, timeSorter = 0, timeDrive = 0;
 	double timeAprilTag = 0, timeServo = 0, timeLauncher = 0, timeIntake = 0, timeTelemetry = 0;
-	Double launchAzimuthDeg = 0.0;
-	Double robotFieldRelativeAzimuthDeg = 0.0;
-	Double finalAzimuthDeg = 0.0;
-
-	static DashboardTelemetryManager telemetryM;
-
-	enum intakeState {
-		IN,
-		OUT,
-		STOP
-	}
-
-	intakeState intakeRunningState = intakeState.STOP;
 
 	// Telemetry throttling to reduce overhead
 	private int telemetryLoopCounter = 0;
-	private static final int TELEMETRY_UPDATE_INTERVAL = 5; // Update telemetry every N loops (higher = less lag)
-
-	// Rapid fire state machine
-	private boolean rapidFireActive = false;
-	private boolean launcherPooping = false;
-	private boolean launcherReverseActive = false;
-	private boolean prevLeftTriggerPressed = false;
-	private int rapidFireIndex = 0; // Current index in RapidFireOrder
-	private final ElapsedTime rapidFireTimer = new ElapsedTime();
-	private boolean rapidFireTriggerWasPressed = false; // For edge detection
+	private static final int TELEMETRY_UPDATE_INTERVAL = 5;
 
 	// Disable camera completely - set to false to skip all camera/AprilTag initialization
 	private static final boolean ENABLE_CAMERA = false;
@@ -106,26 +92,28 @@ public class MainDriveOpmode extends OpMode {
 
 	// In-teleop automated pathing state
 	private boolean automatedDriveActive = false;
-	private boolean holdingPosition = false;  // Holds position after path completes until stick input
-	private PathChainSupplier launchPositionPath;  // Path to launch position
-	private PathChainSupplier humanPlayerPath;     // Path to human player station
-	private PathChainSupplier gatePositionPath;    // Path to gate position
-	private static final double STICK_OVERRIDE_THRESHOLD = 0.1; // Manual override threshold
+	private boolean holdingPosition = false;
+	private PathChainSupplier launchPositionPath;
+	private PathChainSupplier humanPlayerPath;
+	private PathChainSupplier gatePositionPath;
+	private static final double STICK_OVERRIDE_THRESHOLD = 0.1;
 
 	// Threads
-	// Handles background tasks like sensor reading and servo PID to keep the main loop fast
 	CustomThreads customThreads;
-	private final Object followerLock = new Object(); // Dedicated lock for follower synchronization
+	private final Object followerLock = new Object();
 	boolean pathsBuilt = false;
+
+	// Gamepad event handlers
+	GamepadEventHandler gp1Handler;
+	GamepadEventHandler gp2Handler;
 
 	@Override
 	public void init() {
 		telemetryM = DashboardTelemetryManager.create();
-		telemetryC = new RobotCoreCustom.CustomTelemetry(telemetry, telemetryM);
+		telemetryC = new CustomTelemetry(telemetry, telemetryM);
 
 		// Sorting Initialization
-		// Initializes servos and color sensors for the ball sorting mechanism
-		sorterController = new RobotCoreCustom.CustomSorterController(hardwareMap);
+		sorterController = new CustomSorterController(hardwareMap);
 
 		// Get data from autonomous if available
 		AutoToTeleDataTransferer dataTransfer = AutoToTeleDataTransferer.getInstance();
@@ -140,18 +128,18 @@ public class MainDriveOpmode extends OpMode {
 			buildPaths();
 		}
 
-
-		robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
+		HubInitializer.initBulkCaching(hardwareMap);
 
 		if (ENABLE_CAMERA) {
 			localizer = new AprilTagLocalizer();
-
-			// Apply initial value
 			localizer.cameraPosition = new Position(DistanceUnit.INCH,
 					MDOConstants.CameraOffset[0], MDOConstants.CameraOffset[1], MDOConstants.CameraOffset[2], 0);
 		}
 
-		elevationServo = new RobotCoreCustom.CustomAxonServoController(
+		// ===== SUBSYSTEM INITIALIZATION =====
+
+		// Elevation subsystem
+		CustomAxonServoController elevationServo = new CustomAxonServoController(
 				hardwareMap,
 				new String[]{"elevationServo"},
 				new boolean[]{false},
@@ -159,8 +147,11 @@ public class MainDriveOpmode extends OpMode {
 				new double[]{0, 0, 0},
 				null
 		);
-		elevationServo.setAllowWrapAround(false); // Elevation should not wrap around 0/360 boundary
-		azimuthServo = new RobotCoreCustom.CustomAxonServoController(
+		elevationServo.setAllowWrapAround(false);
+		elevation = new ElevationSubsystem(elevationServo);
+
+		// Turret (azimuth) subsystem
+		CustomAxonServoController azimuthServo = new CustomAxonServoController(
 				hardwareMap,
 				new String[]{"azimuthServo0", "azimuthServo1"},
 				new boolean[]{true, true},
@@ -168,20 +159,26 @@ public class MainDriveOpmode extends OpMode {
 				MDOConstants.AzimuthPIDFConstants,
 				"azimuthPosition"
 		);
+		turret = new TurretSubsystem(azimuthServo);
+
 		if (ENABLE_CAMERA) {
 			localizer.initAprilTag(hardwareMap, "Webcam 1");
 		}
 
-		launcherMotors = new RobotCoreCustom.CustomMotorController(
+		// Launcher subsystem
+		CustomMotorController launcherMotors = new CustomMotorController(
 				hardwareMap,
 				new String[]{"launcher0", "launcher1"},
-				new boolean[]{true, false}, // motor reverse map: launcher0 is reversed
-				new boolean[]{true, false}, // encoder reverse map: launcher0 encoder is reversed to match motor direction
-				new boolean[]{true, false}, // encoder enable map: only launcher0 has encoder
-				32, // ticks per rev - calibrated for actual motor encoder (28 * 6700/6000)
+				new boolean[]{true, false},
+				new boolean[]{true, false},
+				new boolean[]{true, false},
+				32,
 				new CustomPIDFController(0, 0, 0, 0)
 		);
-		intakeMotor = new RobotCoreCustom.CustomMotorController(
+		launcher = new LauncherSubsystem(launcherMotors);
+
+		// Intake subsystem
+		CustomMotorController intakeMotor = new CustomMotorController(
 				hardwareMap,
 				new String[]{"intake"},
 				new boolean[]{true},
@@ -189,21 +186,23 @@ public class MainDriveOpmode extends OpMode {
 				28.0,
 				new CustomPIDFController(0, 0, 0, 0)
 		);
-		drawbridgeMotor = new RobotCoreCustom.CustomMotor(hardwareMap, "drawBridge", false, 67, new CustomPIDFController(0, 0, 0, 0));
+		intake = new IntakeSubsystem(intakeMotor);
 
+		// Drawbridge subsystem
+		CustomMotor drawbridgeMotor = new CustomMotor(hardwareMap, "drawBridge", false, 67, new CustomPIDFController(0, 0, 0, 0));
+		drawbridge = new DrawbridgeSubsystem(drawbridgeMotor);
+
+		// ===== FOLLOWER INITIALIZATION =====
 		follower = Constants.createFollower(hardwareMap);
 
-		// Check if we have a pose from auto
 		hasAutoPose = (startPose.getX() != 0 || startPose.getY() != 0 || startPose.getHeading() != 0);
 
-		// Use pose from auto if available, otherwise start position will be set in start() based on selection
 		if (hasAutoPose) {
 			follower.setStartingPose(startPose);
 			telemetryC.addData("Starting Pose from Auto",
 					String.format(java.util.Locale.US, "(%.1f, %.1f, %.1f°)",
 							startPose.getX(), startPose.getY(), Math.toDegrees(startPose.getHeading())));
 		} else {
-			// Temporary default, will be updated in start() based on selection
 			follower.setStartingPose(new Pose(0, 0, 0));
 			telemetryC.addData("Starting Pose", "Select during init (no auto pose)");
 		}
@@ -211,19 +210,87 @@ public class MainDriveOpmode extends OpMode {
 
 		follower.startTeleopDrive();
 
-		gamepadTimer.reset();
+		// ===== THREAD SETUP =====
 		aprilSlowdownTimer.reset();
-		lifterAutoLaunchTimer.reset();
-		intakeInputTimer.reset();
-		customThreads = new CustomThreads(robotCoreCustom, follower);
-		customThreads.setAzimuthServo(azimuthServo);
-		customThreads.setLauncherMotors(launcherMotors);
-		// Pass the sorter controller to the thread manager so it can update sensors in the background
+		customThreads = new CustomThreads(follower);
+		customThreads.setAzimuthServo(turret.getServoController());
+		customThreads.setLauncherMotors(launcher.getMotorController());
 		customThreads.setSorterController(sorterController);
-		// Pass the AprilTag localizer to process detections in background
 		if (ENABLE_CAMERA) {
 			customThreads.setAprilTagLocalizer(localizer);
 		}
+
+		// ===== GAMEPAD EVENT HANDLER SETUP =====
+		gp1Handler = new GamepadEventHandler();
+		gp2Handler = new GamepadEventHandler();
+
+		// --- Gamepad 1 (Driver) ---
+
+		// D-pad Down: Go to launch position
+		gp1Handler.onPress("goToLaunch", gp -> gp.dpad_down, () -> {
+			PathChain pathToFollow = launchPositionPath.get();
+			synchronized (followerLock) {
+				follower.followPath(pathToFollow, true);
+			}
+			automatedDriveActive = true;
+			holdingPosition = false;
+		});
+
+		// D-pad Up: Go to human player station
+		gp1Handler.onPress("goToHuman", gp -> gp.dpad_up, () -> {
+			PathChain pathToFollow = humanPlayerPath.get();
+			synchronized (followerLock) {
+				follower.followPath(pathToFollow, true);
+			}
+			automatedDriveActive = true;
+			holdingPosition = false;
+		});
+
+		// D-pad Right: Go to gate position
+		gp1Handler.onPress("goToGate", gp -> gp.dpad_right, () -> {
+			PathChain pathToFollow = gatePositionPath.get();
+			synchronized (followerLock) {
+				follower.followPath(pathToFollow, true);
+			}
+			automatedDriveActive = true;
+			holdingPosition = false;
+		});
+
+		// --- Gamepad 2 (Operator) ---
+
+		// D-pad Down: Toggle launcher spin
+		gp2Handler.onDebouncedPress("launcherToggle", gp -> gp.dpad_down, 300, () -> launcher.toggleSpin());
+
+		// D-pad Up: Toggle launcher poop mode
+		gp2Handler.onDebouncedPress("launcherPoop", gp -> gp.dpad_up, 300, () -> launcher.togglePoop());
+
+		// Left trigger: Toggle launcher reverse
+		gp2Handler.onAnalogPress("launcherReverse", gp -> (double) gp.left_trigger, 0.5, () -> launcher.toggleReverse());
+
+		// D-pad Left/Right: Manual azimuth offset adjustment (150ms debounce)
+		gp2Handler.onDebouncedPress("azimuthRight", gp -> gp.dpad_right, 150, () -> turret.adjustAzimuth(1.0));
+		gp2Handler.onDebouncedPress("azimuthLeft", gp -> gp.dpad_left, 150, () -> turret.adjustAzimuth(-1.0));
+
+		// Y button: Reset azimuth offset
+		gp2Handler.onDebouncedPress("azimuthReset", gp -> gp.y, 150, () -> turret.resetAzimuthOffset());
+
+		// Right bumper: Launch purple ball (650ms cooldown)
+		gp2Handler.onDebouncedPress("launchPurple", gp -> gp.right_bumper, 650,
+				() -> sorterController.launchCached(CustomSorterController.CustomColor.PURPLE));
+
+		// Left bumper: Launch green ball (650ms cooldown)
+		gp2Handler.onDebouncedPress("launchGreen", gp -> gp.left_bumper, 650,
+				() -> sorterController.launchCached(CustomSorterController.CustomColor.GREEN));
+
+		// Right trigger: Start rapid fire sequence (edge detection)
+		gp2Handler.onAnalogPress("rapidFire", gp -> (double) gp.right_trigger, 0.5,
+				() -> launcher.startRapidFire(sorterController));
+
+		// A button: Toggle intake IN
+		gp2Handler.onDebouncedPress("intakeIn", gp -> gp.a, 300, () -> intake.toggleIn());
+
+		// B button: Toggle intake OUT
+		gp2Handler.onDebouncedPress("intakeOut", gp -> gp.b, 300, () -> intake.toggleOut());
 
 	}
 
@@ -344,48 +411,37 @@ public class MainDriveOpmode extends OpMode {
 		// Follower/Pose data
 		Pose currentPose;
 		double poseX, poseY, robotHeadingRad;
-		// Use thread-safe pose when follower update thread is running to prevent race conditions
 		if (MDOConstants.EnableThreadedFollowerUpdate) {
 			currentPose = customThreads.getThreadSafePose();
 		} else {
 			currentPose = follower.getPose();
 		}
 		if (currentPose == null) {
-			// Pose not yet available, use default values and skip this loop iteration
 			currentPose = new Pose(0, 0, 0);
 		}
 		poseX = currentPose.getX();
 		poseY = currentPose.getY();
 		robotHeadingRad = currentPose.getHeading();
-		robotFieldRelativeAzimuthDeg = Math.toDegrees(robotHeadingRad);
 
-
-		// Launch calculations - pass alliance side for side-specific tuning
-		// Use the already-fetched thread-safe pose instead of accessing follower.getPose() again
+		// Launch calculations
 		boolean isRedSide = (team == Team.RED);
-		launchVectors = RobotCoreCustom.localizerLauncherCalc(currentPose, (team == Team.RED) ?
+		launchVectors = LauncherCalculations.localizerLauncherCalc(currentPose, (team == Team.RED) ?
 				MDOConstants.redTargetLocation : MDOConstants.blueTargetLocation, isRedSide);
 
-		// Current target and dynamic RPM calculation
 		Double[] currentTarget = (team == Team.RED) ? MDOConstants.redTargetLocation : MDOConstants.blueTargetLocation;
-		int dynamicRPM = RobotCoreCustom.calculateLauncherRPM(currentPose, currentTarget, isRedSide);
+		int dynamicRPM = LauncherCalculations.calculateLauncherRPM(currentPose, currentTarget, isRedSide);
 
-		// Launcher data
-		double launcherRPM = launcherMotors.getAverageRPM();
-
-		// Gamepad inputs - all sticks
+		// Gamepad inputs - sticks only (buttons handled by event handlers)
 		double gamepad1LeftStickY = gamepad1.left_stick_y;
 		double gamepad1LeftStickX = gamepad1.left_stick_x;
 		double gamepad1RightStickX = gamepad1.right_stick_x;
 
-		// Timer values
-		double gamepadTimerMs = gamepadTimer.milliseconds();
 
-		// Cache azimuth servo data ONCE to avoid hardware I/O in telemetry
-		double servoPosition = azimuthServo.getPosition();
-		double servoTarget = azimuthServo.getTargetPosition();
+		// Cache turret servo data ONCE for telemetry
+		double servoPosition = turret.getServoPosition();
+		double servoTarget = turret.getServoTarget();
 
-		// Pre-format CPU strings to avoid repeated String.format() in telemetry (expensive operation)
+		// CPU data
 		double cpuUsage = customThreads.getCpuUsage();
 		double cpuTemp = customThreads.getCpuTemp();
 
@@ -437,38 +493,8 @@ public class MainDriveOpmode extends OpMode {
 								 Math.abs(gamepad1LeftStickX) > STICK_OVERRIDE_THRESHOLD ||
 								 Math.abs(gamepad1RightStickX) > STICK_OVERRIDE_THRESHOLD;
 
-		// ===== AUTOMATED PATHING TRIGGERS =====
-		// D-pad buttons can interrupt any current path to go to a new position
-
-		// D-pad Down: Go to launch position
-		if (gamepad1.dpad_down) {
-			PathChain pathToFollow = launchPositionPath.get();
-			synchronized (followerLock) {
-				follower.followPath(pathToFollow, true);
-			}
-			automatedDriveActive = true;
-			holdingPosition = false;
-		}
-
-		// D-pad Up: Go to human player station
-		if (gamepad1.dpad_up) {
-			PathChain pathToFollow = humanPlayerPath.get();
-			synchronized (followerLock) {
-				follower.followPath(pathToFollow, true);
-			}
-			automatedDriveActive = true;
-			holdingPosition = false;
-		}
-
-		// D-pad Right: Go to gate position
-		if (gamepad1.dpad_right) {
-			PathChain pathToFollow = gatePositionPath.get();
-			synchronized (followerLock) {
-				follower.followPath(pathToFollow, true);
-			}
-			automatedDriveActive = true;
-			holdingPosition = false;
-		}
+		// ===== AUTOMATED PATHING TRIGGERS (via event handler) =====
+		gp1Handler.update(gamepad1);
 
 		// ===== PATH COMPLETION - ENTER HOLD POSITION MODE =====
 		// When path completes, it automatically holds position due to holdPoint=true
@@ -542,169 +568,33 @@ public class MainDriveOpmode extends OpMode {
 
 		timeAprilTag = sectionTimer.milliseconds();
 
-		// ===== SERVO CONTROL =====
+		// ===== SERVO CONTROL (Turret + Elevation) =====
 		sectionTimer.reset();
 
-		aimingLoop();
+		turret.update(currentPose, launchVectors, isRedSide);
+		elevation.update(currentPose, launchVectors, isRedSide);
 
 		timeServo = sectionTimer.milliseconds();
 
 		// ===== LAUNCHER CONTROL =====
 		sectionTimer.reset();
 
-		if (gamepad2.dpad_down && gamepadTimerMs > 300) {
-			gamepadTimer.reset();
-			if (!launcherSpinning) {
-				targetPower = MDOConstants.launchPower;
-				launcherSpinning = true;
-			} else {
-				targetPower = 0;
-				launcherSpinning = false;
-			}
-		}
-		if (gamepad2.dpad_up && gamepadTimerMs > 300) {
-			gamepadTimer.reset();
-			launcherPooping = !launcherPooping;
-		}
+		// All button inputs handled by gp2Handler
+		gp2Handler.update(gamepad2);
 
-		// Left trigger toggle: launcher reverse at settable RPM (MDOConstants.LauncherReverseRPM)
-		boolean leftTriggerPressed = gamepad2.left_trigger > 0.5;
-		if (leftTriggerPressed && !prevLeftTriggerPressed) {
-			launcherReverseActive = !launcherReverseActive;
-		}
-		prevLeftTriggerPressed = leftTriggerPressed;
+		// Rapid fire continuation (must run every loop to advance the sequence)
+		launcher.updateRapidFire(sorterController);
 
-		// Manual azimuth offset adjustment using D-pad left/right
-		// Adjusts in small increments (1 degree) with a 150ms delay between adjustments
-		if (azimuthAdjustTimer.milliseconds() > 150) {
-			if (gamepad2.dpad_right) {
-				manualAzimuthOffset += 1.0; // Increase azimuth offset by 1 degree
-				azimuthAdjustTimer.reset();
-			} else if (gamepad2.dpad_left) {
-				manualAzimuthOffset -= 1.0; // Decrease azimuth offset by 1 degree
-				azimuthAdjustTimer.reset();
-			}
-			// Reset manual offset with Y button
-			if (gamepad2.y) {
-				manualAzimuthOffset = 0.0;
-				azimuthAdjustTimer.reset();
-			}
-		}
-
-		if (gamepad2.right_bumper && lifterAutoLaunchTimer.milliseconds() > 650) { // launch purple
-			lifterAutoLaunchTimer.reset();
-			// Use launchCached to avoid blocking the loop with sensor reads during launch
-			sorterController.launchCached(RobotCoreCustom.CustomSorterController.CustomColor.PURPLE);
-		}
-		if (gamepad2.left_bumper && lifterAutoLaunchTimer.milliseconds() > 650) {
-			lifterAutoLaunchTimer.reset();
-			// Use launchCached to avoid blocking the loop with sensor reads during launch
-			sorterController.launchCached(RobotCoreCustom.CustomSorterController.CustomColor.GREEN);
-		}
-
-		// ===== RAPID FIRE LOGIC =====
-		// Fires balls from pits in configurable order with settable delay between shots
-		// Triggered by holding gamepad2.right_trigger
-		boolean rapidFireTriggerPressed = gamepad2.right_trigger > 0.5;
-
-		// Edge detection: Start rapid fire sequence when trigger is first pressed
-		if (rapidFireTriggerPressed && !rapidFireTriggerWasPressed && !rapidFireActive) {
-			rapidFireActive = true;
-			rapidFireIndex = 0;
-			rapidFireTimer.reset();
-			// Fire first ball immediately
-			int pitToFire = MDOConstants.RapidFireOrder[rapidFireIndex];
-			sorterController.launchFromPit(pitToFire);
-			rapidFireIndex++;
-		}
-		rapidFireTriggerWasPressed = rapidFireTriggerPressed;
-
-		// Continue rapid fire sequence if active
-		if (rapidFireActive && rapidFireIndex < MDOConstants.RapidFireOrder.length) {
-			if (rapidFireTimer.milliseconds() >= MDOConstants.RapidFireDelayMs) {
-				int pitToFire = MDOConstants.RapidFireOrder[rapidFireIndex];
-				sorterController.launchFromPit(pitToFire);
-				rapidFireIndex++;
-				rapidFireTimer.reset();
-			}
-		}
-
-		// End rapid fire when all pits have been fired
-		if (rapidFireIndex >= MDOConstants.RapidFireOrder.length) {
-			rapidFireActive = false;
-		}
-
-		//launcherMotors.setPower(launcherSpinning ? MDOConstants.launchPower : 0);
-
-		// Clamp target power
-		targetPower = Math.max(-1.0, Math.min(1.0, targetPower));
-
-		// Launcher control: use PID (setRPM) or manual power (setPower) based on toggle
-		if (MDOConstants.EnableLauncherPID) {
-			// PID mode: use setRPM for closed-loop RPM control
-			if (launcherReverseActive) {
-				launcherMotors.setRPM(-MDOConstants.LauncherReverseRPM);
-			} else if (launcherPooping) {
-				launcherMotors.setRPM(1200);
-			} else {
-				launcherMotors.setRPM(launcherSpinning ? dynamicRPM : 0);
-			}
-			launcherMotors.setPIDFController(MDOConstants.LauncherPIDF);
-		} else {
-			// Manual power mode: bypass PID and use direct power
-			if (launcherReverseActive) {
-				launcherMotors.setPower(-MDOConstants.LauncherManualPower);
-			} else if (launcherPooping) {
-				launcherMotors.setPower(0.2); // Low power for pooping mode
-			} else {
-				launcherMotors.setPower(launcherSpinning ? MDOConstants.LauncherManualPower : 0);
-			}
-		}
+		// Update launcher motor output
+		launcher.update(dynamicRPM);
 
 		timeLauncher = sectionTimer.milliseconds();
 
 		// ===== INTAKE CONTROL =====
 		sectionTimer.reset();
 
-		// Auto-Stop Logic:
-		// Automatically turns off the intake when the 3rd ball is collected to save power.
-		// Logic: If intake is ON AND we have 3+ balls AND we didn't have 3 balls last loop.
-		// This allows the driver to manually turn the intake back ON even if 3 balls are held.
-		if (intakeRunningState == intakeState.IN && currentBallCount >= 3 && prevBallCount < 3) {
-			intakeRunningState = intakeState.STOP;
-		}
-		prevBallCount = currentBallCount;
+		intake.update(currentBallCount);
 
-		if (intakeInputTimer.milliseconds() > 300) {
-			if (gamepad2.a) {
-				intakeInputTimer.reset();
-				if (intakeRunningState == intakeState.IN) {
-					intakeRunningState = intakeState.STOP;
-				} else {
-					intakeRunningState = intakeState.IN;
-				}
-			} else if (gamepad2.b) {
-				intakeInputTimer.reset();
-				if (intakeRunningState == intakeState.OUT) {
-					intakeRunningState = intakeState.STOP;
-				} else {
-					intakeRunningState = intakeState.OUT;
-				}
-			}
-		}
-
-		switch (intakeRunningState) {
-			case IN:
-				intakeMotor.setPower(1);
-				break;
-			case OUT:
-				intakeMotor.setPower(-1);
-				break;
-			case STOP:
-			default:
-				intakeMotor.setPower(0);
-				break;
-		}
 		timeIntake = sectionTimer.milliseconds();
 
 		// ===== TELEMETRY BLOCK - Throttled to reduce overhead =====
@@ -712,9 +602,8 @@ public class MainDriveOpmode extends OpMode {
 
 		telemetryLoopCounter++;
 		if (telemetryLoopCounter >= TELEMETRY_UPDATE_INTERVAL) {
-			telemetryLoopCounter = 0; // Reset counter
+			telemetryLoopCounter = 0;
 			telemetryC.addData("Team", team.toString());
-			// Show which alliance-specific values are being used (isRedSide already defined above)
 			telemetryC.addData("Active Azimuth Adj", isRedSide ? MDOConstants.RedAzimuthFineAdjustment : MDOConstants.BlueAzimuthFineAdjustment);
 			telemetryC.addData("Active Elevation Offset", isRedSide ? MDOConstants.RedElevationOffset : MDOConstants.BlueElevationOffset);
 			telemetryC.addData("Active AprilTag Offset", isRedSide ? MDOConstants.RedAprilTagHeadingOffset : MDOConstants.BlueAprilTagHeadingOffset);
@@ -734,35 +623,34 @@ public class MainDriveOpmode extends OpMode {
 			}
 
 			if (launchVectors != null) {
-				telemetryC.addData("Launch Elevation (deg)", launchElevationDeg);
-				telemetryC.addData("Elevation Servo Pos", elevationServoFinal);
+				telemetryC.addData("Launch Elevation (deg)", elevation.getLaunchElevationDeg());
+				telemetryC.addData("Elevation Servo Pos", elevation.getElevationServoFinal());
 				telemetryC.addData("--- AZIMUTH DEBUG ---", "");
-				telemetryC.addData("Robot Heading (raw)", String.format("%.1f", robotFieldRelativeAzimuthDeg));
-				telemetryC.addData("Target Azimuth (raw)", String.format("%.1f", launchAzimuthDeg));
-				telemetryC.addData("Final Azimuth (deg)", String.format("%.2f", finalAzimuthDeg));
-				telemetryC.addData("Manual Azimuth Offset", manualAzimuthOffset);
+				telemetryC.addData("Robot Heading (raw)", String.format("%.1f", turret.getRobotFieldRelativeAzimuthDeg()));
+				telemetryC.addData("Target Azimuth (raw)", String.format("%.1f", turret.getLaunchAzimuthDeg()));
+				telemetryC.addData("Final Azimuth (deg)", String.format("%.2f", turret.getFinalAzimuthDeg()));
+				telemetryC.addData("Manual Azimuth Offset", turret.getManualAzimuthOffset());
 				telemetryC.addData("Servo Pos (actual)", String.format("%.3f", servoPosition));
 				telemetryC.addData("Servo Target (actual)", String.format("%.3f", servoTarget));
 			} else {
 				telemetryC.addData("Launch Vectors", "Target Unreachable");
 			}
 
-			telemetryC.addData("Launcher RPM", launcherRPM);
-			telemetryC.addData("Launcher Debug", launcherMotors.getDebugString());
-			telemetryC.addData("Launcher Pressure", launcherMotors.getPIDOutput());
-			telemetryC.addData("launcherRunning", launcherSpinning);
-			telemetryC.addData("Launcher Reverse", launcherReverseActive ? "ON (" + MDOConstants.LauncherReverseRPM + " RPM)" : "OFF");
+			telemetryC.addData("Launcher RPM", launcher.getRPM());
+			telemetryC.addData("Launcher Debug", launcher.getDebugString());
+			telemetryC.addData("Launcher Pressure", launcher.getPIDOutput());
+			telemetryC.addData("launcherRunning", launcher.isSpinning());
+			telemetryC.addData("Launcher Reverse", launcher.isReverse() ? "ON (" + MDOConstants.LauncherReverseRPM + " RPM)" : "OFF");
 
 			// Distance to target and dynamic RPM
 			if (currentTarget != null) {
-				// Use already-cached pose values instead of calling follower.getPose() again
 				Double[] robotPos = {poseX, poseY, 10.0};
 				double distanceToTarget = LocalizationAutoAim.getDistance(robotPos, currentTarget);
 				telemetryC.addData("Distance to Target (in)", String.format("%.1f", distanceToTarget));
 				telemetryC.addData("Dynamic RPM (Target)", dynamicRPM);
 			}
 
-			telemetryC.addData("Intake State", intakeRunningState);
+			telemetryC.addData("Intake State", intake.getState());
 			telemetryC.addData("Ball Count", currentBallCount);
 
 			// Cached color sensor data (updated in background thread)
@@ -826,98 +714,6 @@ public class MainDriveOpmode extends OpMode {
 		loopTimeMs = loopTimer.milliseconds();
 	}
 
-	public void aimingLoop() {
-		// Calculate elevation angle for launch
-		// start off with IMU offset
-		// Pre-calculate launch vector conversions if available
-		boolean hasValidLaunchVectors = (launchVectors != null);
-
-		// Get alliance-specific offsets
-		boolean isRedSide = (team == Team.RED);
-		double elevationOffset = isRedSide ? MDOConstants.RedElevationOffset : MDOConstants.BlueElevationOffset;
-		double azimuthFineAdjust = isRedSide ? MDOConstants.RedAzimuthFineAdjustment : MDOConstants.BlueAzimuthFineAdjustment;
-
-		// Calculate distance-based elevation offset from zones
-		Double[] currentTarget = isRedSide ? MDOConstants.redTargetLocation : MDOConstants.blueTargetLocation;
-		// Use thread-safe pose access to prevent NPE and race conditions with follower update thread
-		com.pedropathing.geometry.Pose currentPose;
-		if (MDOConstants.EnableThreadedFollowerUpdate) {
-			currentPose = customThreads.getThreadSafePose();
-		} else {
-			currentPose = follower.getPose();
-		}
-		if (currentPose == null) {
-			currentPose = new com.pedropathing.geometry.Pose(0, 0, 0);
-		}
-		double distanceElevationOffset = RobotCoreCustom.calculateElevationOffset(currentPose, currentTarget, isRedSide);
-
-		if (hasValidLaunchVectors) {
-			launchAzimuthDeg = Math.toDegrees(launchVectors[1]);
-			// Elevation is already calculated as servo position in LocalizationAutoAim, not radians
-			launchElevationDeg = launchVectors[0];
-		}
-
-		if (launchElevationDeg != null) {
-			// Use alliance-specific elevation offset combined with shared offset and distance-based offset
-			elevationServoTarget = (launchElevationDeg + MDOConstants.ElevationOffset + elevationOffset + distanceElevationOffset) * MDOConstants.ElevationMultiplier;
-			// Clamp elevation to the configured clamp min/max from MDOConstants
-			elevationServoFinal = Math.max(MDOConstants.ElevationClampMin, Math.min(MDOConstants.ElevationClampMax, elevationServoTarget));
-			elevationServo.setPosition(elevationServoFinal);
-		}
-
-		// ===== AZIMUTH CONTROL =====
-		// Calculates the turret angle needed to aim at the target
-
-		if (MDOConstants.EnableTurretIMUCorrection && MDOConstants.EnableTurret) {
-			if (MDOConstants.EnableLauncherCalcAzimuth && hasValidLaunchVectors) {
-				// Calculate robot-relative angle to target
-				double robotHeadingDeg = robotFieldRelativeAzimuthDeg;
-				double targetAzimuthDeg = launchAzimuthDeg;
-
-				// Calculate turret angle with all offsets
-				finalAzimuthDeg = robotHeadingDeg - targetAzimuthDeg
-						+ MDOConstants.AzimuthIMUOffset
-						+ MDOConstants.AzimuthFineAdjustment
-						+ azimuthFineAdjust
-						+ manualAzimuthOffset;
-			} else {
-				// When not using launcher calc, maintain heading-based orientation
-				double robotHeadingDeg = robotFieldRelativeAzimuthDeg;
-				finalAzimuthDeg = (robotHeadingDeg + MDOConstants.AzimuthIMUOffset + manualAzimuthOffset)
-						* MDOConstants.AzimuthMultiplier;
-			}
-		}
-		// Normalize finalAzimuthDeg to [-180, 180] range to find shortest path
-		// The servo controller handles continuous tracking internally,
-		// so we just need a clean normalized angle here.
-		while (finalAzimuthDeg > 180.0) {
-			finalAzimuthDeg -= 360.0;
-		}
-		while (finalAzimuthDeg < -180.0) {
-			finalAzimuthDeg += 360.0;
-		}
-
-
-		// Convert degrees to servo position [-1, 1] range
-		// The servo controller expects: -1 = 0°, 0 = 180°, +1 = 360°
-		// So we divide by 180 to map degrees to the normalized range
-		// After normalization, finalAzimuthDeg is in [-180, 180] which maps to [-1, 1]
-		double servoPosition = -finalAzimuthDeg / 180.0;
-
-
-
-		// Update PID coefficients if changed via Panels (has built-in change detection)
-		azimuthServo.setPIDCoefficients(MDOConstants.AzimuthPIDFConstants);
-
-		// Set Azimuth Servos with mapped value (-1 to 1)
-		if (MDOConstants.EnableTurret) {
-			azimuthServo.setPosition(servoPosition);
-		} else {
-			azimuthServo.setPosition(0.0);
-		}
-
-		// Gear ratios: 96:20 then 25:120 = combined 1:1
-    }
 	public void buildPaths() {
 		// Initialize lazy path suppliers for in-teleop automated pathing
 		// These use Supplier<PathChain> so the path is built from current position when triggered

@@ -12,7 +12,12 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
 import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
 import org.firstinspires.ftc.teamcode.drive.CustomPIDFController;
-import org.firstinspires.ftc.teamcode.drive.RobotCoreCustom;
+import org.firstinspires.ftc.teamcode.drive.HubInitializer;
+import org.firstinspires.ftc.teamcode.drive.CustomAxonServoController;
+import org.firstinspires.ftc.teamcode.drive.CustomMotorController;
+import org.firstinspires.ftc.teamcode.drive.CustomMotor;
+import org.firstinspires.ftc.teamcode.drive.CustomTelemetry;
+import org.firstinspires.ftc.teamcode.drive.CustomSorterController;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
 @Autonomous(name = "BaseAuto(DO NOT USE)", group = "z")
@@ -39,14 +44,13 @@ public class BaseAutoOpmode extends OpMode {
 
 	// Robot core components
 	protected Follower follower;
-	protected RobotCoreCustom robotCoreCustom;
 	protected AprilTagLocalizer aprilTagLocalizer;
 
 	// Servos
 	protected Servo elevationServo, azimuthServo0, azimuthServo1;
 
 	// Motors
-	protected RobotCoreCustom.CustomMotor launcher;
+	protected CustomMotor launcher;
 
 	// Sensors
 	protected ColorSensor colorSensor;
@@ -64,7 +68,7 @@ public class BaseAutoOpmode extends OpMode {
 	protected Team team = Team.NULL;
 	// Starting pose - override in child classes
 	protected Pose startPose = new Pose(0, 0, 0);
-	RobotCoreCustom.CustomTelemetry telemetryC;
+	CustomTelemetry telemetryC;
 	static DashboardTelemetryManager telemetryM;
 
 	// State tracking for OpMode
@@ -84,10 +88,10 @@ public class BaseAutoOpmode extends OpMode {
 		follower = Constants.createFollower(hardwareMap);
 		follower.setStartingPose(startPose);
 
-		// Initialize robot core
-		robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
+		// Initialize hub bulk caching
+		HubInitializer.initBulkCaching(hardwareMap);
 		telemetryM = DashboardTelemetryManager.create();
-		telemetryC = new RobotCoreCustom.CustomTelemetry(telemetry, telemetryM);
+		telemetryC = new CustomTelemetry(telemetry, telemetryM);
 
 		// Initialize AprilTag localizer
 		try {
@@ -108,7 +112,7 @@ public class BaseAutoOpmode extends OpMode {
 
 		// Initialize launcher motor
 		try {
-			launcher = new RobotCoreCustom.CustomMotor(
+			launcher = new CustomMotor(
 				hardwareMap,
 				"launcher",
 				true,

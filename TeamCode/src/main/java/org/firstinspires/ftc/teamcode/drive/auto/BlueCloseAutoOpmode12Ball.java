@@ -14,7 +14,12 @@ import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
 import org.firstinspires.ftc.teamcode.drive.CustomPIDFController;
 import org.firstinspires.ftc.teamcode.drive.CustomThreads;
 import org.firstinspires.ftc.teamcode.drive.MDOConstants;
-import org.firstinspires.ftc.teamcode.drive.RobotCoreCustom;
+import org.firstinspires.ftc.teamcode.drive.HubInitializer;
+import org.firstinspires.ftc.teamcode.drive.CustomAxonServoController;
+import org.firstinspires.ftc.teamcode.drive.CustomMotorController;
+import org.firstinspires.ftc.teamcode.drive.CustomMotor;
+import org.firstinspires.ftc.teamcode.drive.CustomTelemetry;
+import org.firstinspires.ftc.teamcode.drive.CustomSorterController;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
 @Autonomous(name = "Blue Close Auto 12 Ball", group = "Auto")
@@ -61,12 +66,11 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 
 	// ===== ROBOT COMPONENTS =====
 	protected Follower follower;
-	protected RobotCoreCustom robotCoreCustom;
-	protected RobotCoreCustom.CustomMotorController launcherMotors;
-	protected RobotCoreCustom.CustomMotorController intakeMotor;
-	protected RobotCoreCustom.CustomSorterController sorterController;
-	protected RobotCoreCustom.CustomAxonServoController azimuthServo;
-	protected RobotCoreCustom.CustomAxonServoController elevationServo;
+	protected CustomMotorController launcherMotors;
+	protected CustomMotorController intakeMotor;
+	protected CustomSorterController sorterController;
+	protected CustomAxonServoController azimuthServo;
+	protected CustomAxonServoController elevationServo;
 	protected CustomThreads customThreads;
 
 	// ===== LAUNCHER CONTROL =====
@@ -85,7 +89,7 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 	protected boolean intakeOffTimerActive = false;
 
 	// ===== TELEMETRY =====
-	protected RobotCoreCustom.CustomTelemetry telemetryC;
+	protected CustomTelemetry telemetryC;
 	protected static DashboardTelemetryManager telemetryM;
 
 	// ===== PATHS =====
@@ -111,7 +115,7 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 	public void init() {
 		// Initialize telemetry
 		telemetryM = DashboardTelemetryManager.create();
-		telemetryC = new RobotCoreCustom.CustomTelemetry(telemetry, telemetryM);
+		telemetryC = new CustomTelemetry(telemetry, telemetryM);
 		telemetryC.addData("Status", "Initializing...");
 		telemetryC.update();
 
@@ -119,14 +123,14 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 		follower = Constants.createFollower(hardwareMap);
 		follower.setStartingPose(BlueCloseAutoConstants12Ball.startPose);
 
-		// Initialize robot core
-		robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
+		// Initialize hub bulk caching
+		HubInitializer.initBulkCaching(hardwareMap);
 
 		// Initialize sorter controller
-		sorterController = new RobotCoreCustom.CustomSorterController(hardwareMap);
+		sorterController = new CustomSorterController(hardwareMap);
 
 		// Initialize launcher motors (same as MainDriveOpmode)
-		launcherMotors = new RobotCoreCustom.CustomMotorController(
+		launcherMotors = new CustomMotorController(
 				hardwareMap,
 				new String[]{"launcher0", "launcher1"},
 				new boolean[]{true, false}, // motor reverse map: launcher0 is reversed
@@ -137,7 +141,7 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 		);
 
 		// Initialize intake motor (same as MainDriveOpmode)
-		intakeMotor = new RobotCoreCustom.CustomMotorController(
+		intakeMotor = new CustomMotorController(
 			hardwareMap,
 			new String[]{"intake"},
 			new boolean[]{true},
@@ -147,7 +151,7 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 		);
 
 		// Initialize azimuth servo (with PID for continuous rotation, but fixed position - no auto-aim)
-		azimuthServo = new RobotCoreCustom.CustomAxonServoController(
+		azimuthServo = new CustomAxonServoController(
 			hardwareMap,
 			new String[]{"azimuthServo0", "azimuthServo1"},
 			new boolean[]{true, true}, // both reversed (same as MainDriveOpmode)
@@ -157,7 +161,7 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 		);
 
 		// Initialize elevation servo (simple mode, no PID - same as MainDriveOpmode)
-		elevationServo = new RobotCoreCustom.CustomAxonServoController(
+		elevationServo = new CustomAxonServoController(
 			hardwareMap,
 			new String[]{"elevationServo"},
 			new boolean[]{false},
@@ -168,7 +172,7 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 
 
 		// Initialize custom threads
-		customThreads = new CustomThreads(robotCoreCustom, follower);
+		customThreads = new CustomThreads(follower);
 		customThreads.setLauncherMotors(launcherMotors);
 		customThreads.setSorterController(sorterController);
 		customThreads.setAzimuthServo(azimuthServo);
@@ -544,7 +548,7 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 				if (sorterController.getCachedBallCount() > 0) {
 					// Force-launch ALL pits that still have a ball detected
 					for (int i = 0; i < 3; i++) {
-						if (sorterController.getCachedColor(i) != RobotCoreCustom.CustomSorterController.CustomColor.NULL) {
+						if (sorterController.getCachedColor(i) != CustomSorterController.CustomColor.NULL) {
 							sorterController.forceLaunchSlot(i);
 						}
 					}

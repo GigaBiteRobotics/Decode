@@ -15,7 +15,12 @@ import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
 import org.firstinspires.ftc.teamcode.drive.CustomPIDFController;
 import org.firstinspires.ftc.teamcode.drive.CustomThreads;
 import org.firstinspires.ftc.teamcode.drive.MDOConstants;
-import org.firstinspires.ftc.teamcode.drive.RobotCoreCustom;
+import org.firstinspires.ftc.teamcode.drive.HubInitializer;
+import org.firstinspires.ftc.teamcode.drive.CustomAxonServoController;
+import org.firstinspires.ftc.teamcode.drive.CustomMotorController;
+import org.firstinspires.ftc.teamcode.drive.CustomMotor;
+import org.firstinspires.ftc.teamcode.drive.CustomTelemetry;
+import org.firstinspires.ftc.teamcode.drive.CustomSorterController;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 
@@ -51,17 +56,16 @@ public class BlueCloseAutoOpmode extends OpMode {
 
 	// ===== ROBOT COMPONENTS =====
 	protected Follower follower;
-	protected RobotCoreCustom robotCoreCustom;
-	protected RobotCoreCustom.CustomMotorController launcherMotors;
-	protected RobotCoreCustom.CustomMotorController intakeMotor;
-	protected RobotCoreCustom.CustomSorterController sorterController;
-	protected RobotCoreCustom.CustomAxonServoController azimuthServo;
-	protected RobotCoreCustom.CustomAxonServoController elevationServo;
+	protected CustomMotorController launcherMotors;
+	protected CustomMotorController intakeMotor;
+	protected CustomSorterController sorterController;
+	protected CustomAxonServoController azimuthServo;
+	protected CustomAxonServoController elevationServo;
 	protected AprilTagLocalizer aprilTagLocalizer;
 
 	// ===== APRILTAG TRACKING =====
 	protected List<Integer> detectedAprilTags = new ArrayList<>(); // List of all AprilTag IDs seen
-	protected List<RobotCoreCustom.CustomSorterController.CustomColor> launchOrder = new ArrayList<>(); // Order to launch balls
+	protected List<CustomSorterController.CustomColor> launchOrder = new ArrayList<>(); // Order to launch balls
 	protected int launchOrderIndex = 0; // Current index in launch order
 	protected boolean[] pitLaunched = new boolean[3]; // Track which pits have been launched this cycle
 	protected CustomThreads customThreads;
@@ -87,7 +91,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 	protected int currentIntakePosition = 0; // Tracks which intake position (0 or 1) for intake collect time
 
 	// ===== TELEMETRY =====
-	protected RobotCoreCustom.CustomTelemetry telemetryC;
+	protected CustomTelemetry telemetryC;
 	protected static DashboardTelemetryManager telemetryM;
 
 	// ===== PATHS =====
@@ -106,7 +110,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 	protected int ballsLaunched = 0;
 	protected static final int BALLS_TO_LAUNCH = 3;
 	protected int currentLaunchSlot = 0; // Current slot being launched
-	protected RobotCoreCustom.CustomSorterController.CustomColor lastLaunchedColor = null; // Track last color for delay
+	protected CustomSorterController.CustomColor lastLaunchedColor = null; // Track last color for delay
 
 	// ===== OPTIONS =====
 	protected boolean enableCameraLook = true; // Toggle camera look state
@@ -115,7 +119,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 	public void init() {
 		// Initialize telemetry
 		telemetryM = DashboardTelemetryManager.create();
-		telemetryC = new RobotCoreCustom.CustomTelemetry(telemetry, telemetryM);
+		telemetryC = new CustomTelemetry(telemetry, telemetryM);
 		telemetryC.addData("Status", "Initializing...");
 		telemetryC.update();
 
@@ -123,14 +127,14 @@ public class BlueCloseAutoOpmode extends OpMode {
 		follower = Constants.createFollower(hardwareMap);
 		follower.setStartingPose(BlueCloseAutoConstants.startPose);
 
-		// Initialize robot core
-		robotCoreCustom = new RobotCoreCustom(hardwareMap, follower);
+		// Initialize hub bulk caching
+		HubInitializer.initBulkCaching(hardwareMap);
 
 		// Initialize sorter controller
-		sorterController = new RobotCoreCustom.CustomSorterController(hardwareMap);
+		sorterController = new CustomSorterController(hardwareMap);
 
 		// Initialize launcher motors (same as MainDriveOpmode)
-		launcherMotors = new RobotCoreCustom.CustomMotorController(
+		launcherMotors = new CustomMotorController(
 				hardwareMap,
 				new String[]{"launcher0", "launcher1"},
 				new boolean[]{true, false}, // motor reverse map: launcher0 is reversed
@@ -141,7 +145,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 		);
 
 		// Initialize intake motor (same as MainDriveOpmode)
-		intakeMotor = new RobotCoreCustom.CustomMotorController(
+		intakeMotor = new CustomMotorController(
 			hardwareMap,
 			new String[]{"intake"},
 			new boolean[]{true},
@@ -151,7 +155,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 		);
 
 		// Initialize azimuth servo (with PID for continuous rotation, but fixed position - no auto-aim)
-		azimuthServo = new RobotCoreCustom.CustomAxonServoController(
+		azimuthServo = new CustomAxonServoController(
 			hardwareMap,
 			new String[]{"azimuthServo0", "azimuthServo1"},
 			new boolean[]{true, true}, // both reversed (same as MainDriveOpmode)
@@ -161,7 +165,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 		);
 
 		// Initialize elevation servo (simple mode, no PID - same as MainDriveOpmode)
-		elevationServo = new RobotCoreCustom.CustomAxonServoController(
+		elevationServo = new CustomAxonServoController(
 			hardwareMap,
 			new String[]{"elevationServo"},
 			new boolean[]{false},
@@ -177,7 +181,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 		aprilTagLocalizer.initAprilTag(hardwareMap, "Webcam 1");
 
 		// Initialize custom threads
-		customThreads = new CustomThreads(robotCoreCustom, follower);
+		customThreads = new CustomThreads(follower);
 		customThreads.setLauncherMotors(launcherMotors);
 		customThreads.setSorterController(sorterController);
 		customThreads.setAzimuthServo(azimuthServo);
@@ -517,18 +521,18 @@ public class BlueCloseAutoOpmode extends OpMode {
 				// Calculate required delay - add extra delay if color is changing
 				long requiredDelay = BlueCloseAutoConstants.shotDelayMs;
 				if (lastLaunchedColor != null && !launchOrder.isEmpty() && launchOrderIndex < launchOrder.size()) {
-					RobotCoreCustom.CustomSorterController.CustomColor nextColor = launchOrder.get(launchOrderIndex);
+					CustomSorterController.CustomColor nextColor = launchOrder.get(launchOrderIndex);
 					if (nextColor != lastLaunchedColor) {
 						requiredDelay += BlueCloseAutoConstants.colorChangeDelayMs;
 					}
 				}
 				// Launch one ball at a time based on launchOrder from AprilTag
 				if (launchTimer.milliseconds() > requiredDelay && ballsLaunched < 3) {
-					RobotCoreCustom.CustomSorterController.CustomColor launchedColor = null;
+					CustomSorterController.CustomColor launchedColor = null;
 
 					// Use launchOrder if available to determine which color to launch next
 					if (!launchOrder.isEmpty() && launchOrderIndex < launchOrder.size()) {
-						RobotCoreCustom.CustomSorterController.CustomColor targetColor = launchOrder.get(launchOrderIndex);
+						CustomSorterController.CustomColor targetColor = launchOrder.get(launchOrderIndex);
 						launchedColor = launchNextBallSorted(targetColor);
 					}
 
@@ -536,7 +540,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 					if (launchedColor == null && currentLaunchSlot < 3) {
 						sorterController.forceLaunchSlot(currentLaunchSlot);
 						currentLaunchSlot++;
-						launchedColor = RobotCoreCustom.CustomSorterController.CustomColor.NULL; // Unknown color for forced launch
+						launchedColor = CustomSorterController.CustomColor.NULL; // Unknown color for forced launch
 					}
 
 					// Increment counters when a ball is launched
@@ -558,7 +562,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 					// Check if there are still balls in the pits (misfires)
 					if (sorterController.getCachedBallCount() > 0) {
 						// Try to launch any remaining ball
-						if (sorterController.launchCached(RobotCoreCustom.CustomSorterController.CustomColor.NULL)) {
+						if (sorterController.launchCached(CustomSorterController.CustomColor.NULL)) {
 							launchTimer.reset(); // Reset timer to give time for this launch
 						}
 					}
@@ -641,18 +645,18 @@ public class BlueCloseAutoOpmode extends OpMode {
 				// Calculate required delay - add extra delay if color is changing
 				long requiredDelay2 = BlueCloseAutoConstants.shotDelayMs;
 				if (lastLaunchedColor != null && !launchOrder.isEmpty() && launchOrderIndex < launchOrder.size()) {
-					RobotCoreCustom.CustomSorterController.CustomColor nextColor = launchOrder.get(launchOrderIndex);
+					CustomSorterController.CustomColor nextColor = launchOrder.get(launchOrderIndex);
 					if (nextColor != lastLaunchedColor) {
 						requiredDelay2 += BlueCloseAutoConstants.colorChangeDelayMs;
 					}
 				}
 				// Launch one ball at a time based on launchOrder from AprilTag
 				if (launchTimer.milliseconds() > requiredDelay2 && ballsLaunched < 3) {
-					RobotCoreCustom.CustomSorterController.CustomColor launchedColor = null;
+					CustomSorterController.CustomColor launchedColor = null;
 
 					// Use launchOrder if available to determine which color to launch next
 					if (!launchOrder.isEmpty() && launchOrderIndex < launchOrder.size()) {
-						RobotCoreCustom.CustomSorterController.CustomColor targetColor = launchOrder.get(launchOrderIndex);
+						CustomSorterController.CustomColor targetColor = launchOrder.get(launchOrderIndex);
 						launchedColor = launchNextBallSorted(targetColor);
 					}
 
@@ -660,7 +664,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 					if (launchedColor == null && currentLaunchSlot < 3) {
 						sorterController.forceLaunchSlot(currentLaunchSlot);
 						currentLaunchSlot++;
-						launchedColor = RobotCoreCustom.CustomSorterController.CustomColor.NULL;
+						launchedColor = CustomSorterController.CustomColor.NULL;
 					}
 
 					// Increment counters when a ball is launched
@@ -682,7 +686,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 					// Check if there are still balls in the pits (misfires)
 					if (sorterController.getCachedBallCount() > 0) {
 						// Try to launch any remaining ball
-						if (sorterController.launchCached(RobotCoreCustom.CustomSorterController.CustomColor.NULL)) {
+						if (sorterController.launchCached(CustomSorterController.CustomColor.NULL)) {
 							launchTimer.reset(); // Reset timer to give time for this launch
 						}
 					}
@@ -764,18 +768,18 @@ public class BlueCloseAutoOpmode extends OpMode {
 				// Calculate required delay - add extra delay if color is changing
 				long requiredDelay3 = BlueCloseAutoConstants.shotDelayMs;
 				if (lastLaunchedColor != null && !launchOrder.isEmpty() && launchOrderIndex < launchOrder.size()) {
-					RobotCoreCustom.CustomSorterController.CustomColor nextColor = launchOrder.get(launchOrderIndex);
+					CustomSorterController.CustomColor nextColor = launchOrder.get(launchOrderIndex);
 					if (nextColor != lastLaunchedColor) {
 						requiredDelay3 += BlueCloseAutoConstants.colorChangeDelayMs;
 					}
 				}
 				// Launch one ball at a time based on launchOrder from AprilTag
 				if (launchTimer.milliseconds() > requiredDelay3 && ballsLaunched < 3) {
-					RobotCoreCustom.CustomSorterController.CustomColor launchedColor = null;
+					CustomSorterController.CustomColor launchedColor = null;
 
 					// Use launchOrder if available to determine which color to launch next
 					if (!launchOrder.isEmpty() && launchOrderIndex < launchOrder.size()) {
-						RobotCoreCustom.CustomSorterController.CustomColor targetColor = launchOrder.get(launchOrderIndex);
+						CustomSorterController.CustomColor targetColor = launchOrder.get(launchOrderIndex);
 						launchedColor = launchNextBallSorted(targetColor);
 					}
 
@@ -783,7 +787,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 					if (launchedColor == null && currentLaunchSlot < 3) {
 						sorterController.forceLaunchSlot(currentLaunchSlot);
 						currentLaunchSlot++;
-						launchedColor = RobotCoreCustom.CustomSorterController.CustomColor.NULL;
+						launchedColor = CustomSorterController.CustomColor.NULL;
 					}
 
 					// Increment counters when a ball is launched
@@ -805,7 +809,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 					// Check if there are still balls in the pits (misfires)
 					if (sorterController.getCachedBallCount() > 0) {
 						// Try to launch any remaining ball
-						if (sorterController.launchCached(RobotCoreCustom.CustomSorterController.CustomColor.NULL)) {
+						if (sorterController.launchCached(CustomSorterController.CustomColor.NULL)) {
 							launchTimer.reset(); // Reset timer to give time for this launch
 						}
 					}
@@ -860,14 +864,14 @@ public class BlueCloseAutoOpmode extends OpMode {
 	 * @param targetColor The preferred color to launch (from launchOrder)
 	 * @return The color that was launched, or null if no ball was launched
 	 */
-	protected RobotCoreCustom.CustomSorterController.CustomColor launchNextBallSorted(RobotCoreCustom.CustomSorterController.CustomColor targetColor) {
+	protected CustomSorterController.CustomColor launchNextBallSorted(CustomSorterController.CustomColor targetColor) {
 		// Priority order: slot 2 first, then 1, then 0
 		int[] slotPriority = {2, 1, 0};
 
-		RobotCoreCustom.CustomSorterController.CustomColor GREEN =
-			RobotCoreCustom.CustomSorterController.CustomColor.GREEN;
-		RobotCoreCustom.CustomSorterController.CustomColor PURPLE =
-			RobotCoreCustom.CustomSorterController.CustomColor.PURPLE;
+		CustomSorterController.CustomColor GREEN =
+			CustomSorterController.CustomColor.GREEN;
+		CustomSorterController.CustomColor PURPLE =
+			CustomSorterController.CustomColor.PURPLE;
 
 		// First, try to find the exact target color in a pit that hasn't been launched yet
 		for (int pit : slotPriority) {
@@ -880,7 +884,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 		}
 
 		// Target color not available - try the alternate color
-		RobotCoreCustom.CustomSorterController.CustomColor alternateColor =
+		CustomSorterController.CustomColor alternateColor =
 			(targetColor == GREEN) ? PURPLE : GREEN;
 
 		for (int pit : slotPriority) {
@@ -897,7 +901,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 			if (!pitLaunched[pit]) {
 				if (sorterController.launchFromPit(pit)) {
 					pitLaunched[pit] = true;
-					return RobotCoreCustom.CustomSorterController.CustomColor.NULL;
+					return CustomSorterController.CustomColor.NULL;
 				}
 			}
 		}
@@ -941,10 +945,10 @@ public class BlueCloseAutoOpmode extends OpMode {
 
 					// Set launch order based on tag ID (only if not already set)
 					if (launchOrder.isEmpty()) {
-						RobotCoreCustom.CustomSorterController.CustomColor GREEN =
-							RobotCoreCustom.CustomSorterController.CustomColor.GREEN;
-						RobotCoreCustom.CustomSorterController.CustomColor PURPLE =
-							RobotCoreCustom.CustomSorterController.CustomColor.PURPLE;
+						CustomSorterController.CustomColor GREEN =
+							CustomSorterController.CustomColor.GREEN;
+						CustomSorterController.CustomColor PURPLE =
+							CustomSorterController.CustomColor.PURPLE;
 
 						// Add pattern 3 times (for 3 launch cycles, 9 balls total)
 						for (int cycle = 0; cycle < 3; cycle++) {
@@ -1018,10 +1022,10 @@ public class BlueCloseAutoOpmode extends OpMode {
 		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < launchOrder.size(); i++) {
 			if (i > 0) sb.append(", ");
-			RobotCoreCustom.CustomSorterController.CustomColor color = launchOrder.get(i);
-			if (color == RobotCoreCustom.CustomSorterController.CustomColor.GREEN) {
+			CustomSorterController.CustomColor color = launchOrder.get(i);
+			if (color == CustomSorterController.CustomColor.GREEN) {
 				sb.append("G");
-			} else if (color == RobotCoreCustom.CustomSorterController.CustomColor.PURPLE) {
+			} else if (color == CustomSorterController.CustomColor.PURPLE) {
 				sb.append("P");
 			} else {
 				sb.append("?");

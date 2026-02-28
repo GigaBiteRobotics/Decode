@@ -7,7 +7,6 @@ import org.firstinspires.ftc.teamcode.CpuMonitor;
 
 public class CustomThreads {
 
-    RobotCoreCustom robotCoreCustom;
     Follower follower;
 
     // Thread-safe pose caching to prevent race conditions when accessing follower.getPose()
@@ -24,15 +23,15 @@ public class CustomThreads {
 
     private Thread azimuthPIDThread;
     private volatile boolean azimuthPIDThreadRunning = false;
-    private RobotCoreCustom.CustomAxonServoController azimuthServo;
+    private CustomAxonServoController azimuthServo;
 
     private Thread sorterThread;
     private volatile boolean sorterThreadRunning = false;
-    private RobotCoreCustom.CustomSorterController sorterController;
+    private CustomSorterController sorterController;
 
     private Thread launcherPIDThread;
     private volatile boolean launcherPIDThreadRunning = false;
-    private RobotCoreCustom.CustomMotorController launcherMotors;
+    private CustomMotorController launcherMotors;
 
     private Thread driveThread;
     private volatile boolean driveThreadRunning = false;
@@ -50,8 +49,7 @@ public class CustomThreads {
     private volatile boolean followerUpdateThreadRunning = false;
 
 
-    public CustomThreads(RobotCoreCustom robotCoreCustom, Follower follower) {
-        this.robotCoreCustom = robotCoreCustom;
+    public CustomThreads(Follower follower) {
         this.follower = follower;
         // Initialize cached pose to default - will be updated by followerUpdateThread
         // We don't call follower.getPose() here because it might not be safe during construction
@@ -120,7 +118,7 @@ public class CustomThreads {
      * Sets the azimuth servo controller for the PID thread
      * @param azimuthServo The CustomAxonServoController to run PID on
      */
-    public void setAzimuthServo(RobotCoreCustom.CustomAxonServoController azimuthServo) {
+    public void setAzimuthServo(CustomAxonServoController azimuthServo) {
         this.azimuthServo = azimuthServo;
     }
 
@@ -128,7 +126,7 @@ public class CustomThreads {
      * Sets the sorter controller to be managed by the thread
      * @param sorterController The CustomSorterController
      */
-    public void setSorterController(RobotCoreCustom.CustomSorterController sorterController) {
+    public void setSorterController(CustomSorterController sorterController) {
         this.sorterController = sorterController;
     }
 
@@ -136,7 +134,7 @@ public class CustomThreads {
      * Sets the launcher motor controller for the PID thread
      * @param launcherMotors The CustomMotorController to run PID on
      */
-    public void setLauncherMotors(RobotCoreCustom.CustomMotorController launcherMotors) {
+    public void setLauncherMotors(CustomMotorController launcherMotors) {
         this.launcherMotors = launcherMotors;
     }
 
@@ -168,7 +166,7 @@ public class CustomThreads {
                 try {
                     // Use thread-safe pose access to prevent race conditions
                     Pose safePose = getThreadSafePose();
-                    robotCoreCustom.drawCurrentWithPose(safePose);
+                    DashboardDrawing.drawCurrentWithPose(safePose);
                     Thread.sleep(10); // Adjust the sleep time as needed
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
