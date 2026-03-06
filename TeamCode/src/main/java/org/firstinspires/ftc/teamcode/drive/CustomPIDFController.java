@@ -9,11 +9,13 @@ public class CustomPIDFController {
 	public volatile double error;
 
 	// Internal state variables
-	private double errorSum = 0;    // Integral term accumulator
-	private double lastError = 0;  // For derivative term
-	private double filteredDerivative = 0; // Low-pass filtered derivative to reduce noise
-	private long lastTimeNano = System.nanoTime(); // Time tracking (nanosecond precision)
-	private double lastOutput = 0; // Last calculated output
+	private double errorSum = 0;         // Integral term accumulator
+	private double lastError = 0;        // For integral zero-crossing detection
+	private double lastMeasurement = Double.NaN; // For derivative-on-measurement (avoids derivative kick)
+	private double filteredDerivative = 0;       // Low-pass filtered derivative
+	private long lastTimeNano = System.nanoTime();
+	private double lastOutput = 0;
+	private double lastTarget = Double.NaN;      // Track target changes for feedforward & deadzone
 
 	// Constructor
 	public CustomPIDFController(double kP, double kI, double kD, double kF) {
@@ -23,127 +25,133 @@ public class CustomPIDFController {
 		this.kF = kF;
 	}
 
-	/**+
-	 *
-	 * Calculates motor power based on target position and current position.
-	 * @param targetPosition The desired encoder position.
-	 * @param currentPosition The current encoder position.
-	 * @param targetVelocity The desired feedforward velocity (ticks/sec). Use 0 if not required.
+	/**
+	 * Calculates motor power based on target and current position.
+	 * @param targetPosition The desired position.
+	 * @param currentPosition The current position.
+	 * @param targetVelocity The desired feedforward velocity. Use 0 if not required.
 	 * @param range The range within which the error is considered tolerable.
-	 * @return Calculated motor power (range: -1.0 to 1.0).
+	 * @return Calculated power (range: -1.0 to 1.0).
 	 */
 	public synchronized double calculate(double targetPosition, double currentPosition, double targetVelocity, double range) {
 		return calculate(targetPosition, currentPosition, targetVelocity, range, 5000.0);
 	}
 
 	/**
-	 * Calculates motor power based on target position and current position with custom scaling.
-	 * @param targetPosition The desired encoder position.
-	 * @param currentPosition The current encoder position.
-	 * @param targetVelocity The desired feedforward velocity (ticks/sec). Use 0 if not required.
+	 * Calculates motor power, optimized for both static hold and moving-target tracking.
+	 *
+	 * Key design choices for moving targets:
+	 * 1. Derivative-on-measurement: D term acts on -d(measurement)/dt, not d(error)/dt.
+	 *    This eliminates "derivative kick" — sudden D spikes when the target jumps/moves.
+	 * 2. Integral doesn't reset on zero-crossing during tracking — only on direction
+	 *    reversal when the target is stationary (actual overshoot).
+	 * 3. Deadzone only activates when the target is not moving — during tracking, any
+	 *    error produces output, preventing the stutter of repeated on/off engagement.
+	 * 4. Target velocity feedforward: the F term can drive the servo ahead of the error,
+	 *    reducing tracking lag to near-zero for smooth movements.
+	 *
+	 * @param targetPosition The desired position.
+	 * @param currentPosition The current position (measurement).
+	 * @param targetVelocity Feedforward velocity (units/sec). Use 0 if not required.
 	 * @param range The range within which the error is considered tolerable.
-	 * @param scale Scale factor to normalize output (use 5000 for motors, 180 for servos in degrees).
-	 * @return Calculated motor power (range: -1.0 to 1.0).
+	 * @param scale Scale factor to normalize output (5000 for motors, 361 for servos in degrees).
+	 * @return Calculated power (range: -1.0 to 1.0).
 	 */
 	public synchronized double calculate(double targetPosition, double currentPosition, double targetVelocity, double range, double scale) {
-		// Calculate error with wrap-around handling for angular positions
-		// When scale is 180 (degrees), handle wrap-around to find shortest path
+		boolean isAngular = (scale <= 360.0);
+		double halfScale = scale / 2.0;
+
+		// === Error calculation with wrap-around ===
 		error = targetPosition - currentPosition;
-
-		// Wrap-around correction for angular positions (when scale is small like 180)
-		if (scale <= 360.0) {  // Likely an angular measurement
-			// Normalize error to [-scale/2, scale/2] to find shortest path
-			while (error > scale / 2.0) {
-				error -= scale;
-			}
-			while (error < -scale / 2.0) {
-				error += scale;
-			}
+		if (isAngular) {
+			while (error > halfScale) error -= scale;
+			while (error < -halfScale) error += scale;
 		}
 
-		// Calculate time delta (nanosecond precision)
+		// === Time delta ===
 		long currentTimeNano = System.nanoTime();
-		double deltaTime = (currentTimeNano - lastTimeNano) / 1.0e9; // Convert nanoseconds to seconds
+		double deltaTime = (currentTimeNano - lastTimeNano) / 1.0e9;
+		if (deltaTime <= 0.0) deltaTime = 0.000001;
 
-		// Prevent division by zero or negative time
-		if (deltaTime <= 0.0) {
-			deltaTime = 0.000001; // 1 microsecond minimum
+		// === Detect if target is moving ===
+		// Compare current target to previous target. If it changed, we're tracking.
+		boolean targetMoving = false;
+		if (!Double.isNaN(lastTarget)) {
+			double targetDelta = targetPosition - lastTarget;
+			if (isAngular) {
+				while (targetDelta > halfScale) targetDelta -= scale;
+				while (targetDelta < -halfScale) targetDelta += scale;
+			}
+			targetMoving = Math.abs(targetDelta) > 0.01;
 		}
 
-		// Deadzone: if error is very small, set output to zero to prevent jitter
-		// Use configurable deadzone from MDOConstants for azimuth (when scale <= 360), otherwise use default 0.1
-		double deadzonePercent = (scale <= 360.0) ? MDOConstants.AzimuthPIDDeadzonePercent : 0.1;
+		// === Deadzone: only when target is stationary ===
+		// During tracking (target moving), always produce output — even tiny errors
+		// need correction, and dropping to 0 causes stutter.
+		double deadzonePercent = isAngular ? MDOConstants.AzimuthPIDDeadzonePercent : 0.1;
 		double deadzone = range * deadzonePercent;
-		if (Math.abs(error) < deadzone) {
-			errorSum = 0; // Clear integral when in deadzone
+		if (!targetMoving && Math.abs(error) < deadzone) {
+			errorSum = 0;
 			lastError = error;
+			lastTarget = targetPosition;
+			lastMeasurement = currentPosition;
 			lastTimeNano = currentTimeNano;
 			lastOutput = 0.0;
 			return 0.0;
 		}
 
-		// Proportional term
+		// === Proportional term ===
 		double pTerm = kP * error;
 
-		// Integral term with anti-windup
-		// Reset integral if error direction changed (crossed target = overshoot, or reversed direction)
+		// === Integral term with tracking-aware anti-windup ===
+		// Only reset on zero-crossing when the target is NOT moving.
+		// During tracking, zero-crossings are normal (servo catching up then slightly
+		// overshooting the moving target) and resetting the integral causes lag.
 		boolean errorDirectionChanged = (error > 0 && lastError < 0) || (error < 0 && lastError > 0);
-		if (errorDirectionChanged) {
-			errorSum = 0;  // Reset integral on any zero-crossing to prevent overshoot
+		if (errorDirectionChanged && !targetMoving) {
+			errorSum = 0;
 		}
 
 		errorSum += error * deltaTime;
-		double iTerm = kI * errorSum;
 
-		// Reset integral when within range
-		if (Math.abs(error) < range) {
-			errorSum = 0;
-			iTerm = 0;
-		}
-		// Integral windup protection: clamp accumulated error
-		double maxIntegral = scale * 0.5; // Max integral contribution
+		// Windup clamp
+		double maxIntegral = scale * 0.5;
 		if (Math.abs(errorSum) > maxIntegral) {
 			errorSum = Math.signum(errorSum) * maxIntegral;
-			iTerm = kI * errorSum;
 		}
 
-		// Derivative term with smoothing to reduce noise
-		// Calculate error change, handling wrap-around for angular positions
-		double errorChange = error - lastError;
+		double iTerm = kI * errorSum;
 
-		// For angular measurements, normalize the error change to prevent spikes at wrap-around
-		if (scale <= 360.0) {
-			while (errorChange > scale / 2.0) {
-				errorChange -= scale;
+		// === Derivative term: derivative-on-measurement ===
+		// Instead of d(error)/dt, compute -d(measurement)/dt.
+		// This is mathematically equivalent when the target is constant, but when the
+		// target changes, it ONLY responds to actual servo movement — no kick.
+		double dTerm = 0.0;
+		if (!Double.isNaN(lastMeasurement)) {
+			double measurementChange = currentPosition - lastMeasurement;
+			if (isAngular) {
+				while (measurementChange > halfScale) measurementChange -= scale;
+				while (measurementChange < -halfScale) measurementChange += scale;
 			}
-			while (errorChange < -scale / 2.0) {
-				errorChange += scale;
-			}
+			double derivative = -measurementChange / deltaTime; // Negative: opposing movement
+
+			// Low-pass filter (alpha=0.3 → 30% new, 70% old)
+			filteredDerivative = 0.3 * derivative + 0.7 * filteredDerivative;
+			dTerm = kD * filteredDerivative;
 		}
 
-		double derivative = errorChange / deltaTime;
-
-		// Low-pass filter on derivative to reduce noise-induced jitter
-		// Alpha = 0.3: 30% new measurement, 70% previous filtered value
-		double alpha = 0.3;
-		filteredDerivative = alpha * derivative + (1.0 - alpha) * filteredDerivative;
-
-		double dTerm = kD * filteredDerivative;
-
-		// Feedforward term
+		// === Feedforward term ===
 		double fTerm = kF * targetVelocity;
 
-		// Calculate total output
+		// === Total output ===
 		double output = pTerm + iTerm + dTerm + fTerm;
-
-		// Scale output to valid power range
 		double scaledOutput = output / scale;
+		scaledOutput = Math.min(1.0, Math.max(-1.0, scaledOutput));
 
-		// Clamp to valid power range
-		scaledOutput = Math.min(1.0, Math.max(scaledOutput, -1.0));
-
-		// Save current state for next calculation
+		// === Save state ===
 		lastError = error;
+		lastTarget = targetPosition;
+		lastMeasurement = currentPosition;
 		lastTimeNano = currentTimeNano;
 		lastOutput = scaledOutput;
 
@@ -163,3 +171,4 @@ public class CustomPIDFController {
 		return new CustomPIDFController(kP, kI, kD, kF);
 	}
 }
+

@@ -8,14 +8,14 @@ import com.pedropathing.geometry.Pose;
  */
 public class ElevationSubsystem {
 
-	private final CustomAxonServoController elevationServo;
+	private final CustomServoController elevationServo;
 
 	// State
 	private Double launchElevationDeg = 0.0;
 	private double elevationServoTarget = 0.0;
 	private double elevationServoFinal = 0.0;
 
-	public ElevationSubsystem(CustomAxonServoController elevationServo) {
+	public ElevationSubsystem(CustomServoController elevationServo) {
 		this.elevationServo = elevationServo;
 	}
 
@@ -59,7 +59,7 @@ public class ElevationSubsystem {
 		return elevationServoFinal;
 	}
 
-	public CustomAxonServoController getServoController() {
+	public CustomServoController getServoController() {
 		return elevationServo;
 	}
 }

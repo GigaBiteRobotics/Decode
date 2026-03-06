@@ -4,35 +4,54 @@ import com.qualcomm.robotcore.hardware.Gamepad;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 /**
- * GamepadEventHandler — A centralized event-driven input system for FTC gamepads.
+ * GamepadEventHandler — A lambda-driven, event-based input system for FTC gamepads.
  *
- * <p>Register named button/trigger bindings with different event types (press, release, hold,
- * debounced press) during init, then call {@link #update(Gamepad)} once per loop to dispatch
- * all registered callbacks automatically.</p>
+ * <p>Each button/trigger binding is a single {@link GamepadBinding} variable. When the
+ * binding's event condition fires (press, release, hold, debounced press), it invokes
+ * all registered lambdas. Lambdas are tagged so they can be individually added, removed,
+ * or replaced at runtime — multiple actions from one button press.</p>
  *
- * <h3>Supported Event Types:</h3>
+ * <h3>Key Design:</h3>
  * <ul>
- *   <li><b>ON_PRESS</b> — fires once on the rising edge (button just pressed)</li>
- *   <li><b>ON_RELEASE</b> — fires once on the falling edge (button just released)</li>
- *   <li><b>ON_HOLD</b> — fires every loop iteration while the button is held</li>
- *   <li><b>DEBOUNCED_PRESS</b> — fires repeatedly while held, gated by a cooldown timer</li>
+ *   <li>A binding is created once via {@code handler.bind(...)}, returning a {@link GamepadBinding}</li>
+ *   <li>Lambdas are added to a binding via {@code binding.addAction("tag", () -> ...)}</li>
+ *   <li>Lambdas are removed via {@code binding.removeAction("tag")}</li>
+ *   <li>Lambdas are replaced via {@code binding.replaceAction("tag", () -> ...)}</li>
+ *   <li>Call {@link #update(Gamepad)} once per loop — the handler detects edges/holds
+ *       and invokes all lambdas on triggered bindings</li>
  * </ul>
  *
  * <h3>Usage Example:</h3>
  * <pre>{@code
  * GamepadEventHandler gp2 = new GamepadEventHandler();
  *
- * // Toggle launcher on D-pad down press
- * gp2.onPress("launcherToggle", gp -> gp.dpad_down, () -> launcher.toggleSpin());
+ * // Create a binding for dpad_down press, and add two actions
+ * GamepadBinding launcherBtn = gp2.bindPress("launcherToggle", gp -> gp.dpad_down);
+ * launcherBtn.addAction("spin", () -> launcher.toggleSpin());
+ * launcherBtn.addAction("rumble", () -> gamepad2.rumble(200));
  *
- * // Adjust azimuth with 150ms debounce
- * gp2.onDebouncedPress("azimuthRight", gp -> gp.dpad_right, 150, () -> turret.adjustAzimuth(1.0));
+ * // Later, remove just the rumble:
+ * launcherBtn.removeAction("rumble");
+ *
+ * // Replace the spin action with something else:
+ * launcherBtn.replaceAction("spin", () -> launcher.togglePoop());
+ *
+ * // Debounced press with 150ms cooldown
+ * GamepadBinding azBtn = gp2.bindDebouncedPress("azRight", gp -> gp.dpad_right, 150);
+ * azBtn.addAction("adjust", () -> turret.adjustAzimuth(1.0));
  *
  * // Analog trigger edge detection
- * gp2.onAnalogPress("rapidFire", gp -> gp.right_trigger, 0.5, () -> launcher.startRapidFire());
+ * GamepadBinding rapidBtn = gp2.bindAnalogPress("rapidFire", gp -> gp.right_trigger, 0.5);
+ * rapidBtn.addAction("fire", () -> launcher.startRapidFire());
+ *
+ * // Shorthand: bind + single action in one call (returns the binding)
+ * gp2.onPress("intakeIn", gp -> gp.a, () -> intake.toggleIn());
  *
  * // In loop():
  * gp2.update(gamepad2);
@@ -71,7 +90,7 @@ public class GamepadEventHandler {
     // ===== Event Types =====
 
     /**
-     * Defines when a binding's action is triggered.
+     * Defines when a binding's actions are triggered.
      */
     public enum EventType {
         /** Fires once when the button transitions from not-pressed to pressed (rising edge). */
@@ -84,187 +103,362 @@ public class GamepadEventHandler {
         DEBOUNCED_PRESS
     }
 
-    // ===== Binding =====
+    // ===== Tagged Action =====
 
     /**
-     * Internal representation of a registered button binding.
+     * A named action within a binding. The tag allows individual add/remove/replace.
      */
-    private static class Binding {
-        final String name;
-        final ButtonReader reader;
-        final EventType eventType;
-        final ButtonAction action;
-        final long debounceMs;
+    private static class TaggedAction {
+        final String tag;
+        ButtonAction action;
 
-        // Internal state
+        TaggedAction(String tag, ButtonAction action) {
+            this.tag = tag;
+            this.action = action;
+        }
+    }
+
+    // ===== GamepadBinding =====
+
+    /**
+     * Represents a single button/trigger binding with an event type and a list of tagged lambdas.
+     * This is the object you hold onto to add, remove, or replace actions at runtime.
+     */
+    public static class GamepadBinding {
+        private final String name;
+        private final ButtonReader reader;
+        private final EventType eventType;
+        private final long debounceMs;
+        private final List<TaggedAction> actions = new ArrayList<>();
+
+        // Internal edge-detection state
         boolean previousState = false;
         final ElapsedTime timer = new ElapsedTime();
 
-        Binding(String name, ButtonReader reader, EventType eventType, ButtonAction action, long debounceMs) {
+        GamepadBinding(String name, ButtonReader reader, EventType eventType, long debounceMs) {
             this.name = name;
             this.reader = reader;
             this.eventType = eventType;
-            this.action = action;
             this.debounceMs = debounceMs;
+        }
+
+        /**
+         * Add a new tagged action to this binding. When the event fires, this action
+         * will be invoked along with all other actions on this binding.
+         * If a tag already exists, it is replaced.
+         *
+         * @param tag    Unique tag for this action (used for remove/replace)
+         * @param action Lambda to execute
+         * @return this binding for chaining
+         */
+        public GamepadBinding addAction(String tag, ButtonAction action) {
+            for (TaggedAction ta : actions) {
+                if (ta.tag.equals(tag)) {
+                    ta.action = action;
+                    return this;
+                }
+            }
+            actions.add(new TaggedAction(tag, action));
+            return this;
+        }
+
+        /**
+         * Remove an action by its tag. No-op if the tag doesn't exist.
+         *
+         * @param tag The tag of the action to remove
+         * @return this binding for chaining
+         */
+        public GamepadBinding removeAction(String tag) {
+            Iterator<TaggedAction> it = actions.iterator();
+            while (it.hasNext()) {
+                if (it.next().tag.equals(tag)) {
+                    it.remove();
+                    break;
+                }
+            }
+            return this;
+        }
+
+        /**
+         * Replace an existing action's lambda by tag. If the tag doesn't exist, adds it.
+         *
+         * @param tag    The tag to find and replace
+         * @param action The new lambda
+         * @return this binding for chaining
+         */
+        public GamepadBinding replaceAction(String tag, ButtonAction action) {
+            return addAction(tag, action);
+        }
+
+        /**
+         * Check if an action with the given tag exists on this binding.
+         *
+         * @param tag The tag to look for
+         * @return true if the action exists
+         */
+        public boolean hasAction(String tag) {
+            for (TaggedAction ta : actions) {
+                if (ta.tag.equals(tag)) return true;
+            }
+            return false;
+        }
+
+        /**
+         * Remove all actions from this binding.
+         *
+         * @return this binding for chaining
+         */
+        public GamepadBinding clearActions() {
+            actions.clear();
+            return this;
+        }
+
+        /**
+         * Get the number of actions registered on this binding.
+         *
+         * @return action count
+         */
+        public int getActionCount() {
+            return actions.size();
+        }
+
+        /**
+         * Get the name of this binding.
+         *
+         * @return binding name
+         */
+        public String getName() {
+            return name;
+        }
+
+        /**
+         * Fire all registered actions. Called internally by the handler when the event triggers.
+         */
+        void fireAll() {
+            for (TaggedAction ta : actions) {
+                ta.action.run();
+            }
         }
     }
 
     // ===== Fields =====
 
-    private final List<Binding> bindings = new ArrayList<>();
+    private final Map<String, GamepadBinding> bindings = new HashMap<>();
 
-    // ===== Registration Methods =====
+    // ===== Bind Methods (return GamepadBinding to attach lambdas) =====
 
     /**
-     * Register a callback that fires once when a button is first pressed (rising edge).
+     * Create a rising-edge (ON_PRESS) binding. Returns the binding so you can add actions.
      *
-     * @param name   A descriptive name for this binding (for debugging)
+     * @param name   A unique name for this binding
      * @param reader Lambda to read the button state, e.g. {@code gp -> gp.a}
-     * @param action Lambda to execute on press, e.g. {@code () -> launcher.toggleSpin()}
-     * @return this handler for chaining
+     * @return The created {@link GamepadBinding}
      */
-    public GamepadEventHandler onPress(String name, ButtonReader reader, ButtonAction action) {
-        bindings.add(new Binding(name, reader, EventType.ON_PRESS, action, 0));
-        return this;
+    public GamepadBinding bindPress(String name, ButtonReader reader) {
+        GamepadBinding binding = new GamepadBinding(name, reader, EventType.ON_PRESS, 0);
+        bindings.put(name, binding);
+        return binding;
     }
 
     /**
-     * Register a callback that fires once when a button is released (falling edge).
+     * Create a falling-edge (ON_RELEASE) binding.
      *
-     * @param name   A descriptive name for this binding
+     * @param name   A unique name for this binding
      * @param reader Lambda to read the button state
-     * @param action Lambda to execute on release
-     * @return this handler for chaining
+     * @return The created {@link GamepadBinding}
      */
-    public GamepadEventHandler onRelease(String name, ButtonReader reader, ButtonAction action) {
-        bindings.add(new Binding(name, reader, EventType.ON_RELEASE, action, 0));
-        return this;
+    public GamepadBinding bindRelease(String name, ButtonReader reader) {
+        GamepadBinding binding = new GamepadBinding(name, reader, EventType.ON_RELEASE, 0);
+        bindings.put(name, binding);
+        return binding;
     }
 
     /**
-     * Register a callback that fires every loop while a button is held down.
+     * Create a hold (ON_HOLD) binding — fires every loop while held.
      *
-     * @param name   A descriptive name for this binding
+     * @param name   A unique name for this binding
      * @param reader Lambda to read the button state
-     * @param action Lambda to execute each loop while held
-     * @return this handler for chaining
+     * @return The created {@link GamepadBinding}
      */
-    public GamepadEventHandler onHold(String name, ButtonReader reader, ButtonAction action) {
-        bindings.add(new Binding(name, reader, EventType.ON_HOLD, action, 0));
-        return this;
+    public GamepadBinding bindHold(String name, ButtonReader reader) {
+        GamepadBinding binding = new GamepadBinding(name, reader, EventType.ON_HOLD, 0);
+        bindings.put(name, binding);
+        return binding;
     }
 
     /**
-     * Register a callback that fires repeatedly while held, gated by a cooldown timer.
-     * The action fires immediately on first press, then again every {@code debounceMs} milliseconds.
+     * Create a debounced press binding — fires repeatedly while held, gated by cooldown.
      *
-     * @param name       A descriptive name for this binding
+     * @param name       A unique name for this binding
      * @param reader     Lambda to read the button state
      * @param debounceMs Minimum milliseconds between repeated firings
-     * @param action     Lambda to execute
-     * @return this handler for chaining
+     * @return The created {@link GamepadBinding}
      */
-    public GamepadEventHandler onDebouncedPress(String name, ButtonReader reader, long debounceMs, ButtonAction action) {
-        bindings.add(new Binding(name, reader, EventType.DEBOUNCED_PRESS, action, debounceMs));
-        return this;
+    public GamepadBinding bindDebouncedPress(String name, ButtonReader reader, long debounceMs) {
+        GamepadBinding binding = new GamepadBinding(name, reader, EventType.DEBOUNCED_PRESS, debounceMs);
+        bindings.put(name, binding);
+        return binding;
     }
 
     /**
-     * Register a rising-edge callback for an analog input (trigger/stick) that crosses a threshold.
-     * Behaves like {@link #onPress} but converts an analog value to digital using the threshold.
+     * Create a rising-edge binding for an analog input that crosses a threshold.
      *
-     * @param name      A descriptive name for this binding
+     * @param name      A unique name for this binding
      * @param reader    Lambda to read the analog value, e.g. {@code gp -> gp.right_trigger}
-     * @param threshold The value above which the input is considered "pressed" (e.g. 0.5)
-     * @param action    Lambda to execute on press
-     * @return this handler for chaining
+     * @param threshold The value above which the input is considered "pressed"
+     * @return The created {@link GamepadBinding}
      */
-    public GamepadEventHandler onAnalogPress(String name, AnalogReader reader, double threshold, ButtonAction action) {
+    public GamepadBinding bindAnalogPress(String name, AnalogReader reader, double threshold) {
         ButtonReader digitalReader = gp -> reader.read(gp) > threshold;
-        bindings.add(new Binding(name, digitalReader, EventType.ON_PRESS, action, 0));
-        return this;
+        GamepadBinding binding = new GamepadBinding(name, digitalReader, EventType.ON_PRESS, 0);
+        bindings.put(name, binding);
+        return binding;
     }
 
     /**
-     * Register a release callback for an analog input that drops below a threshold.
+     * Create a falling-edge binding for an analog input dropping below a threshold.
      *
-     * @param name      A descriptive name for this binding
+     * @param name      A unique name for this binding
      * @param reader    Lambda to read the analog value
      * @param threshold The value above which the input is considered "pressed"
-     * @param action    Lambda to execute on release (when value drops below threshold)
-     * @return this handler for chaining
+     * @return The created {@link GamepadBinding}
      */
-    public GamepadEventHandler onAnalogRelease(String name, AnalogReader reader, double threshold, ButtonAction action) {
+    public GamepadBinding bindAnalogRelease(String name, AnalogReader reader, double threshold) {
         ButtonReader digitalReader = gp -> reader.read(gp) > threshold;
-        bindings.add(new Binding(name, digitalReader, EventType.ON_RELEASE, action, 0));
-        return this;
+        GamepadBinding binding = new GamepadBinding(name, digitalReader, EventType.ON_RELEASE, 0);
+        bindings.put(name, binding);
+        return binding;
     }
 
     /**
-     * Register a hold callback for an analog input above a threshold.
+     * Create a hold binding for an analog input above a threshold.
      *
-     * @param name      A descriptive name for this binding
+     * @param name      A unique name for this binding
      * @param reader    Lambda to read the analog value
      * @param threshold The value above which the input is considered "pressed"
-     * @param action    Lambda to execute each loop while above threshold
-     * @return this handler for chaining
+     * @return The created {@link GamepadBinding}
      */
-    public GamepadEventHandler onAnalogHold(String name, AnalogReader reader, double threshold, ButtonAction action) {
+    public GamepadBinding bindAnalogHold(String name, AnalogReader reader, double threshold) {
         ButtonReader digitalReader = gp -> reader.read(gp) > threshold;
-        bindings.add(new Binding(name, digitalReader, EventType.ON_HOLD, action, 0));
-        return this;
+        GamepadBinding binding = new GamepadBinding(name, digitalReader, EventType.ON_HOLD, 0);
+        bindings.put(name, binding);
+        return binding;
     }
 
     /**
-     * Register a debounced callback for an analog input above a threshold.
+     * Create a debounced binding for an analog input above a threshold.
      *
-     * @param name       A descriptive name for this binding
+     * @param name       A unique name for this binding
      * @param reader     Lambda to read the analog value
      * @param threshold  The value above which the input is considered "pressed"
      * @param debounceMs Minimum milliseconds between repeated firings
-     * @param action     Lambda to execute
-     * @return this handler for chaining
+     * @return The created {@link GamepadBinding}
      */
-    public GamepadEventHandler onAnalogDebouncedPress(String name, AnalogReader reader, double threshold, long debounceMs, ButtonAction action) {
+    public GamepadBinding bindAnalogDebouncedPress(String name, AnalogReader reader, double threshold, long debounceMs) {
         ButtonReader digitalReader = gp -> reader.read(gp) > threshold;
-        bindings.add(new Binding(name, digitalReader, EventType.DEBOUNCED_PRESS, action, debounceMs));
-        return this;
+        GamepadBinding binding = new GamepadBinding(name, digitalReader, EventType.DEBOUNCED_PRESS, debounceMs);
+        bindings.put(name, binding);
+        return binding;
+    }
+
+    // ===== Shorthand Registration (bind + single action in one call) =====
+
+    /**
+     * Shorthand: create a press binding with a single action.
+     *
+     * @param name   Binding name (also used as the action tag)
+     * @param reader Lambda to read the button state
+     * @param action Lambda to execute on press
+     * @return The created {@link GamepadBinding}
+     */
+    public GamepadBinding onPress(String name, ButtonReader reader, ButtonAction action) {
+        return bindPress(name, reader).addAction(name, action);
+    }
+
+    /**
+     * Shorthand: create a release binding with a single action.
+     */
+    public GamepadBinding onRelease(String name, ButtonReader reader, ButtonAction action) {
+        return bindRelease(name, reader).addAction(name, action);
+    }
+
+    /**
+     * Shorthand: create a hold binding with a single action.
+     */
+    public GamepadBinding onHold(String name, ButtonReader reader, ButtonAction action) {
+        return bindHold(name, reader).addAction(name, action);
+    }
+
+    /**
+     * Shorthand: create a debounced press binding with a single action.
+     */
+    public GamepadBinding onDebouncedPress(String name, ButtonReader reader, long debounceMs, ButtonAction action) {
+        return bindDebouncedPress(name, reader, debounceMs).addAction(name, action);
+    }
+
+    /**
+     * Shorthand: create an analog press binding with a single action.
+     */
+    public GamepadBinding onAnalogPress(String name, AnalogReader reader, double threshold, ButtonAction action) {
+        return bindAnalogPress(name, reader, threshold).addAction(name, action);
+    }
+
+    /**
+     * Shorthand: create an analog release binding with a single action.
+     */
+    public GamepadBinding onAnalogRelease(String name, AnalogReader reader, double threshold, ButtonAction action) {
+        return bindAnalogRelease(name, reader, threshold).addAction(name, action);
+    }
+
+    /**
+     * Shorthand: create an analog hold binding with a single action.
+     */
+    public GamepadBinding onAnalogHold(String name, AnalogReader reader, double threshold, ButtonAction action) {
+        return bindAnalogHold(name, reader, threshold).addAction(name, action);
+    }
+
+    /**
+     * Shorthand: create an analog debounced press binding with a single action.
+     */
+    public GamepadBinding onAnalogDebouncedPress(String name, AnalogReader reader, double threshold, long debounceMs, ButtonAction action) {
+        return bindAnalogDebouncedPress(name, reader, threshold, debounceMs).addAction(name, action);
     }
 
     // ===== Core Update =====
 
     /**
      * Process all registered bindings against the current gamepad state.
-     * Call this exactly once per loop iteration.
+     * Call this exactly once per loop iteration. Only bindings whose event condition
+     * is met will have their lambdas fired.
      *
      * @param gamepad The gamepad to read inputs from (gamepad1 or gamepad2)
      */
     public void update(Gamepad gamepad) {
-        for (Binding binding : bindings) {
+        for (GamepadBinding binding : bindings.values()) {
             boolean current = binding.reader.read(gamepad);
 
             switch (binding.eventType) {
                 case ON_PRESS:
                     if (current && !binding.previousState) {
-                        binding.action.run();
+                        binding.fireAll();
                     }
                     break;
 
                 case ON_RELEASE:
                     if (!current && binding.previousState) {
-                        binding.action.run();
+                        binding.fireAll();
                     }
                     break;
 
                 case ON_HOLD:
                     if (current) {
-                        binding.action.run();
+                        binding.fireAll();
                     }
                     break;
 
                 case DEBOUNCED_PRESS:
                     if (current && binding.timer.milliseconds() > binding.debounceMs) {
-                        binding.action.run();
+                        binding.fireAll();
                         binding.timer.reset();
                     }
                     break;
@@ -277,6 +471,25 @@ public class GamepadEventHandler {
     // ===== Utility =====
 
     /**
+     * Get a binding by name. Useful for adding/removing actions after initial setup.
+     *
+     * @param name The binding name
+     * @return The binding, or null if not found
+     */
+    public GamepadBinding getBinding(String name) {
+        return bindings.get(name);
+    }
+
+    /**
+     * Remove an entire binding (and all its actions) by name.
+     *
+     * @param name The binding name to remove
+     */
+    public void removeBinding(String name) {
+        bindings.remove(name);
+    }
+
+    /**
      * Remove all registered bindings. Useful for reconfiguring controls at runtime.
      */
     public void clearAll() {
@@ -285,10 +498,23 @@ public class GamepadEventHandler {
 
     /**
      * Get the number of registered bindings.
+     *
      * @return binding count
      */
     public int getBindingCount() {
         return bindings.size();
     }
-}
 
+    /**
+     * Get the total number of actions across all bindings.
+     *
+     * @return total action count
+     */
+    public int getTotalActionCount() {
+        int count = 0;
+        for (GamepadBinding binding : bindings.values()) {
+            count += binding.getActionCount();
+        }
+        return count;
+    }
+}

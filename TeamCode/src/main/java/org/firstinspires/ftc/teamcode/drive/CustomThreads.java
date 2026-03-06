@@ -23,7 +23,7 @@ public class CustomThreads {
 
     private Thread azimuthPIDThread;
     private volatile boolean azimuthPIDThreadRunning = false;
-    private CustomAxonServoController azimuthServo;
+    private CustomServoController azimuthServo;
 
     private Thread sorterThread;
     private volatile boolean sorterThreadRunning = false;
@@ -118,7 +118,7 @@ public class CustomThreads {
      * Sets the azimuth servo controller for the PID thread
      * @param azimuthServo The CustomAxonServoController to run PID on
      */
-    public void setAzimuthServo(CustomAxonServoController azimuthServo) {
+    public void setAzimuthServo(CustomServoController azimuthServo) {
         this.azimuthServo = azimuthServo;
     }
 

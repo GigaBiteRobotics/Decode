@@ -24,7 +24,7 @@ import org.firstinspires.ftc.teamcode.drive.LauncherCalculations;
 import org.firstinspires.ftc.teamcode.drive.LocalizationAutoAim;
 import org.firstinspires.ftc.teamcode.drive.MDOConstants;
 import org.firstinspires.ftc.teamcode.drive.HubInitializer;
-import org.firstinspires.ftc.teamcode.drive.CustomAxonServoController;
+import org.firstinspires.ftc.teamcode.drive.CustomServoController;
 import org.firstinspires.ftc.teamcode.drive.CustomMotorController;
 import org.firstinspires.ftc.teamcode.drive.CustomMotor;
 import org.firstinspires.ftc.teamcode.drive.CustomTelemetry;
@@ -33,7 +33,6 @@ import org.firstinspires.ftc.teamcode.drive.TurretSubsystem;
 import org.firstinspires.ftc.teamcode.drive.ElevationSubsystem;
 import org.firstinspires.ftc.teamcode.drive.LauncherSubsystem;
 import org.firstinspires.ftc.teamcode.drive.IntakeSubsystem;
-import org.firstinspires.ftc.teamcode.drive.DrawbridgeSubsystem;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
 @TeleOp(name = "Drive", group = "!advanced")
@@ -47,7 +46,6 @@ public class MainDriveOpmode extends OpMode {
 	ElevationSubsystem elevation;
 	LauncherSubsystem launcher;
 	IntakeSubsystem intake;
-	DrawbridgeSubsystem drawbridge;
 	CustomSorterController sorterController;
 
 	// Telemetry
@@ -139,7 +137,7 @@ public class MainDriveOpmode extends OpMode {
 		// ===== SUBSYSTEM INITIALIZATION =====
 
 		// Elevation subsystem
-		CustomAxonServoController elevationServo = new CustomAxonServoController(
+		CustomServoController elevationServo = new CustomServoController(
 				hardwareMap,
 				new String[]{"elevationServo"},
 				new boolean[]{false},
@@ -151,7 +149,7 @@ public class MainDriveOpmode extends OpMode {
 		elevation = new ElevationSubsystem(elevationServo);
 
 		// Turret (azimuth) subsystem
-		CustomAxonServoController azimuthServo = new CustomAxonServoController(
+		CustomServoController azimuthServo = new CustomServoController(
 				hardwareMap,
 				new String[]{"azimuthServo0", "azimuthServo1"},
 				new boolean[]{true, true},
@@ -187,10 +185,6 @@ public class MainDriveOpmode extends OpMode {
 				new CustomPIDFController(0, 0, 0, 0)
 		);
 		intake = new IntakeSubsystem(intakeMotor);
-
-		// Drawbridge subsystem
-		CustomMotor drawbridgeMotor = new CustomMotor(hardwareMap, "drawBridge", false, 67, new CustomPIDFController(0, 0, 0, 0));
-		drawbridge = new DrawbridgeSubsystem(drawbridgeMotor);
 
 		// ===== FOLLOWER INITIALIZATION =====
 		follower = Constants.createFollower(hardwareMap);
@@ -267,19 +261,12 @@ public class MainDriveOpmode extends OpMode {
 		// Left trigger: Toggle launcher reverse
 		gp2Handler.onAnalogPress("launcherReverse", gp -> (double) gp.left_trigger, 0.5, () -> launcher.toggleReverse());
 
-		// D-pad Left/Right: Manual azimuth offset adjustment (150ms debounce)
-		gp2Handler.onDebouncedPress("azimuthRight", gp -> gp.dpad_right, 150, () -> turret.adjustAzimuth(1.0));
-		gp2Handler.onDebouncedPress("azimuthLeft", gp -> gp.dpad_left, 150, () -> turret.adjustAzimuth(-1.0));
-
-		// Y button: Reset azimuth offset
-		gp2Handler.onDebouncedPress("azimuthReset", gp -> gp.y, 150, () -> turret.resetAzimuthOffset());
-
 		// Right bumper: Launch purple ball (650ms cooldown)
-		gp2Handler.onDebouncedPress("launchPurple", gp -> gp.right_bumper, 650,
+		gp2Handler.onDebouncedPress("launchPurple", gp -> gp.right_bumper, 200,
 				() -> sorterController.launchCached(CustomSorterController.CustomColor.PURPLE));
 
 		// Left bumper: Launch green ball (650ms cooldown)
-		gp2Handler.onDebouncedPress("launchGreen", gp -> gp.left_bumper, 650,
+		gp2Handler.onDebouncedPress("launchGreen", gp -> gp.left_bumper, 200,
 				() -> sorterController.launchCached(CustomSorterController.CustomColor.GREEN));
 
 		// Right trigger: Start rapid fire sequence (edge detection)
@@ -355,6 +342,8 @@ public class MainDriveOpmode extends OpMode {
 		customThreads.startDrawingThread();
 		customThreads.startCPUMonThread();
 		customThreads.startAzimuthPIDThread();
+		// Start the turret's own real-time aiming thread (~1000Hz)
+		turret.startThread();
 		// Start the thread that reads color sensors ~20 times/second
 		customThreads.startSorterThread();
 		// Start the drive thread for more responsive driving
@@ -381,6 +370,8 @@ public class MainDriveOpmode extends OpMode {
 		customThreads.stopDrawingThread();
 		customThreads.stopCPUMonThread();
 		customThreads.stopAzimuthPIDThread();
+		// Stop the turret's real-time aiming thread
+		turret.stopThread();
 		// Stop the thread to prevent resource leaks
 		customThreads.stopSorterThread();
 		// Stop the drive thread
@@ -604,9 +595,6 @@ public class MainDriveOpmode extends OpMode {
 		if (telemetryLoopCounter >= TELEMETRY_UPDATE_INTERVAL) {
 			telemetryLoopCounter = 0;
 			telemetryC.addData("Team", team.toString());
-			telemetryC.addData("Active Azimuth Adj", isRedSide ? MDOConstants.RedAzimuthFineAdjustment : MDOConstants.BlueAzimuthFineAdjustment);
-			telemetryC.addData("Active Elevation Offset", isRedSide ? MDOConstants.RedElevationOffset : MDOConstants.BlueElevationOffset);
-			telemetryC.addData("Active AprilTag Offset", isRedSide ? MDOConstants.RedAprilTagHeadingOffset : MDOConstants.BlueAprilTagHeadingOffset);
 			telemetryC.addData("External Heading (deg)", robotHeadingRad);
 			telemetryC.addData("Pose X", poseX);
 			telemetryC.addData("Pose Y", poseY);
@@ -626,14 +614,32 @@ public class MainDriveOpmode extends OpMode {
 				telemetryC.addData("Launch Elevation (deg)", elevation.getLaunchElevationDeg());
 				telemetryC.addData("Elevation Servo Pos", elevation.getElevationServoFinal());
 				telemetryC.addData("--- AZIMUTH DEBUG ---", "");
-				telemetryC.addData("Robot Heading (raw)", String.format("%.1f", turret.getRobotFieldRelativeAzimuthDeg()));
-				telemetryC.addData("Target Azimuth (raw)", String.format("%.1f", turret.getLaunchAzimuthDeg()));
+				telemetryC.addData("Aiming Thread", turret.isThreadRunning()
+						? String.format("ALIVE @ %.0f Hz", turret.getAimingLoopHz()) : "DEAD");
+				telemetryC.addData("Robot Heading (deg)", String.format("%.2f", turret.getRobotFieldRelativeAzimuthDeg()));
+				telemetryC.addData("Launch Azimuth (deg)", String.format("%.2f", turret.getLaunchAzimuthDeg()));
 				telemetryC.addData("Final Azimuth (deg)", String.format("%.2f", turret.getFinalAzimuthDeg()));
-				telemetryC.addData("Manual Azimuth Offset", turret.getManualAzimuthOffset());
-				telemetryC.addData("Servo Pos (actual)", String.format("%.3f", servoPosition));
-				telemetryC.addData("Servo Target (actual)", String.format("%.3f", servoTarget));
+				telemetryC.addData("Manual Azimuth Offset", String.format("%.1f", turret.getManualAzimuthOffset()));
+				telemetryC.addData("Servo Position (actual)", String.format("%.2f°", servoPosition));
+				telemetryC.addData("Servo Target (deg)", String.format("%.2f°", servoTarget));
+				telemetryC.addData("PID Error (deg)", String.format("%.2f", turret.getServoController().getPIDError()));
+				telemetryC.addData("PID Power", String.format("%.3f", turret.getServoController().getPIDTargetPower()));
+				telemetryC.addData("Analog Voltage", String.format("%.3fV / %.3fV",
+						turret.getServoController().getAnalogVoltage(), turret.getServoController().getMaxVoltage()));
+				telemetryC.addData("Voltage Sag", String.format("%.1f%% (%.1f° comp)",
+						turret.getServoController().getLastVoltageSag() * 100.0,
+						turret.getServoController().getLastCompensationDeg()));
 			} else {
 				telemetryC.addData("Launch Vectors", "Target Unreachable");
+				telemetryC.addData("--- AZIMUTH DEBUG ---", "");
+				telemetryC.addData("Aiming Thread", turret.isThreadRunning()
+						? String.format("ALIVE @ %.0f Hz", turret.getAimingLoopHz()) : "DEAD");
+				telemetryC.addData("Robot Heading (deg)", String.format("%.2f", turret.getRobotFieldRelativeAzimuthDeg()));
+				telemetryC.addData("Final Azimuth (deg)", String.format("%.2f", turret.getFinalAzimuthDeg()));
+				telemetryC.addData("Servo Position (actual)", String.format("%.2f°", servoPosition));
+				telemetryC.addData("Servo Target (deg)", String.format("%.2f°", servoTarget));
+				telemetryC.addData("PID Error (deg)", String.format("%.2f", turret.getServoController().getPIDError()));
+				telemetryC.addData("PID Power", String.format("%.3f", turret.getServoController().getPIDTargetPower()));
 			}
 
 			telemetryC.addData("Launcher RPM", launcher.getRPM());
@@ -641,14 +647,6 @@ public class MainDriveOpmode extends OpMode {
 			telemetryC.addData("Launcher Pressure", launcher.getPIDOutput());
 			telemetryC.addData("launcherRunning", launcher.isSpinning());
 			telemetryC.addData("Launcher Reverse", launcher.isReverse() ? "ON (" + MDOConstants.LauncherReverseRPM + " RPM)" : "OFF");
-
-			// Distance to target and dynamic RPM
-			if (currentTarget != null) {
-				Double[] robotPos = {poseX, poseY, 10.0};
-				double distanceToTarget = LocalizationAutoAim.getDistance(robotPos, currentTarget);
-				telemetryC.addData("Distance to Target (in)", String.format("%.1f", distanceToTarget));
-				telemetryC.addData("Dynamic RPM (Target)", dynamicRPM);
-			}
 
 			telemetryC.addData("Intake State", intake.getState());
 			telemetryC.addData("Ball Count", currentBallCount);
@@ -704,7 +702,6 @@ public class MainDriveOpmode extends OpMode {
 			telemetryC.addData("Total Tracked", String.format("%.2f ms", totalTrackedTime));
 			telemetryC.addData("Unaccounted Time", String.format("%.2f ms (%.1f%%)",
 					unaccountedTime, (unaccountedTime / loopTimeMs) * 100));
-			telemetryC.addData("lifterTimer", lifterAutoLaunchTimer.milliseconds());
 
 			// Update Telemetry
 			telemetryC.update();

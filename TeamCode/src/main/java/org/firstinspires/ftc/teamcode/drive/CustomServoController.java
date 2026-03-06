@@ -13,7 +13,7 @@ import java.util.HashMap;
  * 1. Simple Mode: Tell the servo where to go (like moving a dial)
  * 2. Smart Mode: Uses a sensor to know exactly where the servo is and automatically corrects its position
  */
-public class CustomAxonServoController {
+public class CustomServoController {
 	private final String[] servoGroup;
 	HashMap<String, Servo> servo;
 	AnalogInput aPosition;
@@ -28,14 +28,35 @@ public class CustomAxonServoController {
 	private static final double WRAP_THRESHOLD = 360.0;
 	private volatile double lastAppliedPower = 0.0;
 	private volatile double lastSimplePosition = Double.NaN;
+	private double lastEffectiveTarget = 0.0; // For tracking-aware slew rate
 	private boolean allowWrapAround = true;
 	private final Object lock = new Object();
 
-	public CustomAxonServoController(HardwareMap hardwareMap, String[] servoGroup, boolean[] reverseMap, boolean useAnalogPositionSensors, double[] pidCoefficients, String analogPositionName) {
+	// === Internal voltage sag compensation ===
+	// The servo driver's internal voltage rail powers both the motor and the analog
+	// position sensor. When the motor draws current (any direction of movement),
+	// the internal rail sags — always dropping, never rising. The analog sensor is
+	// ratiometric to this rail, so its output drops proportionally:
+	//
+	//   V_sensor = (position_fraction) × V_rail
+	//   V_rail   = V_nominal × (1 - k × |power|)
+	//
+	// where k = VoltageSagCompensationGain (tunable). Without compensation, we
+	// compute degrees = (V_sensor / V_nominal_max) × 360, which reads LOW under load.
+	// The fix: divide by the estimated sag to recover the true fraction:
+	//
+	//   true_degrees = raw_degrees / (1 - k × |power|)
+	//
+	// This is a multiplicative correction — the error scales with position (larger
+	// reading = larger absolute error), which matches the ratiometric sensor physics.
+	private volatile double lastSagFraction = 0.0;      // Last estimated sag (0.0 = none, 0.05 = 5% drop)
+	private volatile double lastCompensationDeg = 0.0;   // Last correction applied (degrees)
+
+	public CustomServoController(HardwareMap hardwareMap, String[] servoGroup, boolean[] reverseMap, boolean useAnalogPositionSensors, double[] pidCoefficients, String analogPositionName) {
 		this(hardwareMap, servoGroup, reverseMap, useAnalogPositionSensors, pidCoefficients, analogPositionName, false);
 	}
 
-	public CustomAxonServoController(HardwareMap hardwareMap, String[] servoGroup, boolean[] reverseMap, boolean useAnalogPositionSensors, double[] pidCoefficients, String analogPositionName, boolean invertServoDirection) {
+	public CustomServoController(HardwareMap hardwareMap, String[] servoGroup, boolean[] reverseMap, boolean useAnalogPositionSensors, double[] pidCoefficients, String analogPositionName, boolean invertServoDirection) {
 		this.pidCoefficients = pidCoefficients;
 		this.useAnalog = useAnalogPositionSensors;
 		this.servo = new HashMap<>();
@@ -133,6 +154,7 @@ public class CustomAxonServoController {
 			try {
 				currentPosition = voltageToDegrees(aPosition.getVoltage());
 
+				// === Forbidden zone escape (overrides normal PID) ===
 				if (allowWrapAround) {
 					double forbiddenCenter = MDOConstants.AzimuthForbiddenZoneCenter;
 					double forbiddenHalfWidth = MDOConstants.AzimuthForbiddenZoneWidth / 2.0;
@@ -156,32 +178,45 @@ public class CustomAxonServoController {
 					}
 				}
 
-				double error = targetPosition - currentPosition;
+				// === Compute effective target (adjusted for forbidden zone path avoidance) ===
+				// The PID needs the actual target and measurement, not a pre-computed error,
+				// so that derivative-on-measurement and target-tracking detection work correctly.
+				double effectiveTarget = targetPosition;
 
 				if (allowWrapAround) {
-					while (error > 180.0) error -= 360.0;
-					while (error < -180.0) error += 360.0;
+					// Check if the shortest path to the target crosses the forbidden zone.
+					// If so, force the long way around by adjusting the effective target.
+					double shortestError = targetPosition - currentPosition;
+					while (shortestError > 180.0) shortestError -= 360.0;
+					while (shortestError < -180.0) shortestError += 360.0;
 
 					double forbiddenCenter = MDOConstants.AzimuthForbiddenZoneCenter;
 					double forbiddenHalfWidth = MDOConstants.AzimuthForbiddenZoneWidth / 2.0;
 					if (forbiddenHalfWidth > 0) {
 						boolean shortestCrosses = pathCrossesForbiddenZone(
-								currentPosition, currentPosition + error, forbiddenCenter, forbiddenHalfWidth);
+								currentPosition, currentPosition + shortestError, forbiddenCenter, forbiddenHalfWidth);
 						if (shortestCrosses) {
-							if (error > 0) {
-								error -= 360.0;
+							// Force the long way: offset the effective target so the PID
+							// naturally takes the non-forbidden path.
+							if (shortestError > 0) {
+								effectiveTarget = currentPosition + (shortestError - 360.0);
 							} else {
-								error += 360.0;
+								effectiveTarget = currentPosition + (shortestError + 360.0);
 							}
 						}
 					}
 				}
 
+				// === PID calculation with real target & measurement ===
+				// The PID sees actual positions, enabling:
+				// - Derivative-on-measurement (no kick when target moves)
+				// - Target-moving detection (smooth tracking vs. static hold)
 				double power = pidController.calculate(
-						error, 0, 0, 2, 361.0);
+						effectiveTarget, currentPosition, 0, 2, 361.0);
 
 				power = Math.max(-1.0, Math.min(1.0, power));
 
+				// === Dead band compensation (hardware-specific) ===
 				double deadBandPos = MDOConstants.AzimuthServoDeadBandPositive;
 				double deadBandNeg = MDOConstants.AzimuthServoDeadBandNegative;
 				if (power > 0) {
@@ -202,7 +237,18 @@ public class CustomAxonServoController {
 					power = -power;
 				}
 
+				// === Tracking-aware slew rate limiter ===
+				// When the target is moving (tracking), allow faster power changes so the
+				// servo can keep up. When holding static, use the configured slew rate to
+				// prevent oscillation/shaking.
 				double maxDelta = MDOConstants.AzimuthSlewRate;
+				double targetDelta = Math.abs(effectiveTarget - lastEffectiveTarget);
+				if (targetDelta > 0.5) {
+					// Target is moving — allow 3x faster power changes for responsive tracking
+					maxDelta = Math.min(1.0, maxDelta * 3.0);
+				}
+				lastEffectiveTarget = effectiveTarget;
+
 				double delta = power - lastAppliedPower;
 				if (delta > maxDelta) {
 					power = lastAppliedPower + maxDelta;
@@ -311,7 +357,71 @@ public class CustomAxonServoController {
 	}
 
 	private double voltageToDegrees(double voltage) {
-		return (voltage / aPosition.getMaxVoltage()) * WRAP_THRESHOLD;
+		return voltageToDegrees(voltage, lastAppliedPower);
+	}
+
+	/**
+	 * Converts raw analog sensor voltage to degrees with internal voltage sag compensation.
+	 *
+	 * The servo driver's internal rail powers both the motor and the position sensor.
+	 * Any motor current (regardless of direction) causes the rail to sag, which makes
+	 * the ratiometric sensor output drop proportionally — the reading is always LOW
+	 * under load, never high.
+	 *
+	 * Physics model:
+	 *   V_rail_actual = V_rail_nominal × (1 - k × |power|)
+	 *   V_sensor      = position_fraction × V_rail_actual
+	 *
+	 * Naive conversion (what we were doing):
+	 *   raw_deg = (V_sensor / V_adc_max) × 360
+	 *
+	 * This is wrong under load because V_sensor is scaled down by the sag.
+	 * The true position fraction is V_sensor / V_rail_actual, not V_sensor / V_adc_max.
+	 * Since V_rail_actual = V_adc_max × (1 - k × |power|):
+	 *
+	 *   true_deg = raw_deg / (1 - k × |power|)
+	 *
+	 * k = VoltageSagCompensationGain, tuned empirically on the dashboard.
+	 *
+	 * @param voltage      Raw voltage from the position sensor
+	 * @param appliedPower The servo power being commanded (-1 to 1)
+	 * @return Position in degrees (0-360), compensated for internal rail sag
+	 */
+	private double voltageToDegrees(double voltage, double appliedPower) {
+		double nominalMax = aPosition.getMaxVoltage();
+		double rawDegrees = (voltage / nominalMax) * WRAP_THRESHOLD;
+
+		double gain = MDOConstants.VoltageSagCompensationGain;
+		if (gain <= 0.0) {
+			// Compensation disabled
+			lastSagFraction = 0.0;
+			lastCompensationDeg = 0.0;
+			return rawDegrees;
+		}
+
+		double absPower = Math.abs(appliedPower);
+		double sagFraction = gain * absPower;  // e.g., 0.04 × 0.8 = 0.032 (3.2% sag)
+
+		// Clamp so we never divide by zero or go negative
+		if (sagFraction >= 0.99) sagFraction = 0.99;
+
+		// Ratiometric correction: undo the multiplicative sag
+		double compensatedDegrees = rawDegrees / (1.0 - sagFraction);
+
+		lastSagFraction = sagFraction;
+		lastCompensationDeg = compensatedDegrees - rawDegrees;
+
+		return compensatedDegrees;
+	}
+
+	/** Get the last estimated voltage sag as a fraction (0.0 = no sag, 0.05 = 5% rail drop). */
+	public double getLastVoltageSag() {
+		return lastSagFraction;
+	}
+
+	/** Get the last compensation applied in degrees (always ≥ 0, since sag always reads low). */
+	public double getLastCompensationDeg() {
+		return lastCompensationDeg;
 	}
 
 	public double getRawPosition() {

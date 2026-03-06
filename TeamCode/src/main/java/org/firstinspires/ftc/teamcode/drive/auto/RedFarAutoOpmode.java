@@ -13,9 +13,8 @@ import org.firstinspires.ftc.teamcode.drive.CustomPIDFController;
 import org.firstinspires.ftc.teamcode.drive.CustomThreads;
 import org.firstinspires.ftc.teamcode.drive.MDOConstants;
 import org.firstinspires.ftc.teamcode.drive.HubInitializer;
-import org.firstinspires.ftc.teamcode.drive.CustomAxonServoController;
+import org.firstinspires.ftc.teamcode.drive.CustomServoController;
 import org.firstinspires.ftc.teamcode.drive.CustomMotorController;
-import org.firstinspires.ftc.teamcode.drive.CustomMotor;
 import org.firstinspires.ftc.teamcode.drive.CustomTelemetry;
 import org.firstinspires.ftc.teamcode.drive.CustomSorterController;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
@@ -49,8 +48,8 @@ public class RedFarAutoOpmode extends OpMode {
 	protected CustomMotorController launcherMotors;
 	protected CustomMotorController intakeMotor;
 	protected CustomSorterController sorterController;
-	protected CustomAxonServoController azimuthServo;
-	protected CustomAxonServoController elevationServo;
+	protected CustomServoController azimuthServo;
+	protected CustomServoController elevationServo;
 	protected CustomThreads customThreads;
 
 	// ===== LAUNCHER CONTROL =====
@@ -130,7 +129,7 @@ public class RedFarAutoOpmode extends OpMode {
 		);
 
 		// Initialize azimuth servo (with PID for continuous rotation, but fixed position - no auto-aim)
-		azimuthServo = new CustomAxonServoController(
+		azimuthServo = new CustomServoController(
 			hardwareMap,
 			new String[]{"azimuthServo0", "azimuthServo1"},
 			new boolean[]{true, true}, // both reversed (same as MainDriveOpmode)
@@ -140,7 +139,7 @@ public class RedFarAutoOpmode extends OpMode {
 		);
 
 		// Initialize elevation servo (simple mode, no PID - same as MainDriveOpmode)
-		elevationServo = new CustomAxonServoController(
+		elevationServo = new CustomServoController(
 			hardwareMap,
 			new String[]{"elevationServo"},
 			new boolean[]{false},

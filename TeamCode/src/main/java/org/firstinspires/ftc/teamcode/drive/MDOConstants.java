@@ -19,6 +19,7 @@ public class MDOConstants {
     public static double AzimuthServoDeadBandPositive = 0.05; // Minimum power to overcome dead band when moving in positive direction
     public static double AzimuthServoDeadBandNegative = 0.05; // Minimum power to overcome dead band when moving in negative direction
     public static double AzimuthSlewRate = 0.1; // Max power change per PID loop iteration (prevents shaking)
+    public static double VoltageSagCompensationGain = 0.0; // Fraction of full-scale sag at full servo power (e.g., 0.03 = 3% sag → ~11° correction at full power). Tune empirically: increase until position jitter under load disappears.
     public static double BlueAprilTagHeadingOffset = 90.0;
     public static Double BlueAzimuthFineAdjustment = 0.0;
     public static double[] BlueCloseStartPose = new double[]{22.85, 124.85, -40.7};
