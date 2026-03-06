@@ -2,7 +2,6 @@ package org.firstinspires.ftc.teamcode.drive.opmode;
 
 import android.annotation.SuppressLint;
 
-import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.geometry.Pose;
@@ -12,26 +11,28 @@ import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
-import java.util.Objects;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.Position;
+import org.firstinspires.ftc.teamcode.constants.MDOConstants;
 import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
 import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
-import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
-import org.firstinspires.ftc.teamcode.modules.CustomThreads;
-import org.firstinspires.ftc.teamcode.modules.GamepadEventHandler;
-import org.firstinspires.ftc.teamcode.modules.LauncherCalculations;
-import org.firstinspires.ftc.teamcode.constants.MDOConstants;
-import org.firstinspires.ftc.teamcode.modules.HubInitializer;
-import org.firstinspires.ftc.teamcode.modules.CustomServoController;
 import org.firstinspires.ftc.teamcode.modules.CustomMotorController;
-import org.firstinspires.ftc.teamcode.modules.CustomTelemetry;
+import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
+import org.firstinspires.ftc.teamcode.modules.CustomServoController;
 import org.firstinspires.ftc.teamcode.modules.CustomSorterController;
-import org.firstinspires.ftc.teamcode.modules.TurretSubsystem;
+import org.firstinspires.ftc.teamcode.modules.CustomTelemetry;
+import org.firstinspires.ftc.teamcode.modules.CustomThreads;
 import org.firstinspires.ftc.teamcode.modules.ElevationSubsystem;
-import org.firstinspires.ftc.teamcode.modules.LauncherSubsystem;
+import org.firstinspires.ftc.teamcode.modules.GamepadEventHandler;
+import org.firstinspires.ftc.teamcode.modules.HubInitializer;
 import org.firstinspires.ftc.teamcode.modules.IntakeSubsystem;
+import org.firstinspires.ftc.teamcode.modules.LauncherCalculations;
+import org.firstinspires.ftc.teamcode.modules.LauncherSubsystem;
+import org.firstinspires.ftc.teamcode.modules.TurretSubsystem;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
+import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
+
+import java.util.Objects;
 
 @TeleOp(name = "Drive", group = "!advanced")
 public class MainDriveOpmode extends OpMode {
@@ -479,8 +480,8 @@ public class MainDriveOpmode extends OpMode {
 
 		// Check for manual override - any significant stick input cancels automated pathing/holding
 		boolean manualOverride = Math.abs(gamepad1LeftStickY) > STICK_OVERRIDE_THRESHOLD ||
-								 Math.abs(gamepad1LeftStickX) > STICK_OVERRIDE_THRESHOLD ||
-								 Math.abs(gamepad1RightStickX) > STICK_OVERRIDE_THRESHOLD;
+				Math.abs(gamepad1LeftStickX) > STICK_OVERRIDE_THRESHOLD ||
+				Math.abs(gamepad1RightStickX) > STICK_OVERRIDE_THRESHOLD;
 
 		// ===== AUTOMATED PATHING TRIGGERS (via event handler) =====
 		gp1Handler.update(gamepad1);

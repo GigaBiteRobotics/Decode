@@ -1,6 +1,5 @@
 package org.firstinspires.ftc.teamcode.drive.auto;
 
-import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.BezierCurve;
 import com.pedropathing.geometry.BezierLine;
@@ -10,16 +9,17 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
-import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
-import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
-import org.firstinspires.ftc.teamcode.modules.CustomThreads;
 import org.firstinspires.ftc.teamcode.constants.MDOConstants;
-import org.firstinspires.ftc.teamcode.modules.HubInitializer;
-import org.firstinspires.ftc.teamcode.modules.CustomServoController;
+import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
 import org.firstinspires.ftc.teamcode.modules.CustomMotorController;
-import org.firstinspires.ftc.teamcode.modules.CustomTelemetry;
+import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
+import org.firstinspires.ftc.teamcode.modules.CustomServoController;
 import org.firstinspires.ftc.teamcode.modules.CustomSorterController;
+import org.firstinspires.ftc.teamcode.modules.CustomTelemetry;
+import org.firstinspires.ftc.teamcode.modules.CustomThreads;
+import org.firstinspires.ftc.teamcode.modules.HubInitializer;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
+import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
 
 @Autonomous(name = "Blue Close Auto 12 Ball", group = "Auto")
 public class BlueCloseAutoOpmode12Ball extends OpMode {
@@ -60,6 +60,7 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 		EMERGENCY_DRIVE_TO_FINAL,
 		FINISHED
 	}
+
 	protected AutoState currentState = AutoState.IDLE;
 	protected AutoState previousState = AutoState.IDLE;
 
@@ -77,7 +78,8 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 	protected int launcherRPM = BlueCloseAutoConstants12Ball.targetRPM;
 
 	// ===== INTAKE CONTROL =====
-	protected enum IntakeState { IN, OUT, STOP }
+	protected enum IntakeState {IN, OUT, STOP}
+
 	protected IntakeState intakeRunningState = IntakeState.STOP;
 
 	// ===== TIMERS =====
@@ -141,32 +143,32 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 
 		// Initialize intake motor (same as MainDriveOpmode)
 		intakeMotor = new CustomMotorController(
-			hardwareMap,
-			new String[]{"intake"},
-			new boolean[]{true},
-			false,
-			28.0,
-			new CustomPIDFController(0, 0, 0, 0)
+				hardwareMap,
+				new String[]{"intake"},
+				new boolean[]{true},
+				false,
+				28.0,
+				new CustomPIDFController(0, 0, 0, 0)
 		);
 
 		// Initialize azimuth servo (with PID for continuous rotation, but fixed position - no auto-aim)
 		azimuthServo = new CustomServoController(
-			hardwareMap,
-			new String[]{"azimuthServo0", "azimuthServo1"},
-			new boolean[]{true, true}, // both reversed (same as MainDriveOpmode)
-			true, // use analog position sensor for PID
-			MDOConstants.AzimuthPIDFConstants, // PID constants from MDOConstants
-			"azimuthPosition" // analog position sensor name
+				hardwareMap,
+				new String[]{"azimuthServo0", "azimuthServo1"},
+				new boolean[]{true, true}, // both reversed (same as MainDriveOpmode)
+				true, // use analog position sensor for PID
+				MDOConstants.AzimuthPIDFConstants, // PID constants from MDOConstants
+				"azimuthPosition" // analog position sensor name
 		);
 
 		// Initialize elevation servo (simple mode, no PID - same as MainDriveOpmode)
 		elevationServo = new CustomServoController(
-			hardwareMap,
-			new String[]{"elevationServo"},
-			new boolean[]{false},
-			false, // no analog position sensor
-			new double[]{0, 0, 0},
-			null
+				hardwareMap,
+				new String[]{"elevationServo"},
+				new boolean[]{false},
+				false, // no analog position sensor
+				new double[]{0, 0, 0},
+				null
 		);
 
 
@@ -181,89 +183,89 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 
 		telemetryC.addData("Status", "Initialized");
 		telemetryC.addData("Start Pose", String.format("(%.1f, %.1f, %.1f°)",
-			BlueCloseAutoConstants12Ball.startPose.getX(),
-			BlueCloseAutoConstants12Ball.startPose.getY(),
-			Math.toDegrees(BlueCloseAutoConstants12Ball.startPose.getHeading())));
+				BlueCloseAutoConstants12Ball.startPose.getX(),
+				BlueCloseAutoConstants12Ball.startPose.getY(),
+				Math.toDegrees(BlueCloseAutoConstants12Ball.startPose.getHeading())));
 		telemetryC.update();
 	}
 
 	protected void buildPaths() {
 		// Start to launch
 		pathToLaunch = follower.pathBuilder()
-			.addPath(new BezierLine(BlueCloseAutoConstants12Ball.startPose, BlueCloseAutoConstants12Ball.launchPose))
-			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.startPose.getHeading(), BlueCloseAutoConstants12Ball.launchPose.getHeading())
-			.build();
+				.addPath(new BezierLine(BlueCloseAutoConstants12Ball.startPose, BlueCloseAutoConstants12Ball.launchPose))
+				.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.startPose.getHeading(), BlueCloseAutoConstants12Ball.launchPose.getHeading())
+				.build();
 
 		// Set 1 paths
 		pathToSet1Lineup = follower.pathBuilder()
-			.addPath(new BezierLine(BlueCloseAutoConstants12Ball.launchPose, BlueCloseAutoConstants12Ball.set1LineupPose))
-			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.launchPose.getHeading(), BlueCloseAutoConstants12Ball.set1LineupPose.getHeading())
-			.build();
+				.addPath(new BezierLine(BlueCloseAutoConstants12Ball.launchPose, BlueCloseAutoConstants12Ball.set1LineupPose))
+				.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.launchPose.getHeading(), BlueCloseAutoConstants12Ball.set1LineupPose.getHeading())
+				.build();
 
 		pathToSet1Pickup = follower.pathBuilder()
-			.addPath(new BezierLine(BlueCloseAutoConstants12Ball.set1LineupPose, BlueCloseAutoConstants12Ball.set1PickupPose))
-			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.set1LineupPose.getHeading(), BlueCloseAutoConstants12Ball.set1PickupPose.getHeading())
-			.build();
+				.addPath(new BezierLine(BlueCloseAutoConstants12Ball.set1LineupPose, BlueCloseAutoConstants12Ball.set1PickupPose))
+				.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.set1LineupPose.getHeading(), BlueCloseAutoConstants12Ball.set1PickupPose.getHeading())
+				.build();
 
 		pathFromSet1ToLaunch = follower.pathBuilder()
-			.addPath(new BezierCurve(BlueCloseAutoConstants12Ball.set1PickupPose, BlueCloseAutoConstants12Ball.set1PkupToLaunchBezierPoint, BlueCloseAutoConstants12Ball.launchPose))
-			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.set1PickupPose.getHeading(), BlueCloseAutoConstants12Ball.launchPose.getHeading())
-			.build();
+				.addPath(new BezierCurve(BlueCloseAutoConstants12Ball.set1PickupPose, BlueCloseAutoConstants12Ball.set1PkupToLaunchBezierPoint, BlueCloseAutoConstants12Ball.launchPose))
+				.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.set1PickupPose.getHeading(), BlueCloseAutoConstants12Ball.launchPose.getHeading())
+				.build();
 
 		// Gate paths
 		pathToGatePickup = follower.pathBuilder()
-			.addPath(new BezierCurve(BlueCloseAutoConstants12Ball.launchPose,BlueCloseAutoConstants12Ball.launchToGateBezierPoint, BlueCloseAutoConstants12Ball.gatePickupPose))
-			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.launchPose.getHeading(), BlueCloseAutoConstants12Ball.gatePickupPose.getHeading())
-			.build();
+				.addPath(new BezierCurve(BlueCloseAutoConstants12Ball.launchPose, BlueCloseAutoConstants12Ball.launchToGateBezierPoint, BlueCloseAutoConstants12Ball.gatePickupPose))
+				.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.launchPose.getHeading(), BlueCloseAutoConstants12Ball.gatePickupPose.getHeading())
+				.build();
 
 		pathFromGateToLaunch = follower.pathBuilder()
-			.addPath(new BezierCurve(BlueCloseAutoConstants12Ball.gatePickupPose,BlueCloseAutoConstants12Ball.gateToLaunchBezierPoint, BlueCloseAutoConstants12Ball.launchPose))
-			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.gatePickupPose.getHeading(), BlueCloseAutoConstants12Ball.launchPose.getHeading())
-			.build();
+				.addPath(new BezierCurve(BlueCloseAutoConstants12Ball.gatePickupPose, BlueCloseAutoConstants12Ball.gateToLaunchBezierPoint, BlueCloseAutoConstants12Ball.launchPose))
+				.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.gatePickupPose.getHeading(), BlueCloseAutoConstants12Ball.launchPose.getHeading())
+				.build();
 
 		// Gate shake paths - oscillate forward/backward from gate pickup pose along its heading
 		double shakeHeading = BlueCloseAutoConstants12Ball.gatePickupPose.getHeading() + BlueCloseAutoConstants12Ball.gateShakeOffset.getHeading();
 		double shakeDist = BlueCloseAutoConstants12Ball.gateShakeDistance;
 		Pose gateShakeBasePose = new Pose(
-			BlueCloseAutoConstants12Ball.gatePickupPose.getX() + BlueCloseAutoConstants12Ball.gateShakeOffset.getX(),
-			BlueCloseAutoConstants12Ball.gatePickupPose.getY() + BlueCloseAutoConstants12Ball.gateShakeOffset.getY(),
-			shakeHeading
+				BlueCloseAutoConstants12Ball.gatePickupPose.getX() + BlueCloseAutoConstants12Ball.gateShakeOffset.getX(),
+				BlueCloseAutoConstants12Ball.gatePickupPose.getY() + BlueCloseAutoConstants12Ball.gateShakeOffset.getY(),
+				shakeHeading
 		);
 		Pose gateShakeForwardPose = new Pose(
-			gateShakeBasePose.getX() + shakeDist * Math.cos(shakeHeading),
-			gateShakeBasePose.getY() + shakeDist * Math.sin(shakeHeading),
-			shakeHeading
+				gateShakeBasePose.getX() + shakeDist * Math.cos(shakeHeading),
+				gateShakeBasePose.getY() + shakeDist * Math.sin(shakeHeading),
+				shakeHeading
 		);
 		pathGateShakeForward = follower.pathBuilder()
-			.addPath(new BezierLine(gateShakeBasePose, gateShakeForwardPose))
-			.setConstantHeadingInterpolation(shakeHeading)
-			.build();
+				.addPath(new BezierLine(gateShakeBasePose, gateShakeForwardPose))
+				.setConstantHeadingInterpolation(shakeHeading)
+				.build();
 		pathGateShakeBackward = follower.pathBuilder()
-			.addPath(new BezierLine(gateShakeForwardPose, gateShakeBasePose))
-			.setConstantHeadingInterpolation(shakeHeading)
-			.build();
+				.addPath(new BezierLine(gateShakeForwardPose, gateShakeBasePose))
+				.setConstantHeadingInterpolation(shakeHeading)
+				.build();
 
 		// Set 0 paths
 		pathToSet0Lineup = follower.pathBuilder()
-			.addPath(new BezierLine(BlueCloseAutoConstants12Ball.launchPose, BlueCloseAutoConstants12Ball.set0LineupPose))
-			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.launchPose.getHeading(), BlueCloseAutoConstants12Ball.set0LineupPose.getHeading())
-			.build();
+				.addPath(new BezierLine(BlueCloseAutoConstants12Ball.launchPose, BlueCloseAutoConstants12Ball.set0LineupPose))
+				.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.launchPose.getHeading(), BlueCloseAutoConstants12Ball.set0LineupPose.getHeading())
+				.build();
 
 		pathToSet0Pickup = follower.pathBuilder()
-			.addPath(new BezierLine(BlueCloseAutoConstants12Ball.set0LineupPose, BlueCloseAutoConstants12Ball.set0PickupPose))
-			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.set0LineupPose.getHeading(), BlueCloseAutoConstants12Ball.set0PickupPose.getHeading())
-			.build();
+				.addPath(new BezierLine(BlueCloseAutoConstants12Ball.set0LineupPose, BlueCloseAutoConstants12Ball.set0PickupPose))
+				.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.set0LineupPose.getHeading(), BlueCloseAutoConstants12Ball.set0PickupPose.getHeading())
+				.build();
 
 		pathFromSet0ToLaunch = follower.pathBuilder()
-			.addPath(new BezierLine(BlueCloseAutoConstants12Ball.set0PickupPose, BlueCloseAutoConstants12Ball.launchPose))
-			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.set0PickupPose.getHeading(), BlueCloseAutoConstants12Ball.launchPose.getHeading())
-			.build();
+				.addPath(new BezierLine(BlueCloseAutoConstants12Ball.set0PickupPose, BlueCloseAutoConstants12Ball.launchPose))
+				.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.set0PickupPose.getHeading(), BlueCloseAutoConstants12Ball.launchPose.getHeading())
+				.build();
 
 		// Final
 		pathToFinal = follower.pathBuilder()
-			.addPath(new BezierLine(BlueCloseAutoConstants12Ball.launchPose, BlueCloseAutoConstants12Ball.finalPose))
-			.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.launchPose.getHeading(), BlueCloseAutoConstants12Ball.finalPose.getHeading())
-			.build();
+				.addPath(new BezierLine(BlueCloseAutoConstants12Ball.launchPose, BlueCloseAutoConstants12Ball.finalPose))
+				.setLinearHeadingInterpolation(BlueCloseAutoConstants12Ball.launchPose.getHeading(), BlueCloseAutoConstants12Ball.finalPose.getHeading())
+				.build();
 	}
 
 	@Override
@@ -271,9 +273,9 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 		telemetryC.addData("Status", "Ready to start");
 		telemetryC.addData("Target RPM", launcherRPM);
 		telemetryC.addData("Pit Delays", String.format("0:%dms, 1:%dms, 2:%dms",
-			BlueCloseAutoConstants12Ball.pit0DelayMs,
-			BlueCloseAutoConstants12Ball.pit1DelayMs,
-			BlueCloseAutoConstants12Ball.pit2DelayMs));
+				BlueCloseAutoConstants12Ball.pit0DelayMs,
+				BlueCloseAutoConstants12Ball.pit1DelayMs,
+				BlueCloseAutoConstants12Ball.pit2DelayMs));
 		telemetryC.update();
 	}
 
@@ -305,9 +307,9 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 			// Build an emergency path from current position to final pose
 			Pose currentPose = follower.getPose();
 			PathChain emergencyPath = follower.pathBuilder()
-				.addPath(new BezierLine(currentPose, BlueCloseAutoConstants12Ball.finalPose))
-				.setLinearHeadingInterpolation(currentPose.getHeading(), BlueCloseAutoConstants12Ball.finalPose.getHeading())
-				.build();
+					.addPath(new BezierLine(currentPose, BlueCloseAutoConstants12Ball.finalPose))
+					.setLinearHeadingInterpolation(currentPose.getHeading(), BlueCloseAutoConstants12Ball.finalPose.getHeading())
+					.build();
 			follower.followPath(emergencyPath, BlueCloseAutoConstants12Ball.defaultSpeed, true);
 			setState(AutoState.EMERGENCY_DRIVE_TO_FINAL);
 		}
@@ -328,8 +330,12 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 		}
 
 		switch (intakeRunningState) {
-			case IN: intakeMotor.setPower(BlueCloseAutoConstants12Ball.intakeInSpeed); break;
-			default: intakeMotor.setPower(0); break;
+			case IN:
+				intakeMotor.setPower(BlueCloseAutoConstants12Ball.intakeInSpeed);
+				break;
+			default:
+				intakeMotor.setPower(0);
+				break;
 		}
 
 		sorterController.lifterUpdater();
@@ -568,10 +574,14 @@ public class BlueCloseAutoOpmode12Ball extends OpMode {
 
 	protected int getPitDelay(int pit) {
 		switch (pit) {
-			case 0: return BlueCloseAutoConstants12Ball.pit0DelayMs;
-			case 1: return BlueCloseAutoConstants12Ball.pit1DelayMs;
-			case 2: return BlueCloseAutoConstants12Ball.pit2DelayMs;
-			default: return BlueCloseAutoConstants12Ball.shotDelayMs;
+			case 0:
+				return BlueCloseAutoConstants12Ball.pit0DelayMs;
+			case 1:
+				return BlueCloseAutoConstants12Ball.pit1DelayMs;
+			case 2:
+				return BlueCloseAutoConstants12Ball.pit2DelayMs;
+			default:
+				return BlueCloseAutoConstants12Ball.shotDelayMs;
 		}
 	}
 

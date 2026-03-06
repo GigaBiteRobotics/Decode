@@ -32,7 +32,7 @@ public class CustomMotorController {
 		}
 		for (int i = 0; i < motorGroup.length; i++) {
 			String motorName = motorGroup[i];
-			boolean reverseEnc = (encoderReverseMap != null) ? encoderReverseMap[i] : false;
+			boolean reverseEnc = encoderReverseMap != null && encoderReverseMap[i];
 			try {
 				CustomMotor motor = new CustomMotor(hardwareMap, motorName, hasEncoder, ticksPerRev, null, reverseEnc);
 				this.motors.put(motorName, motor);
@@ -53,7 +53,7 @@ public class CustomMotorController {
 		}
 		for (int i = 0; i < motorGroup.length; i++) {
 			String motorName = motorGroup[i];
-			boolean reverseEnc = (encoderReverseMap != null) ? encoderReverseMap[i] : false;
+			boolean reverseEnc = encoderReverseMap != null && encoderReverseMap[i];
 			try {
 				CustomMotor motor = new CustomMotor(hardwareMap, motorName, hasEncoder, ticksPerRev, null, reverseEnc);
 				this.motors.put(motorName, motor);
@@ -86,7 +86,7 @@ public class CustomMotorController {
 
 		for (int i = 0; i < motorGroup.length; i++) {
 			String motorName = motorGroup[i];
-			boolean reverseEnc = (encoderReverseMap != null) ? encoderReverseMap[i] : false;
+			boolean reverseEnc = encoderReverseMap != null && encoderReverseMap[i];
 			boolean hasEnc = this.encoderEnableMap[i];
 			try {
 				CustomMotor motor = new CustomMotor(hardwareMap, motorName, hasEnc, ticksPerRev, null, reverseEnc);

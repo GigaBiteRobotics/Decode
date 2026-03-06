@@ -1,6 +1,5 @@
 package org.firstinspires.ftc.teamcode.drive.auto;
 
-import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.Pose;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
@@ -11,11 +10,12 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
 import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
-import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
-import org.firstinspires.ftc.teamcode.modules.HubInitializer;
 import org.firstinspires.ftc.teamcode.modules.CustomMotor;
+import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
 import org.firstinspires.ftc.teamcode.modules.CustomTelemetry;
+import org.firstinspires.ftc.teamcode.modules.HubInitializer;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
+import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
 
 @Autonomous(name = "BaseAuto(DO NOT USE)", group = "z")
 public class BaseAutoOpmode extends OpMode {
@@ -36,6 +36,7 @@ public class BaseAutoOpmode extends OpMode {
 		WAIT,
 		FINISHED
 	}
+
 	protected AutoState currentState = AutoState.IDLE;
 	protected AutoState previousState = AutoState.IDLE;
 
@@ -62,6 +63,7 @@ public class BaseAutoOpmode extends OpMode {
 		BLUE,
 		NULL
 	}
+
 	protected Team team = Team.NULL;
 	// Starting pose - override in child classes
 	protected Pose startPose = new Pose(0, 0, 0);
@@ -110,11 +112,11 @@ public class BaseAutoOpmode extends OpMode {
 		// Initialize launcher motor
 		try {
 			launcher = new CustomMotor(
-				hardwareMap,
-				"launcher",
-				true,
-				1425.1,
-				new CustomPIDFController(0.1, 0.01, 0.005, 0.0)
+					hardwareMap,
+					"launcher",
+					true,
+					1425.1,
+					new CustomPIDFController(0.1, 0.01, 0.005, 0.0)
 			);
 		} catch (Exception e) {
 			telemetryC.addData("Launcher Init Error", e.getMessage());
@@ -218,10 +220,11 @@ public class BaseAutoOpmode extends OpMode {
 	/**
 	 * Override this method in child classes to handle state machine logic.
 	 * Use switch statement on currentState to execute different actions.
+	 *
 	 * @param stateChanged true if the state just changed this loop iteration
 	 */
 	protected void handleState(boolean stateChanged) {
-	switch (team) {
+		switch (team) {
 			case RED:
 				handleRedState(stateChanged);
 				break;

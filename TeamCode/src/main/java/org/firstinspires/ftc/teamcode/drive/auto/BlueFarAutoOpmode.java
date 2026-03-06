@@ -1,23 +1,24 @@
 package org.firstinspires.ftc.teamcode.drive.auto;
 
-import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
 import com.pedropathing.follower.Follower;
-import com.pedropathing.geometry.*;
-import com.pedropathing.paths.*;
+import com.pedropathing.geometry.BezierLine;
+import com.pedropathing.geometry.Pose;
+import com.pedropathing.paths.PathChain;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
-import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
-import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
-import org.firstinspires.ftc.teamcode.modules.CustomThreads;
 import org.firstinspires.ftc.teamcode.constants.MDOConstants;
-import org.firstinspires.ftc.teamcode.modules.HubInitializer;
-import org.firstinspires.ftc.teamcode.modules.CustomServoController;
+import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
 import org.firstinspires.ftc.teamcode.modules.CustomMotorController;
-import org.firstinspires.ftc.teamcode.modules.CustomTelemetry;
+import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
+import org.firstinspires.ftc.teamcode.modules.CustomServoController;
 import org.firstinspires.ftc.teamcode.modules.CustomSorterController;
+import org.firstinspires.ftc.teamcode.modules.CustomTelemetry;
+import org.firstinspires.ftc.teamcode.modules.CustomThreads;
+import org.firstinspires.ftc.teamcode.modules.HubInitializer;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
+import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
 
 @Autonomous(name = "Blue Far Auto", group = "Auto")
 public class BlueFarAutoOpmode extends OpMode {
@@ -40,6 +41,7 @@ public class BlueFarAutoOpmode extends OpMode {
 		LAUNCH_BALLS_3,
 		DRIVE_TO_FINAL
 	}
+
 	protected AutoState currentState = AutoState.IDLE;
 	protected AutoState previousState = AutoState.IDLE;
 
@@ -62,6 +64,7 @@ public class BlueFarAutoOpmode extends OpMode {
 		OUT,
 		STOP
 	}
+
 	protected IntakeState intakeRunningState = IntakeState.STOP;
 
 	// ===== TIMERS =====
@@ -120,32 +123,32 @@ public class BlueFarAutoOpmode extends OpMode {
 
 		// Initialize intake motor (same as MainDriveOpmode)
 		intakeMotor = new CustomMotorController(
-			hardwareMap,
-			new String[]{"intake"},
-			new boolean[]{true},
-			false,
-			28.0,
-			new CustomPIDFController(0, 0, 0, 0)
+				hardwareMap,
+				new String[]{"intake"},
+				new boolean[]{true},
+				false,
+				28.0,
+				new CustomPIDFController(0, 0, 0, 0)
 		);
 
 		// Initialize azimuth servo (with PID for continuous rotation, but fixed position - no auto-aim)
 		azimuthServo = new CustomServoController(
-			hardwareMap,
-			new String[]{"azimuthServo0", "azimuthServo1"},
-			new boolean[]{true, true}, // both reversed (same as MainDriveOpmode)
-			true, // use analog position sensor for PID
-			MDOConstants.AzimuthPIDFConstants, // PID constants from MDOConstants
-			"azimuthPosition" // analog position sensor name
+				hardwareMap,
+				new String[]{"azimuthServo0", "azimuthServo1"},
+				new boolean[]{true, true}, // both reversed (same as MainDriveOpmode)
+				true, // use analog position sensor for PID
+				MDOConstants.AzimuthPIDFConstants, // PID constants from MDOConstants
+				"azimuthPosition" // analog position sensor name
 		);
 
 		// Initialize elevation servo (simple mode, no PID - same as MainDriveOpmode)
 		elevationServo = new CustomServoController(
-			hardwareMap,
-			new String[]{"elevationServo"},
-			new boolean[]{false},
-			false, // no analog position sensor
-			new double[]{0, 0, 0},
-			null
+				hardwareMap,
+				new String[]{"elevationServo"},
+				new boolean[]{false},
+				false, // no analog position sensor
+				new double[]{0, 0, 0},
+				null
 		);
 
 		// Initialize custom threads
@@ -159,90 +162,90 @@ public class BlueFarAutoOpmode extends OpMode {
 
 		telemetryC.addData("Status", "Initialized");
 		telemetryC.addData("Start Pose", String.format("(%.1f, %.1f, %.1f°)",
-			BlueFarAutoConstants.startPose.getX(),
-			BlueFarAutoConstants.startPose.getY(),
-			Math.toDegrees(BlueFarAutoConstants.startPose.getHeading())));
+				BlueFarAutoConstants.startPose.getX(),
+				BlueFarAutoConstants.startPose.getY(),
+				Math.toDegrees(BlueFarAutoConstants.startPose.getHeading())));
 		telemetryC.update();
 	}
 
 	protected void buildPaths() {
 		// Path from start to launch position
 		pathToLaunch = follower.pathBuilder()
-			.addPath(new BezierLine(
-				BlueFarAutoConstants.startPose,
-				BlueFarAutoConstants.launchPose
-			))
-			.setLinearHeadingInterpolation(
-				BlueFarAutoConstants.startPose.getHeading(),
-				BlueFarAutoConstants.launchPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						BlueFarAutoConstants.startPose,
+						BlueFarAutoConstants.launchPose
+				))
+				.setLinearHeadingInterpolation(
+						BlueFarAutoConstants.startPose.getHeading(),
+						BlueFarAutoConstants.launchPose.getHeading()
+				)
+				.build();
 
 		// Path to ball 0 lineup (from launch)
 		pathToBall0Lineup = follower.pathBuilder()
-			.addPath(new BezierLine(
-				BlueFarAutoConstants.launchPose,
-				BlueFarAutoConstants.ballCollection0LineupPose
-			))
-			.setLinearHeadingInterpolation(
-				BlueFarAutoConstants.launchPose.getHeading(),
-				BlueFarAutoConstants.ballCollection0LineupPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						BlueFarAutoConstants.launchPose,
+						BlueFarAutoConstants.ballCollection0LineupPose
+				))
+				.setLinearHeadingInterpolation(
+						BlueFarAutoConstants.launchPose.getHeading(),
+						BlueFarAutoConstants.ballCollection0LineupPose.getHeading()
+				)
+				.build();
 
 		// Path to ball 0 pickup
 		pathToBall0Pickup = follower.pathBuilder()
-			.addPath(new BezierLine(
-				BlueFarAutoConstants.ballCollection0LineupPose,
-				BlueFarAutoConstants.ballCollection0PickupPose
-			))
-			.setConstantHeadingInterpolation(BlueFarAutoConstants.ballCollection0PickupPose.getHeading())
-			.build();
+				.addPath(new BezierLine(
+						BlueFarAutoConstants.ballCollection0LineupPose,
+						BlueFarAutoConstants.ballCollection0PickupPose
+				))
+				.setConstantHeadingInterpolation(BlueFarAutoConstants.ballCollection0PickupPose.getHeading())
+				.build();
 
 		// Path from ball 0 pickup back to launch
 		pathFromBall0ToLaunch = follower.pathBuilder()
-			.addPath(new BezierLine(
-				BlueFarAutoConstants.ballCollection0PickupPose,
-				BlueFarAutoConstants.launchPose
-			))
-			.setLinearHeadingInterpolation(
-				BlueFarAutoConstants.ballCollection0PickupPose.getHeading(),
-				BlueFarAutoConstants.launchPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						BlueFarAutoConstants.ballCollection0PickupPose,
+						BlueFarAutoConstants.launchPose
+				))
+				.setLinearHeadingInterpolation(
+						BlueFarAutoConstants.ballCollection0PickupPose.getHeading(),
+						BlueFarAutoConstants.launchPose.getHeading()
+				)
+				.build();
 
 		// Path to ball 1 lineup (from launch)
 		pathToBall1Lineup = follower.pathBuilder()
-			.addPath(new BezierLine(
-				BlueFarAutoConstants.launchPose,
-				BlueFarAutoConstants.ballCollection1LineupPose
-			))
-			.setLinearHeadingInterpolation(
-				BlueFarAutoConstants.launchPose.getHeading(),
-				BlueFarAutoConstants.ballCollection1LineupPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						BlueFarAutoConstants.launchPose,
+						BlueFarAutoConstants.ballCollection1LineupPose
+				))
+				.setLinearHeadingInterpolation(
+						BlueFarAutoConstants.launchPose.getHeading(),
+						BlueFarAutoConstants.ballCollection1LineupPose.getHeading()
+				)
+				.build();
 
 		// Path to ball 1 pickup
 		pathToBall1Pickup = follower.pathBuilder()
-			.addPath(new BezierLine(
-				BlueFarAutoConstants.ballCollection1LineupPose,
-				BlueFarAutoConstants.ballCollection1PickupPose
-			))
-			.setConstantHeadingInterpolation(BlueFarAutoConstants.ballCollection1PickupPose.getHeading())
-			.build();
+				.addPath(new BezierLine(
+						BlueFarAutoConstants.ballCollection1LineupPose,
+						BlueFarAutoConstants.ballCollection1PickupPose
+				))
+				.setConstantHeadingInterpolation(BlueFarAutoConstants.ballCollection1PickupPose.getHeading())
+				.build();
 
 		// Path from ball 1 pickup back to launch
 		pathFromBall1ToLaunch = follower.pathBuilder()
-			.addPath(new BezierLine(
-				BlueFarAutoConstants.ballCollection1PickupPose,
-				BlueFarAutoConstants.launchPose
-			))
-			.setLinearHeadingInterpolation(
-				BlueFarAutoConstants.ballCollection1PickupPose.getHeading(),
-				BlueFarAutoConstants.launchPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						BlueFarAutoConstants.ballCollection1PickupPose,
+						BlueFarAutoConstants.launchPose
+				))
+				.setLinearHeadingInterpolation(
+						BlueFarAutoConstants.ballCollection1PickupPose.getHeading(),
+						BlueFarAutoConstants.launchPose.getHeading()
+				)
+				.build();
 	}
 
 	@Override
@@ -307,7 +310,7 @@ public class BlueFarAutoOpmode extends OpMode {
 
 		// Check if intake should be turned off after timer expires (while driving)
 		int intakeCollectTime = (currentIntakePosition == 0) ?
-			BlueFarAutoConstants.intakeCollect0TimeMs : BlueFarAutoConstants.intakeCollect1TimeMs;
+				BlueFarAutoConstants.intakeCollect0TimeMs : BlueFarAutoConstants.intakeCollect1TimeMs;
 		if (intakeOffTimerActive && intakeOffTimer.milliseconds() > intakeCollectTime) {
 			intakeRunningState = IntakeState.STOP;
 			intakeOffTimerActive = false;
@@ -626,7 +629,7 @@ public class BlueFarAutoOpmode extends OpMode {
 
 		Pose pose = follower.getPose();
 		telemetryC.addData("Pose", String.format("(%.1f, %.1f, %.1f°)",
-			pose.getX(), pose.getY(), Math.toDegrees(pose.getHeading())));
+				pose.getX(), pose.getY(), Math.toDegrees(pose.getHeading())));
 
 		telemetryC.update();
 	}

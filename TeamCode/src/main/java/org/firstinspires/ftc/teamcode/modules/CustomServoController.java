@@ -10,7 +10,7 @@ import java.util.HashMap;
 
 /**
  * CustomAxonServoController - A smart controller for servo motors with position feedback
- *
+ * <p>
  * Controls one or more servo motors in two ways:
  * 1. Simple Mode: Tell the servo where to go (like moving a dial)
  * 2. Smart Mode: Uses a sensor to know exactly where the servo is and automatically corrects its position
@@ -344,8 +344,7 @@ public class CustomServoController {
 
 		if (pathCrossesPoint(start, end, forbiddenCenter)) return true;
 		if (pathCrossesPoint(start, end, forbiddenMin)) return true;
-		if (pathCrossesPoint(start, end, forbiddenMax)) return true;
-		return false;
+		return pathCrossesPoint(start, end, forbiddenMax);
 	}
 
 	public double getPosition() {
@@ -364,25 +363,25 @@ public class CustomServoController {
 
 	/**
 	 * Converts raw analog sensor voltage to degrees with internal voltage sag compensation.
-	 *
+	 * <p>
 	 * The servo driver's internal rail powers both the motor and the position sensor.
 	 * Any motor current (regardless of direction) causes the rail to sag, which makes
 	 * the ratiometric sensor output drop proportionally — the reading is always LOW
 	 * under load, never high.
-	 *
+	 * <p>
 	 * Physics model:
-	 *   V_rail_actual = V_rail_nominal × (1 - k × |power|)
-	 *   V_sensor      = position_fraction × V_rail_actual
-	 *
+	 * V_rail_actual = V_rail_nominal × (1 - k × |power|)
+	 * V_sensor      = position_fraction × V_rail_actual
+	 * <p>
 	 * Naive conversion (what we were doing):
-	 *   raw_deg = (V_sensor / V_adc_max) × 360
-	 *
+	 * raw_deg = (V_sensor / V_adc_max) × 360
+	 * <p>
 	 * This is wrong under load because V_sensor is scaled down by the sag.
 	 * The true position fraction is V_sensor / V_rail_actual, not V_sensor / V_adc_max.
 	 * Since V_rail_actual = V_adc_max × (1 - k × |power|):
-	 *
-	 *   true_deg = raw_deg / (1 - k × |power|)
-	 *
+	 * <p>
+	 * true_deg = raw_deg / (1 - k × |power|)
+	 * <p>
 	 * k = VoltageSagCompensationGain, tuned empirically on the dashboard.
 	 *
 	 * @param voltage      Raw voltage from the position sensor
@@ -416,12 +415,16 @@ public class CustomServoController {
 		return compensatedDegrees;
 	}
 
-	/** Get the last estimated voltage sag as a fraction (0.0 = no sag, 0.05 = 5% rail drop). */
+	/**
+	 * Get the last estimated voltage sag as a fraction (0.0 = no sag, 0.05 = 5% rail drop).
+	 */
 	public double getLastVoltageSag() {
 		return lastSagFraction;
 	}
 
-	/** Get the last compensation applied in degrees (always ≥ 0, since sag always reads low). */
+	/**
+	 * Get the last compensation applied in degrees (always ≥ 0, since sag always reads low).
+	 */
 	public double getLastCompensationDeg() {
 		return lastCompensationDeg;
 	}
@@ -478,9 +481,9 @@ public class CustomServoController {
 			}
 
 			if (this.pidCoefficients != null &&
-				Math.abs(this.pidCoefficients[0] - pidCoefficients[0]) < 0.0001 &&
-				Math.abs(this.pidCoefficients[1] - pidCoefficients[1]) < 0.0001 &&
-				Math.abs(this.pidCoefficients[2] - pidCoefficients[2]) < 0.0001) {
+					Math.abs(this.pidCoefficients[0] - pidCoefficients[0]) < 0.0001 &&
+					Math.abs(this.pidCoefficients[1] - pidCoefficients[1]) < 0.0001 &&
+					Math.abs(this.pidCoefficients[2] - pidCoefficients[2]) < 0.0001) {
 				return;
 			}
 

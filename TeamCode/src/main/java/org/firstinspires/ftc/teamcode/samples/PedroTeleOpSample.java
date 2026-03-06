@@ -10,32 +10,32 @@ import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
 @TeleOp
 public class PedroTeleOpSample extends CommandOpMode {
-    Follower follower;
-    TelemetryData telemetryData = new TelemetryData(telemetry);
+	Follower follower;
+	TelemetryData telemetryData = new TelemetryData(telemetry);
 
-    @Override
-    public void initialize() {
-        follower = Constants.createFollower(hardwareMap);
-        super.reset();
+	@Override
+	public void initialize() {
+		follower = Constants.createFollower(hardwareMap);
+		super.reset();
 
-        follower.startTeleopDrive();
-    }
+		follower.startTeleopDrive();
+	}
 
-    @Override
-    public void run() {
-        super.run();
+	@Override
+	public void run() {
+		super.run();
 
         /* Robot-Centric Drive
         follower.setTeleOpDrive(-gamepad1.left_stick_y, -gamepad1.left_stick_x, -gamepad1.right_stick_x, true);
         */
 
-        // Field-Centric Drive
-        follower.setTeleOpDrive(-gamepad1.left_stick_y, -gamepad1.left_stick_x, -gamepad1.right_stick_x, false);
-        follower.update();
+		// Field-Centric Drive
+		follower.setTeleOpDrive(-gamepad1.left_stick_y, -gamepad1.left_stick_x, -gamepad1.right_stick_x, false);
+		follower.update();
 
-        telemetryData.addData("X", follower.getPose().getX());
-        telemetryData.addData("Y", follower.getPose().getY());
-        telemetryData.addData("Heading", follower.getPose().getHeading());
-        telemetryData.update();
-    }
+		telemetryData.addData("X", follower.getPose().getX());
+		telemetryData.addData("Y", follower.getPose().getY());
+		telemetryData.addData("Heading", follower.getPose().getHeading());
+		telemetryData.update();
+	}
 }

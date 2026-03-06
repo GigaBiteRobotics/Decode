@@ -31,7 +31,9 @@ public class LauncherSubsystem {
 
 	// ===== Simple actions for GamepadEventHandler callbacks =====
 
-	/** Toggle the launcher spinning on/off. */
+	/**
+	 * Toggle the launcher spinning on/off.
+	 */
 	public void toggleSpin() {
 		if (!launcherSpinning) {
 			targetPower = MDOConstants.launchPower;
@@ -42,12 +44,16 @@ public class LauncherSubsystem {
 		}
 	}
 
-	/** Toggle the launcher poop mode on/off. */
+	/**
+	 * Toggle the launcher poop mode on/off.
+	 */
 	public void togglePoop() {
 		launcherPooping = !launcherPooping;
 	}
 
-	/** Toggle the launcher reverse mode on/off. */
+	/**
+	 * Toggle the launcher reverse mode on/off.
+	 */
 	public void toggleReverse() {
 		launcherReverseActive = !launcherReverseActive;
 	}
@@ -91,11 +97,11 @@ public class LauncherSubsystem {
 	/**
 	 * Handle gamepad input for launcher controls.
 	 *
-	 * @param dpadDown        gamepad2.dpad_down (toggle spin)
-	 * @param dpadUp          gamepad2.dpad_up (toggle poop mode)
-	 * @param leftTrigger     gamepad2.left_trigger > 0.5 (toggle reverse)
-	 * @param gamepadTimerMs  elapsed time from the main gamepad timer
-	 * @param gamepadTimer    the main gamepad timer (will be reset on input)
+	 * @param dpadDown       gamepad2.dpad_down (toggle spin)
+	 * @param dpadUp         gamepad2.dpad_up (toggle poop mode)
+	 * @param leftTrigger    gamepad2.left_trigger > 0.5 (toggle reverse)
+	 * @param gamepadTimerMs elapsed time from the main gamepad timer
+	 * @param gamepadTimer   the main gamepad timer (will be reset on input)
 	 */
 	public void handleInput(boolean dpadDown, boolean dpadUp, boolean leftTrigger, double gamepadTimerMs, ElapsedTime gamepadTimer) {
 		if (dpadDown && gamepadTimerMs > 300) {
@@ -123,8 +129,8 @@ public class LauncherSubsystem {
 	/**
 	 * Handle rapid fire logic.
 	 *
-	 * @param triggerPressed    gamepad2.right_trigger > 0.5
-	 * @param sorterController  the sorter controller to fire balls from
+	 * @param triggerPressed   gamepad2.right_trigger > 0.5
+	 * @param sorterController the sorter controller to fire balls from
 	 */
 	public void handleRapidFire(boolean triggerPressed, CustomSorterController sorterController) {
 		// Edge detection: Start rapid fire sequence when trigger is first pressed

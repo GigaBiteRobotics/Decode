@@ -14,6 +14,7 @@ public class DashboardDrawing {
 
 	/**
 	 * Draw the current robot position on the dashboard.
+	 *
 	 * @param follower The Pedro Pathing follower to get the pose from
 	 */
 	public static void drawCurrent(Follower follower) {
@@ -28,6 +29,7 @@ public class DashboardDrawing {
 	/**
 	 * Thread-safe version of drawCurrent that takes a pre-fetched Pose.
 	 * Use this when calling from a background thread to avoid race conditions.
+	 *
 	 * @param pose The pre-fetched pose to draw
 	 */
 	public static void drawCurrentWithPose(Pose pose) {
@@ -44,6 +46,7 @@ public class DashboardDrawing {
 
 	/**
 	 * Draw the current robot position and its path history on the dashboard.
+	 *
 	 * @param follower The Pedro Pathing follower to get pose and history from
 	 */
 	public static void drawCurrentAndHistory(Follower follower) {

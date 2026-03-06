@@ -2,8 +2,10 @@ package org.firstinspires.ftc.teamcode.drive;
 
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+
 import com.acmerobotics.dashboard.FtcDashboard;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+
 import org.firstinspires.ftc.robotcore.external.function.Consumer;
 import org.firstinspires.ftc.robotcore.external.function.Continuation;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
@@ -26,19 +28,19 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * AprilTag Localizer Class for FTC
-
+ * <p>
  * This class provides real-time robot localization using AprilTag detection.
  * It can be easily integrated into any OpMode for autonomous navigation.
-
+ * <p>
  * Usage:
- *   AprilTagLocalizer localizer = new AprilTagLocalizer(hardwareMap, telemetry);
- *   localizer.init();
-
- *   // In your loop:
- *   localizer.update();
- *   double x = localizer.getRobotX();
- *   double y = localizer.getRobotY();
- *   double heading = localizer.getRobotHeading();
+ * AprilTagLocalizer localizer = new AprilTagLocalizer(hardwareMap, telemetry);
+ * localizer.init();
+ * <p>
+ * // In your loop:
+ * localizer.update();
+ * double x = localizer.getRobotX();
+ * double y = localizer.getRobotY();
+ * double heading = localizer.getRobotHeading();
  */
 public class AprilTagLocalizer {
 
@@ -240,9 +242,12 @@ public class AprilTagLocalizer {
 					}
 				}
 			}
-		} catch (Exception e) { return null; }
+		} catch (Exception e) {
+			return null;
+		}
 		return null;
 	}
+
 	public boolean isLocalized() {
 		try {
 			List<AprilTagDetection> currentDetections = aprilTag.getDetections();
@@ -254,8 +259,11 @@ public class AprilTagLocalizer {
 				}
 			}
 			return false;
-		} catch (Exception e) { return false; }
+		} catch (Exception e) {
+			return false;
+		}
 	}
+
 	public double getDecisionMargin() {
 		try {
 			List<AprilTagDetection> currentDetections = aprilTag.getDetections();
@@ -267,7 +275,9 @@ public class AprilTagLocalizer {
 				}
 			}
 			return 0.0;
-		} catch (Exception e) { return 0.0; }
+		} catch (Exception e) {
+			return 0.0;
+		}
 	}
 
 	/**

@@ -10,8 +10,8 @@ public class LocalizationAutoAim {
 	 *
 	 * @param launchXYZ [x, y, z] coordinates of the launch position
 	 * @param targetXYZ [x, y, z] coordinates of the target position
-	 * @param v initial launch velocity (length/s)
-	 * @param g acceleration due to gravity (length/s^2)
+	 * @param v         initial launch velocity (length/s)
+	 * @param g         acceleration due to gravity (length/s^2)
 	 * @return Double[] {elevation (radians), azimuth (radians)} or null if unreachable
 	 */
 	public static Double[] calculateLaunchAngle(
@@ -59,6 +59,7 @@ public class LocalizationAutoAim {
 		}
 		return elevation;
 	}
+
 	public static double getDistance(Double[] pos1, Double[] pos2) {
 		if (pos1 == null || pos2 == null || pos1.length < 3 || pos2.length < 3) {
 			return 0.0; // Invalid input

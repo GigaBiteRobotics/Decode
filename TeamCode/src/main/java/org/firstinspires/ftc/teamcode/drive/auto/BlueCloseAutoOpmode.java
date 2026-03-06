@@ -1,26 +1,27 @@
 package org.firstinspires.ftc.teamcode.drive.auto;
 
-import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
 import com.pedropathing.follower.Follower;
-import com.pedropathing.geometry.*;
-import com.pedropathing.paths.*;
+import com.pedropathing.geometry.BezierLine;
+import com.pedropathing.geometry.Pose;
+import com.pedropathing.paths.PathChain;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.Position;
+import org.firstinspires.ftc.teamcode.constants.MDOConstants;
 import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
 import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
-import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
-import org.firstinspires.ftc.teamcode.modules.CustomThreads;
-import org.firstinspires.ftc.teamcode.constants.MDOConstants;
-import org.firstinspires.ftc.teamcode.modules.HubInitializer;
-import org.firstinspires.ftc.teamcode.modules.CustomServoController;
 import org.firstinspires.ftc.teamcode.modules.CustomMotorController;
-import org.firstinspires.ftc.teamcode.modules.CustomTelemetry;
+import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
+import org.firstinspires.ftc.teamcode.modules.CustomServoController;
 import org.firstinspires.ftc.teamcode.modules.CustomSorterController;
+import org.firstinspires.ftc.teamcode.modules.CustomTelemetry;
+import org.firstinspires.ftc.teamcode.modules.CustomThreads;
+import org.firstinspires.ftc.teamcode.modules.HubInitializer;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
+import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 
 import java.util.ArrayList;
@@ -50,6 +51,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 		DRIVE_TO_FINAL,
 		FINISHED
 	}
+
 	protected AutoState currentState = AutoState.IDLE;
 	protected AutoState previousState = AutoState.IDLE;
 
@@ -79,6 +81,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 		OUT,
 		STOP
 	}
+
 	protected IntakeState intakeRunningState = IntakeState.STOP;
 
 	// ===== TIMERS =====
@@ -145,38 +148,38 @@ public class BlueCloseAutoOpmode extends OpMode {
 
 		// Initialize intake motor (same as MainDriveOpmode)
 		intakeMotor = new CustomMotorController(
-			hardwareMap,
-			new String[]{"intake"},
-			new boolean[]{true},
-			false,
-			28.0,
-			new CustomPIDFController(0, 0, 0, 0)
+				hardwareMap,
+				new String[]{"intake"},
+				new boolean[]{true},
+				false,
+				28.0,
+				new CustomPIDFController(0, 0, 0, 0)
 		);
 
 		// Initialize azimuth servo (with PID for continuous rotation, but fixed position - no auto-aim)
 		azimuthServo = new CustomServoController(
-			hardwareMap,
-			new String[]{"azimuthServo0", "azimuthServo1"},
-			new boolean[]{true, true}, // both reversed (same as MainDriveOpmode)
-			true, // use analog position sensor for PID
-			MDOConstants.AzimuthPIDFConstants, // PID constants from MDOConstants
-			"azimuthPosition" // analog position sensor name
+				hardwareMap,
+				new String[]{"azimuthServo0", "azimuthServo1"},
+				new boolean[]{true, true}, // both reversed (same as MainDriveOpmode)
+				true, // use analog position sensor for PID
+				MDOConstants.AzimuthPIDFConstants, // PID constants from MDOConstants
+				"azimuthPosition" // analog position sensor name
 		);
 
 		// Initialize elevation servo (simple mode, no PID - same as MainDriveOpmode)
 		elevationServo = new CustomServoController(
-			hardwareMap,
-			new String[]{"elevationServo"},
-			new boolean[]{false},
-			false, // no analog position sensor
-			new double[]{0, 0, 0},
-			null
+				hardwareMap,
+				new String[]{"elevationServo"},
+				new boolean[]{false},
+				false, // no analog position sensor
+				new double[]{0, 0, 0},
+				null
 		);
 
 		// Initialize AprilTag localizer for camera vision
 		aprilTagLocalizer = new AprilTagLocalizer();
 		aprilTagLocalizer.cameraPosition = new Position(DistanceUnit.INCH,
-			MDOConstants.CameraOffset[0], MDOConstants.CameraOffset[1], MDOConstants.CameraOffset[2], 0);
+				MDOConstants.CameraOffset[0], MDOConstants.CameraOffset[1], MDOConstants.CameraOffset[2], 0);
 		aprilTagLocalizer.initAprilTag(hardwareMap, "Webcam 1");
 
 		// Initialize custom threads
@@ -190,126 +193,126 @@ public class BlueCloseAutoOpmode extends OpMode {
 
 		telemetryC.addData("Status", "Initialized");
 		telemetryC.addData("Start Pose", String.format("(%.1f, %.1f, %.1f°)",
-			BlueCloseAutoConstants.startPose.getX(),
-			BlueCloseAutoConstants.startPose.getY(),
-			Math.toDegrees(BlueCloseAutoConstants.startPose.getHeading())));
+				BlueCloseAutoConstants.startPose.getX(),
+				BlueCloseAutoConstants.startPose.getY(),
+				Math.toDegrees(BlueCloseAutoConstants.startPose.getHeading())));
 		telemetryC.update();
 	}
 
 	protected void buildPaths() {
 		// Path from start to camera look position (first thing, when enabled)
 		pathToCameraLook = follower.pathBuilder()
-			.addPath(new BezierLine(
-				BlueCloseAutoConstants.startPose,
-				BlueCloseAutoConstants.cameraLookPose
-			))
-			.setLinearHeadingInterpolation(
-				BlueCloseAutoConstants.startPose.getHeading(),
-				BlueCloseAutoConstants.cameraLookPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						BlueCloseAutoConstants.startPose,
+						BlueCloseAutoConstants.cameraLookPose
+				))
+				.setLinearHeadingInterpolation(
+						BlueCloseAutoConstants.startPose.getHeading(),
+						BlueCloseAutoConstants.cameraLookPose.getHeading()
+				)
+				.build();
 
 		// Path from camera look to launch position
 		pathFromCameraLookToLaunch = follower.pathBuilder()
-			.addPath(new BezierLine(
-				BlueCloseAutoConstants.cameraLookPose,
-				BlueCloseAutoConstants.launchPose
-			))
-			.setLinearHeadingInterpolation(
-				BlueCloseAutoConstants.cameraLookPose.getHeading(),
-				BlueCloseAutoConstants.launchPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						BlueCloseAutoConstants.cameraLookPose,
+						BlueCloseAutoConstants.launchPose
+				))
+				.setLinearHeadingInterpolation(
+						BlueCloseAutoConstants.cameraLookPose.getHeading(),
+						BlueCloseAutoConstants.launchPose.getHeading()
+				)
+				.build();
 
 		// Path from start to launch position (when camera look is skipped)
 		pathToLaunch = follower.pathBuilder()
-			.addPath(new BezierLine(
-				BlueCloseAutoConstants.startPose,
-				BlueCloseAutoConstants.launchPose
-			))
-			.setLinearHeadingInterpolation(
-				BlueCloseAutoConstants.startPose.getHeading(),
-				BlueCloseAutoConstants.launchPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						BlueCloseAutoConstants.startPose,
+						BlueCloseAutoConstants.launchPose
+				))
+				.setLinearHeadingInterpolation(
+						BlueCloseAutoConstants.startPose.getHeading(),
+						BlueCloseAutoConstants.launchPose.getHeading()
+				)
+				.build();
 
 		// Path to ball 0 lineup (from launch)
 		pathToBall0Lineup = follower.pathBuilder()
-			.addPath(new BezierLine(
-				BlueCloseAutoConstants.launchPose,
-				BlueCloseAutoConstants.ballCollection0LineupPose
-			))
-			.setLinearHeadingInterpolation(
-				BlueCloseAutoConstants.launchPose.getHeading(),
-				BlueCloseAutoConstants.ballCollection0LineupPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						BlueCloseAutoConstants.launchPose,
+						BlueCloseAutoConstants.ballCollection0LineupPose
+				))
+				.setLinearHeadingInterpolation(
+						BlueCloseAutoConstants.launchPose.getHeading(),
+						BlueCloseAutoConstants.ballCollection0LineupPose.getHeading()
+				)
+				.build();
 
 		// Path to ball 0 pickup
 		pathToBall0Pickup = follower.pathBuilder()
-			.addPath(new BezierLine(
-				BlueCloseAutoConstants.ballCollection0LineupPose,
-				BlueCloseAutoConstants.ballCollection0PickupPose
-			))
-			.setConstantHeadingInterpolation(BlueCloseAutoConstants.ballCollection0PickupPose.getHeading())
-			.build();
+				.addPath(new BezierLine(
+						BlueCloseAutoConstants.ballCollection0LineupPose,
+						BlueCloseAutoConstants.ballCollection0PickupPose
+				))
+				.setConstantHeadingInterpolation(BlueCloseAutoConstants.ballCollection0PickupPose.getHeading())
+				.build();
 
 		// Path from ball 0 pickup back to launch
 		pathFromBall0ToLaunch = follower.pathBuilder()
-			.addPath(new BezierLine(
-				BlueCloseAutoConstants.ballCollection0PickupPose,
-				BlueCloseAutoConstants.launchPose
-			))
-			.setLinearHeadingInterpolation(
-				BlueCloseAutoConstants.ballCollection0PickupPose.getHeading(),
-				BlueCloseAutoConstants.launchPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						BlueCloseAutoConstants.ballCollection0PickupPose,
+						BlueCloseAutoConstants.launchPose
+				))
+				.setLinearHeadingInterpolation(
+						BlueCloseAutoConstants.ballCollection0PickupPose.getHeading(),
+						BlueCloseAutoConstants.launchPose.getHeading()
+				)
+				.build();
 
 		// Path to ball 1 lineup (from launch)
 		pathToBall1Lineup = follower.pathBuilder()
-			.addPath(new BezierLine(
-				BlueCloseAutoConstants.launchPose,
-				BlueCloseAutoConstants.getBallCollection1LineupPose
-			))
-			.setLinearHeadingInterpolation(
-				BlueCloseAutoConstants.launchPose.getHeading(),
-				BlueCloseAutoConstants.getBallCollection1LineupPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						BlueCloseAutoConstants.launchPose,
+						BlueCloseAutoConstants.getBallCollection1LineupPose
+				))
+				.setLinearHeadingInterpolation(
+						BlueCloseAutoConstants.launchPose.getHeading(),
+						BlueCloseAutoConstants.getBallCollection1LineupPose.getHeading()
+				)
+				.build();
 
 		// Path to ball 1 pickup
 		pathToBall1Pickup = follower.pathBuilder()
-			.addPath(new BezierLine(
-				BlueCloseAutoConstants.getBallCollection1LineupPose,
-				BlueCloseAutoConstants.getBallCollection1PickupPose
-			))
-			.setConstantHeadingInterpolation(BlueCloseAutoConstants.getBallCollection1PickupPose.getHeading())
-			.build();
+				.addPath(new BezierLine(
+						BlueCloseAutoConstants.getBallCollection1LineupPose,
+						BlueCloseAutoConstants.getBallCollection1PickupPose
+				))
+				.setConstantHeadingInterpolation(BlueCloseAutoConstants.getBallCollection1PickupPose.getHeading())
+				.build();
 
 		// Path from ball 1 pickup back to launch
 		pathFromBall1ToLaunch = follower.pathBuilder()
-			.addPath(new BezierLine(
-				BlueCloseAutoConstants.getBallCollection1PickupPose,
-				BlueCloseAutoConstants.launchPose
-			))
-			.setLinearHeadingInterpolation(
-				BlueCloseAutoConstants.getBallCollection1PickupPose.getHeading(),
-				BlueCloseAutoConstants.launchPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						BlueCloseAutoConstants.getBallCollection1PickupPose,
+						BlueCloseAutoConstants.launchPose
+				))
+				.setLinearHeadingInterpolation(
+						BlueCloseAutoConstants.getBallCollection1PickupPose.getHeading(),
+						BlueCloseAutoConstants.launchPose.getHeading()
+				)
+				.build();
 
 		// Path to final position (from launch)
 		pathToFinal = follower.pathBuilder()
-			.addPath(new BezierLine(
-				BlueCloseAutoConstants.launchPose,
-				BlueCloseAutoConstants.finalPose
-			))
-			.setLinearHeadingInterpolation(
-				BlueCloseAutoConstants.launchPose.getHeading(),
-				BlueCloseAutoConstants.finalPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						BlueCloseAutoConstants.launchPose,
+						BlueCloseAutoConstants.finalPose
+				))
+				.setLinearHeadingInterpolation(
+						BlueCloseAutoConstants.launchPose.getHeading(),
+						BlueCloseAutoConstants.finalPose.getHeading()
+				)
+				.build();
 	}
 
 	@Override
@@ -400,7 +403,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 
 		// Check if intake should be turned off after timer expires (while driving)
 		int intakeCollectTime = (currentIntakePosition == 0) ?
-			BlueCloseAutoConstants.intakeCollect0TimeMs : BlueCloseAutoConstants.intakeCollect1TimeMs;
+				BlueCloseAutoConstants.intakeCollect0TimeMs : BlueCloseAutoConstants.intakeCollect1TimeMs;
 		if (intakeOffTimerActive && intakeOffTimer.milliseconds() > intakeCollectTime) {
 			intakeRunningState = IntakeState.STOP;
 			intakeOffTimerActive = false;
@@ -568,8 +571,8 @@ public class BlueCloseAutoOpmode extends OpMode {
 				}
 				// Transition after all 3 balls have been launched, post-launch delay, AND no balls remain (or timeout)
 				if ((ballsLaunched >= 3 && launchTimer.milliseconds() > BlueCloseAutoConstants.postLaunchDelayMs
-					&& sorterController.getCachedBallCount() == 0)
-					|| stateTimer.milliseconds() > BlueCloseAutoConstants.maxLaunchStateTimeMs) {
+						&& sorterController.getCachedBallCount() == 0)
+						|| stateTimer.milliseconds() > BlueCloseAutoConstants.maxLaunchStateTimeMs) {
 					sorterController.lockLiftersForLaunch(false);
 					setState(AutoState.DRIVE_TO_BALL_0_LINEUP);
 				}
@@ -692,8 +695,8 @@ public class BlueCloseAutoOpmode extends OpMode {
 				}
 				// Transition after all 3 balls have been launched, post-launch delay, AND no balls remain (or timeout)
 				if ((ballsLaunched >= 3 && launchTimer.milliseconds() > BlueCloseAutoConstants.postLaunchDelayMs
-					&& sorterController.getCachedBallCount() == 0)
-					|| stateTimer.milliseconds() > BlueCloseAutoConstants.maxLaunchStateTimeMs) {
+						&& sorterController.getCachedBallCount() == 0)
+						|| stateTimer.milliseconds() > BlueCloseAutoConstants.maxLaunchStateTimeMs) {
 					sorterController.lockLiftersForLaunch(false);
 					setState(AutoState.DRIVE_TO_BALL_1_LINEUP);
 				}
@@ -815,8 +818,8 @@ public class BlueCloseAutoOpmode extends OpMode {
 				}
 				// Transition after all 3 balls have been launched, post-launch delay, AND no balls remain (or timeout)
 				if ((ballsLaunched >= 3 && launchTimer.milliseconds() > BlueCloseAutoConstants.postLaunchDelayMs
-					&& sorterController.getCachedBallCount() == 0)
-					|| stateTimer.milliseconds() > BlueCloseAutoConstants.maxLaunchStateTimeMs) {
+						&& sorterController.getCachedBallCount() == 0)
+						|| stateTimer.milliseconds() > BlueCloseAutoConstants.maxLaunchStateTimeMs) {
 					sorterController.lockLiftersForLaunch(false);
 					setState(AutoState.DRIVE_TO_FINAL);
 				}
@@ -860,6 +863,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 	 * Launch the next ball based on current launch order pattern.
 	 * Uses pitLaunched[] array to track which pits have already been launched this cycle.
 	 * Searches for target color first, then alternate color, then any remaining pit.
+	 *
 	 * @param targetColor The preferred color to launch (from launchOrder)
 	 * @return The color that was launched, or null if no ball was launched
 	 */
@@ -868,9 +872,9 @@ public class BlueCloseAutoOpmode extends OpMode {
 		int[] slotPriority = {2, 1, 0};
 
 		CustomSorterController.CustomColor GREEN =
-			CustomSorterController.CustomColor.GREEN;
+				CustomSorterController.CustomColor.GREEN;
 		CustomSorterController.CustomColor PURPLE =
-			CustomSorterController.CustomColor.PURPLE;
+				CustomSorterController.CustomColor.PURPLE;
 
 		// First, try to find the exact target color in a pit that hasn't been launched yet
 		for (int pit : slotPriority) {
@@ -884,7 +888,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 
 		// Target color not available - try the alternate color
 		CustomSorterController.CustomColor alternateColor =
-			(targetColor == GREEN) ? PURPLE : GREEN;
+				(targetColor == GREEN) ? PURPLE : GREEN;
 
 		for (int pit : slotPriority) {
 			if (!pitLaunched[pit] && sorterController.getCachedColor(pit) == alternateColor) {
@@ -913,7 +917,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 	 * Call this during CAMERA_LOOK state to determine ball shooting order.
 	 * Only cares about tags 21, 22, 23 - ignores all other AprilTags on the field.
 	 * Stops the camera processor immediately once a valid tag is detected.
-	 *
+	 * <p>
 	 * AprilTag ID mapping (pattern repeats for each launch cycle):
 	 * - Tag 21 = GPP (Green, Purple, Purple)
 	 * - Tag 22 = PGP (Purple, Green, Purple)
@@ -945,9 +949,9 @@ public class BlueCloseAutoOpmode extends OpMode {
 					// Set launch order based on tag ID (only if not already set)
 					if (launchOrder.isEmpty()) {
 						CustomSorterController.CustomColor GREEN =
-							CustomSorterController.CustomColor.GREEN;
+								CustomSorterController.CustomColor.GREEN;
 						CustomSorterController.CustomColor PURPLE =
-							CustomSorterController.CustomColor.PURPLE;
+								CustomSorterController.CustomColor.PURPLE;
 
 						// Add pattern 3 times (for 3 launch cycles, 9 balls total)
 						for (int cycle = 0; cycle < 3; cycle++) {
@@ -1060,7 +1064,7 @@ public class BlueCloseAutoOpmode extends OpMode {
 
 		Pose pose = follower.getPose();
 		telemetryC.addData("Pose", String.format("(%.1f, %.1f, %.1f°)",
-			pose.getX(), pose.getY(), Math.toDegrees(pose.getHeading())));
+				pose.getX(), pose.getY(), Math.toDegrees(pose.getHeading())));
 
 		telemetryC.update();
 	}

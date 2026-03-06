@@ -29,10 +29,11 @@ public class CustomPIDFController {
 
 	/**
 	 * Calculates motor power based on target and current position.
-	 * @param targetPosition The desired position.
+	 *
+	 * @param targetPosition  The desired position.
 	 * @param currentPosition The current position.
-	 * @param targetVelocity The desired feedforward velocity. Use 0 if not required.
-	 * @param range The range within which the error is considered tolerable.
+	 * @param targetVelocity  The desired feedforward velocity. Use 0 if not required.
+	 * @param range           The range within which the error is considered tolerable.
 	 * @return Calculated power (range: -1.0 to 1.0).
 	 */
 	public synchronized double calculate(double targetPosition, double currentPosition, double targetVelocity, double range) {
@@ -41,22 +42,22 @@ public class CustomPIDFController {
 
 	/**
 	 * Calculates motor power, optimized for both static hold and moving-target tracking.
-	 *
+	 * <p>
 	 * Key design choices for moving targets:
 	 * 1. Derivative-on-measurement: D term acts on -d(measurement)/dt, not d(error)/dt.
-	 *    This eliminates "derivative kick" — sudden D spikes when the target jumps/moves.
+	 * This eliminates "derivative kick" — sudden D spikes when the target jumps/moves.
 	 * 2. Integral doesn't reset on zero-crossing during tracking — only on direction
-	 *    reversal when the target is stationary (actual overshoot).
+	 * reversal when the target is stationary (actual overshoot).
 	 * 3. Deadzone only activates when the target is not moving — during tracking, any
-	 *    error produces output, preventing the stutter of repeated on/off engagement.
+	 * error produces output, preventing the stutter of repeated on/off engagement.
 	 * 4. Target velocity feedforward: the F term can drive the servo ahead of the error,
-	 *    reducing tracking lag to near-zero for smooth movements.
+	 * reducing tracking lag to near-zero for smooth movements.
 	 *
-	 * @param targetPosition The desired position.
+	 * @param targetPosition  The desired position.
 	 * @param currentPosition The current position (measurement).
-	 * @param targetVelocity Feedforward velocity (units/sec). Use 0 if not required.
-	 * @param range The range within which the error is considered tolerable.
-	 * @param scale Scale factor to normalize output (5000 for motors, 361 for servos in degrees).
+	 * @param targetVelocity  Feedforward velocity (units/sec). Use 0 if not required.
+	 * @param range           The range within which the error is considered tolerable.
+	 * @param scale           Scale factor to normalize output (5000 for motors, 361 for servos in degrees).
 	 * @return Calculated power (range: -1.0 to 1.0).
 	 */
 	public synchronized double calculate(double targetPosition, double currentPosition, double targetVelocity, double range, double scale) {
@@ -167,6 +168,7 @@ public class CustomPIDFController {
 	/**
 	 * Creates a copy of this PIDF controller with the same coefficients but fresh state.
 	 * Useful when multiple motors need independent PID control with the same tuning.
+	 *
 	 * @return A new CustomPIDFController with the same kP, kI, kD, kF values.
 	 */
 	public CustomPIDFController copy() {

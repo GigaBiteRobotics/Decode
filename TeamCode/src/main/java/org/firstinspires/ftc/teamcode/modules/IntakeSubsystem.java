@@ -26,7 +26,9 @@ public class IntakeSubsystem {
 
 	// ===== Simple actions for GamepadEventHandler callbacks =====
 
-	/** Toggle intake IN mode. If already IN, stops. Otherwise starts IN. */
+	/**
+	 * Toggle intake IN mode. If already IN, stops. Otherwise starts IN.
+	 */
 	public void toggleIn() {
 		if (intakeRunningState == IntakeState.IN) {
 			intakeRunningState = IntakeState.STOP;
@@ -35,7 +37,9 @@ public class IntakeSubsystem {
 		}
 	}
 
-	/** Toggle intake OUT mode. If already OUT, stops. Otherwise starts OUT. */
+	/**
+	 * Toggle intake OUT mode. If already OUT, stops. Otherwise starts OUT.
+	 */
 	public void toggleOut() {
 		if (intakeRunningState == IntakeState.OUT) {
 			intakeRunningState = IntakeState.STOP;
@@ -46,6 +50,7 @@ public class IntakeSubsystem {
 
 	/**
 	 * Handle gamepad input for intake toggle.
+	 *
 	 * @param aButton gamepad2.a (toggle IN)
 	 * @param bButton gamepad2.b (toggle OUT)
 	 */
@@ -71,6 +76,7 @@ public class IntakeSubsystem {
 
 	/**
 	 * Update the intake motor. Handles auto-stop and applies motor power.
+	 *
 	 * @param currentBallCount Current number of balls detected by the sorter
 	 */
 	public void update(int currentBallCount) {

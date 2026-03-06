@@ -9,15 +9,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * TurretSubsystem - Real-time threaded turret controller with sub-millisecond reaction time.
- *
+ * <p>
  * Architecture:
  * - Owns a dedicated high-priority aiming thread (~500-1000Hz) that continuously
- *   recalculates the turret angle from the latest pose, launch vectors, and offsets.
+ * recalculates the turret angle from the latest pose, launch vectors, and offsets.
  * - All shared state is lock-free using volatile fields — no contention with the main loop.
  * - The main loop feeds data via lightweight volatile writes (setPose, setLaunchVectors, etc.)
- *   and the aiming thread picks them up on the next iteration (~0.5-1ms later).
+ * and the aiming thread picks them up on the next iteration (~0.5-1ms later).
  * - The servo PID thread (in CustomThreads) still runs independently for hardware I/O.
- *
+ * <p>
  * Timing:
  * - Aiming recalculation: ~500-1000Hz (pure math, no I2C)
  * - Servo PID loop: ~300-500Hz (limited by I2C analog read)
@@ -178,6 +178,7 @@ public class TurretSubsystem {
 
 	/**
 	 * Feed the latest launch vectors to the aiming thread.
+	 *
 	 * @param launchVectors Result from LauncherCalculations (may be null if target unreachable)
 	 */
 	public void setLaunchVectors(Double[] launchVectors) {
@@ -212,13 +213,16 @@ public class TurretSubsystem {
 
 	/**
 	 * Adjust the manual azimuth offset by the given amount (in degrees).
+	 *
 	 * @param deltaDeg Amount to add to the offset (positive = right, negative = left)
 	 */
 	public void adjustAzimuth(double deltaDeg) {
 		manualAzimuthOffset += deltaDeg;
 	}
 
-	/** Reset the manual azimuth offset to zero. */
+	/**
+	 * Reset the manual azimuth offset to zero.
+	 */
 	public void resetAzimuthOffset() {
 		manualAzimuthOffset = 0.0;
 	}
@@ -275,12 +279,16 @@ public class TurretSubsystem {
 		return azimuthServo;
 	}
 
-	/** Get the real-time aiming loop frequency in Hz. */
+	/**
+	 * Get the real-time aiming loop frequency in Hz.
+	 */
 	public double getAimingLoopHz() {
 		return aimingLoopHz;
 	}
 
-	/** Returns true if the aiming thread is alive and running. */
+	/**
+	 * Returns true if the aiming thread is alive and running.
+	 */
 	public boolean isThreadRunning() {
 		return aimingThreadRunning.get() && aimingThread != null && aimingThread.isAlive();
 	}

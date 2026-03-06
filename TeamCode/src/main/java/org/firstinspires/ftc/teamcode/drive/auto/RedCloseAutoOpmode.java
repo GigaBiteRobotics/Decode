@@ -1,26 +1,28 @@
 package org.firstinspires.ftc.teamcode.drive.auto;
 
-import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
 import com.pedropathing.follower.Follower;
-import com.pedropathing.geometry.*;
-import com.pedropathing.paths.*;
+import com.pedropathing.geometry.BezierCurve;
+import com.pedropathing.geometry.BezierLine;
+import com.pedropathing.geometry.Pose;
+import com.pedropathing.paths.PathChain;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.Position;
+import org.firstinspires.ftc.teamcode.constants.MDOConstants;
 import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
 import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
-import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
-import org.firstinspires.ftc.teamcode.modules.CustomThreads;
-import org.firstinspires.ftc.teamcode.constants.MDOConstants;
-import org.firstinspires.ftc.teamcode.modules.HubInitializer;
-import org.firstinspires.ftc.teamcode.modules.CustomServoController;
 import org.firstinspires.ftc.teamcode.modules.CustomMotorController;
-import org.firstinspires.ftc.teamcode.modules.CustomTelemetry;
+import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
+import org.firstinspires.ftc.teamcode.modules.CustomServoController;
 import org.firstinspires.ftc.teamcode.modules.CustomSorterController;
+import org.firstinspires.ftc.teamcode.modules.CustomTelemetry;
+import org.firstinspires.ftc.teamcode.modules.CustomThreads;
+import org.firstinspires.ftc.teamcode.modules.HubInitializer;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
+import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 
 import java.util.ArrayList;
@@ -50,6 +52,7 @@ public class RedCloseAutoOpmode extends OpMode {
 		DRIVE_TO_FINAL,
 		FINISHED
 	}
+
 	protected AutoState currentState = AutoState.IDLE;
 	protected AutoState previousState = AutoState.IDLE;
 
@@ -79,6 +82,7 @@ public class RedCloseAutoOpmode extends OpMode {
 		OUT,
 		STOP
 	}
+
 	protected IntakeState intakeRunningState = IntakeState.STOP;
 
 	// ===== TIMERS =====
@@ -145,38 +149,38 @@ public class RedCloseAutoOpmode extends OpMode {
 
 		// Initialize intake motor (same as MainDriveOpmode)
 		intakeMotor = new CustomMotorController(
-			hardwareMap,
-			new String[]{"intake"},
-			new boolean[]{true},
-			false,
-			28.0,
-			new CustomPIDFController(0, 0, 0, 0)
+				hardwareMap,
+				new String[]{"intake"},
+				new boolean[]{true},
+				false,
+				28.0,
+				new CustomPIDFController(0, 0, 0, 0)
 		);
 
 		// Initialize azimuth servo (with PID for continuous rotation, but fixed position - no auto-aim)
 		azimuthServo = new CustomServoController(
-			hardwareMap,
-			new String[]{"azimuthServo0", "azimuthServo1"},
-			new boolean[]{true, true}, // both reversed (same as MainDriveOpmode)
-			true, // use analog position sensor for PID
-			MDOConstants.AzimuthPIDFConstants, // PID constants from MDOConstants
-			"azimuthPosition" // analog position sensor name
+				hardwareMap,
+				new String[]{"azimuthServo0", "azimuthServo1"},
+				new boolean[]{true, true}, // both reversed (same as MainDriveOpmode)
+				true, // use analog position sensor for PID
+				MDOConstants.AzimuthPIDFConstants, // PID constants from MDOConstants
+				"azimuthPosition" // analog position sensor name
 		);
 
 		// Initialize elevation servo (simple mode, no PID - same as MainDriveOpmode)
 		elevationServo = new CustomServoController(
-			hardwareMap,
-			new String[]{"elevationServo"},
-			new boolean[]{false},
-			false, // no analog position sensor
-			new double[]{0, 0, 0},
-			null
+				hardwareMap,
+				new String[]{"elevationServo"},
+				new boolean[]{false},
+				false, // no analog position sensor
+				new double[]{0, 0, 0},
+				null
 		);
 
 		// Initialize AprilTag localizer for camera vision
 		aprilTagLocalizer = new AprilTagLocalizer();
 		aprilTagLocalizer.cameraPosition = new Position(DistanceUnit.INCH,
-			MDOConstants.CameraOffset[0], MDOConstants.CameraOffset[1], MDOConstants.CameraOffset[2], 0);
+				MDOConstants.CameraOffset[0], MDOConstants.CameraOffset[1], MDOConstants.CameraOffset[2], 0);
 		aprilTagLocalizer.initAprilTag(hardwareMap, "Webcam 1");
 
 		// Initialize custom threads
@@ -190,127 +194,127 @@ public class RedCloseAutoOpmode extends OpMode {
 
 		telemetryC.addData("Status", "Initialized");
 		telemetryC.addData("Start Pose", String.format("(%.1f, %.1f, %.1f°)",
-			RedCloseAutoConstants.startPose.getX(),
-			RedCloseAutoConstants.startPose.getY(),
-			Math.toDegrees(RedCloseAutoConstants.startPose.getHeading())));
+				RedCloseAutoConstants.startPose.getX(),
+				RedCloseAutoConstants.startPose.getY(),
+				Math.toDegrees(RedCloseAutoConstants.startPose.getHeading())));
 		telemetryC.update();
 	}
 
 	protected void buildPaths() {
 		// Path from start to camera look position (first thing, when enabled)
 		pathToCameraLook = follower.pathBuilder()
-			.addPath(new BezierLine(
-				RedCloseAutoConstants.startPose,
-				RedCloseAutoConstants.cameraLookPose
-			))
-			.setLinearHeadingInterpolation(
-				RedCloseAutoConstants.startPose.getHeading(),
-				RedCloseAutoConstants.cameraLookPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						RedCloseAutoConstants.startPose,
+						RedCloseAutoConstants.cameraLookPose
+				))
+				.setLinearHeadingInterpolation(
+						RedCloseAutoConstants.startPose.getHeading(),
+						RedCloseAutoConstants.cameraLookPose.getHeading()
+				)
+				.build();
 
 		// Path from camera look to launch position
 		pathFromCameraLookToLaunch = follower.pathBuilder()
-			.addPath(new BezierLine(
-				RedCloseAutoConstants.cameraLookPose,
-				RedCloseAutoConstants.launchPose
-			))
-			.setLinearHeadingInterpolation(
-				RedCloseAutoConstants.cameraLookPose.getHeading(),
-				RedCloseAutoConstants.launchPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						RedCloseAutoConstants.cameraLookPose,
+						RedCloseAutoConstants.launchPose
+				))
+				.setLinearHeadingInterpolation(
+						RedCloseAutoConstants.cameraLookPose.getHeading(),
+						RedCloseAutoConstants.launchPose.getHeading()
+				)
+				.build();
 
 		// Path from start to launch position (when camera look is skipped)
 		pathToLaunch = follower.pathBuilder()
-			.addPath(new BezierLine(
-				RedCloseAutoConstants.startPose,
-				RedCloseAutoConstants.launchPose
-			))
-			.setLinearHeadingInterpolation(
-				RedCloseAutoConstants.startPose.getHeading(),
-				RedCloseAutoConstants.launchPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						RedCloseAutoConstants.startPose,
+						RedCloseAutoConstants.launchPose
+				))
+				.setLinearHeadingInterpolation(
+						RedCloseAutoConstants.startPose.getHeading(),
+						RedCloseAutoConstants.launchPose.getHeading()
+				)
+				.build();
 
 		// Path to ball 0 lineup (from launch)
 		pathToBall0Lineup = follower.pathBuilder()
-			.addPath(new BezierLine(
-				RedCloseAutoConstants.launchPose,
-				RedCloseAutoConstants.ballCollection0LineupPose
-			))
-			.setLinearHeadingInterpolation(
-				RedCloseAutoConstants.launchPose.getHeading(),
-				RedCloseAutoConstants.ballCollection0LineupPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						RedCloseAutoConstants.launchPose,
+						RedCloseAutoConstants.ballCollection0LineupPose
+				))
+				.setLinearHeadingInterpolation(
+						RedCloseAutoConstants.launchPose.getHeading(),
+						RedCloseAutoConstants.ballCollection0LineupPose.getHeading()
+				)
+				.build();
 
 		// Path to ball 0 pickup
 		pathToBall0Pickup = follower.pathBuilder()
-			.addPath(new BezierLine(
-				RedCloseAutoConstants.ballCollection0LineupPose,
-				RedCloseAutoConstants.ballCollection0PickupPose
-			))
-			.setConstantHeadingInterpolation(RedCloseAutoConstants.ballCollection0PickupPose.getHeading())
-			.build();
+				.addPath(new BezierLine(
+						RedCloseAutoConstants.ballCollection0LineupPose,
+						RedCloseAutoConstants.ballCollection0PickupPose
+				))
+				.setConstantHeadingInterpolation(RedCloseAutoConstants.ballCollection0PickupPose.getHeading())
+				.build();
 
 		// Path from ball 0 pickup back to launch
 		pathFromBall0ToLaunch = follower.pathBuilder()
-			.addPath(new BezierLine(
-				RedCloseAutoConstants.ballCollection0PickupPose,
-				RedCloseAutoConstants.launchPose
-			))
-			.setLinearHeadingInterpolation(
-				RedCloseAutoConstants.ballCollection0PickupPose.getHeading(),
-				RedCloseAutoConstants.launchPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						RedCloseAutoConstants.ballCollection0PickupPose,
+						RedCloseAutoConstants.launchPose
+				))
+				.setLinearHeadingInterpolation(
+						RedCloseAutoConstants.ballCollection0PickupPose.getHeading(),
+						RedCloseAutoConstants.launchPose.getHeading()
+				)
+				.build();
 
 		// Path to ball 1 lineup (from launch)
 		pathToBall1Lineup = follower.pathBuilder()
-			.addPath(new BezierLine(
-				RedCloseAutoConstants.launchPose,
-				RedCloseAutoConstants.getBallCollection1LineupPose
-			))
-			.setLinearHeadingInterpolation(
-				RedCloseAutoConstants.launchPose.getHeading(),
-				RedCloseAutoConstants.getBallCollection1LineupPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						RedCloseAutoConstants.launchPose,
+						RedCloseAutoConstants.getBallCollection1LineupPose
+				))
+				.setLinearHeadingInterpolation(
+						RedCloseAutoConstants.launchPose.getHeading(),
+						RedCloseAutoConstants.getBallCollection1LineupPose.getHeading()
+				)
+				.build();
 
 		// Path to ball 1 pickup
 		pathToBall1Pickup = follower.pathBuilder()
-			.addPath(new BezierLine(
-				RedCloseAutoConstants.getBallCollection1LineupPose,
-				RedCloseAutoConstants.getBallCollection1PickupPose
-			))
-			.setConstantHeadingInterpolation(RedCloseAutoConstants.getBallCollection1PickupPose.getHeading())
-			.build();
+				.addPath(new BezierLine(
+						RedCloseAutoConstants.getBallCollection1LineupPose,
+						RedCloseAutoConstants.getBallCollection1PickupPose
+				))
+				.setConstantHeadingInterpolation(RedCloseAutoConstants.getBallCollection1PickupPose.getHeading())
+				.build();
 
 		// Path from ball 1 pickup back to launch
 		pathFromBall1ToLaunch = follower.pathBuilder()
-			.addPath(new BezierCurve(
-				RedCloseAutoConstants.getBallCollection1PickupPose,
-				RedCloseAutoConstants.collection1PickupToLaunchIntermediary,
-				RedCloseAutoConstants.launchPose
-			))
-			.setLinearHeadingInterpolation(
-				RedCloseAutoConstants.getBallCollection1PickupPose.getHeading(),
-				RedCloseAutoConstants.launchPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierCurve(
+						RedCloseAutoConstants.getBallCollection1PickupPose,
+						RedCloseAutoConstants.collection1PickupToLaunchIntermediary,
+						RedCloseAutoConstants.launchPose
+				))
+				.setLinearHeadingInterpolation(
+						RedCloseAutoConstants.getBallCollection1PickupPose.getHeading(),
+						RedCloseAutoConstants.launchPose.getHeading()
+				)
+				.build();
 
 		// Path to final position (from launch)
 		pathToFinal = follower.pathBuilder()
-			.addPath(new BezierLine(
-				RedCloseAutoConstants.launchPose,
-				RedCloseAutoConstants.finalPose
-			))
-			.setLinearHeadingInterpolation(
-				RedCloseAutoConstants.launchPose.getHeading(),
-				RedCloseAutoConstants.finalPose.getHeading()
-			)
-			.build();
+				.addPath(new BezierLine(
+						RedCloseAutoConstants.launchPose,
+						RedCloseAutoConstants.finalPose
+				))
+				.setLinearHeadingInterpolation(
+						RedCloseAutoConstants.launchPose.getHeading(),
+						RedCloseAutoConstants.finalPose.getHeading()
+				)
+				.build();
 	}
 
 	@Override
@@ -401,7 +405,7 @@ public class RedCloseAutoOpmode extends OpMode {
 
 		// Check if intake should be turned off after timer expires (while driving)
 		int intakeCollectTime = (currentIntakePosition == 0) ?
-			RedCloseAutoConstants.intakeCollect0TimeMs : RedCloseAutoConstants.intakeCollect1TimeMs;
+				RedCloseAutoConstants.intakeCollect0TimeMs : RedCloseAutoConstants.intakeCollect1TimeMs;
 		if (intakeOffTimerActive && intakeOffTimer.milliseconds() > intakeCollectTime) {
 			intakeRunningState = IntakeState.STOP;
 			intakeOffTimerActive = false;
@@ -568,8 +572,8 @@ public class RedCloseAutoOpmode extends OpMode {
 				}
 				// Transition after all 3 balls have been launched, post-launch delay, AND no balls remain (or timeout)
 				if ((ballsLaunched >= 3 && launchTimer.milliseconds() > RedCloseAutoConstants.postLaunchDelayMs
-					&& sorterController.getCachedBallCount() == 0)
-					|| stateTimer.milliseconds() > RedCloseAutoConstants.maxLaunchStateTimeMs) {
+						&& sorterController.getCachedBallCount() == 0)
+						|| stateTimer.milliseconds() > RedCloseAutoConstants.maxLaunchStateTimeMs) {
 					sorterController.lockLiftersForLaunch(false);
 					setState(AutoState.DRIVE_TO_BALL_0_LINEUP);
 				}
@@ -692,8 +696,8 @@ public class RedCloseAutoOpmode extends OpMode {
 				}
 				// Transition after all 3 balls have been launched, post-launch delay, AND no balls remain (or timeout)
 				if ((ballsLaunched >= 3 && launchTimer.milliseconds() > RedCloseAutoConstants.postLaunchDelayMs
-					&& sorterController.getCachedBallCount() == 0)
-					|| stateTimer.milliseconds() > RedCloseAutoConstants.maxLaunchStateTimeMs) {
+						&& sorterController.getCachedBallCount() == 0)
+						|| stateTimer.milliseconds() > RedCloseAutoConstants.maxLaunchStateTimeMs) {
 					sorterController.lockLiftersForLaunch(false);
 					setState(AutoState.DRIVE_TO_BALL_1_LINEUP);
 				}
@@ -815,8 +819,8 @@ public class RedCloseAutoOpmode extends OpMode {
 				}
 				// Transition after all 3 balls have been launched, post-launch delay, AND no balls remain (or timeout)
 				if ((ballsLaunched >= 3 && launchTimer.milliseconds() > RedCloseAutoConstants.postLaunchDelayMs
-					&& sorterController.getCachedBallCount() == 0)
-					|| stateTimer.milliseconds() > RedCloseAutoConstants.maxLaunchStateTimeMs) {
+						&& sorterController.getCachedBallCount() == 0)
+						|| stateTimer.milliseconds() > RedCloseAutoConstants.maxLaunchStateTimeMs) {
 					sorterController.lockLiftersForLaunch(false);
 					setState(AutoState.DRIVE_TO_FINAL);
 				}
@@ -860,6 +864,7 @@ public class RedCloseAutoOpmode extends OpMode {
 	 * Launch the next ball based on current launch order pattern.
 	 * Uses pitLaunched[] array to track which pits have already been launched this cycle.
 	 * Searches for target color first, then alternate color, then any remaining pit.
+	 *
 	 * @param targetColor The preferred color to launch (from launchOrder)
 	 * @return The color that was launched, or null if no ball was launched
 	 */
@@ -868,9 +873,9 @@ public class RedCloseAutoOpmode extends OpMode {
 		int[] slotPriority = {2, 1, 0};
 
 		CustomSorterController.CustomColor GREEN =
-			CustomSorterController.CustomColor.GREEN;
+				CustomSorterController.CustomColor.GREEN;
 		CustomSorterController.CustomColor PURPLE =
-			CustomSorterController.CustomColor.PURPLE;
+				CustomSorterController.CustomColor.PURPLE;
 
 		// First, try to find the exact target color in a pit that hasn't been launched yet
 		for (int pit : slotPriority) {
@@ -884,7 +889,7 @@ public class RedCloseAutoOpmode extends OpMode {
 
 		// Target color not available - try the alternate color
 		CustomSorterController.CustomColor alternateColor =
-			(targetColor == GREEN) ? PURPLE : GREEN;
+				(targetColor == GREEN) ? PURPLE : GREEN;
 
 		for (int pit : slotPriority) {
 			if (!pitLaunched[pit] && sorterController.getCachedColor(pit) == alternateColor) {
@@ -913,7 +918,7 @@ public class RedCloseAutoOpmode extends OpMode {
 	 * Call this during CAMERA_LOOK state to determine ball shooting order.
 	 * Only cares about tags 21, 22, 23 - ignores all other AprilTags on the field.
 	 * Stops the camera processor immediately once a valid tag is detected.
-	 *
+	 * <p>
 	 * AprilTag ID mapping (pattern repeats for each launch cycle):
 	 * - Tag 21 = GPP (Green, Purple, Purple)
 	 * - Tag 22 = PGP (Purple, Green, Purple)
@@ -945,9 +950,9 @@ public class RedCloseAutoOpmode extends OpMode {
 					// Set launch order based on tag ID (only if not already set)
 					if (launchOrder.isEmpty()) {
 						CustomSorterController.CustomColor GREEN =
-							CustomSorterController.CustomColor.GREEN;
+								CustomSorterController.CustomColor.GREEN;
 						CustomSorterController.CustomColor PURPLE =
-							CustomSorterController.CustomColor.PURPLE;
+								CustomSorterController.CustomColor.PURPLE;
 
 						// Add pattern 3 times (for 3 launch cycles, 9 balls total)
 						for (int cycle = 0; cycle < 3; cycle++) {
@@ -1060,7 +1065,7 @@ public class RedCloseAutoOpmode extends OpMode {
 
 		Pose pose = follower.getPose();
 		telemetryC.addData("Pose", String.format("(%.1f, %.1f, %.1f°)",
-			pose.getX(), pose.getY(), Math.toDegrees(pose.getHeading())));
+				pose.getX(), pose.getY(), Math.toDegrees(pose.getHeading())));
 
 		telemetryC.update();
 	}

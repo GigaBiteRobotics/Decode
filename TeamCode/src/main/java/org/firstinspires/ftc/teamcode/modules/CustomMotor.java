@@ -45,6 +45,7 @@ public class CustomMotor {
 
 	/**
 	 * Set the encoder reverse flag
+	 *
 	 * @param reverse true to reverse encoder readings
 	 */
 	public void setReverseEncoder(boolean reverse) {
@@ -55,6 +56,7 @@ public class CustomMotor {
 	 * Get RPM using native Expansion Hub velocity calculation.
 	 * Reads from hardware if cache is expired, otherwise returns cached value.
 	 * Thread-safe: uses lock to prevent race conditions on cache access.
+	 *
 	 * @return RPM value (primitive double)
 	 */
 	public double getRPM() {
@@ -85,6 +87,7 @@ public class CustomMotor {
 	/**
 	 * Force a fresh read of RPM from hardware.
 	 * Thread-safe: uses lock to update cache atomically.
+	 *
 	 * @return RPM value (primitive double)
 	 */
 	public double updateAndGetRPM() {
@@ -135,6 +138,7 @@ public class CustomMotor {
 	/**
 	 * Set power directly without affecting RPM mode state.
 	 * Used by CustomMotorController for group-level PID control.
+	 *
 	 * @param power Power to set [-1, 1]
 	 */
 	public void setRawPower(double power) {
@@ -148,6 +152,7 @@ public class CustomMotor {
 
 	/**
 	 * Get raw velocity in ticks per second for debugging
+	 *
 	 * @return Raw velocity from encoder (ticks/second)
 	 */
 	public double getRawVelocity() {
@@ -156,6 +161,7 @@ public class CustomMotor {
 
 	/**
 	 * Get the configured ticks per revolution
+	 *
 	 * @return TICKS_PER_REV value
 	 */
 	public double getTicksPerRev() {
@@ -164,6 +170,7 @@ public class CustomMotor {
 
 	/**
 	 * Check if this motor has an encoder enabled
+	 *
 	 * @return true if encoder is enabled
 	 */
 	public boolean hasEncoder() {

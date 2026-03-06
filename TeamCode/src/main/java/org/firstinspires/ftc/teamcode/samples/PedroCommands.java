@@ -17,51 +17,51 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 
 @Autonomous
 public class PedroCommands extends CommandOpMode {
-    Follower follower;
+	Follower follower;
 
-    Pose pose = new Pose(
-            72, 72, 90
-    );
+	Pose pose = new Pose(
+			72, 72, 90
+	);
 
-    PathChain pathChain;
+	PathChain pathChain;
 
-    @Override
-    public void initialize() {
-        super.reset();
+	@Override
+	public void initialize() {
+		super.reset();
 
-        pathChain = follower.pathBuilder()
-                .addPath(new BezierLine(
-                        new Pose(0, 0, Math.toRadians(0)),
-                        new Pose(16, 28, Math.toRadians(90)))
-                ).setLinearHeadingInterpolation(Math.toRadians(0), Math.toRadians(90))
-                .build();
+		pathChain = follower.pathBuilder()
+				.addPath(new BezierLine(
+						new Pose(0, 0, Math.toRadians(0)),
+						new Pose(16, 28, Math.toRadians(90)))
+				).setLinearHeadingInterpolation(Math.toRadians(0), Math.toRadians(90))
+				.build();
 
-        schedule(
-                // Updates follower to follow path
-                new RunCommand(() -> follower.update()),
+		schedule(
+				// Updates follower to follow path
+				new RunCommand(() -> follower.update()),
 
-                // HoldPointCommand
-                new HoldPointCommand(follower, new Pose(0, 4, 0), false),
-                new HoldPointCommand(follower, pose, true),
+				// HoldPointCommand
+				new HoldPointCommand(follower, new Pose(0, 4, 0), false),
+				new HoldPointCommand(follower, pose, true),
 
-                // TurnCommand
-                new TurnCommand(follower, Math.PI / 2, false),
-                new TurnCommand(follower, 90.0, true, AngleUnit.DEGREES),
+				// TurnCommand
+				new TurnCommand(follower, Math.PI / 2, false),
+				new TurnCommand(follower, 90.0, true, AngleUnit.DEGREES),
 
-                // TurnToCommand
-                new TurnToCommand(follower, Math.PI / 2),
-                new TurnToCommand(follower, 90.0, AngleUnit.DEGREES),
+				// TurnToCommand
+				new TurnToCommand(follower, Math.PI / 2),
+				new TurnToCommand(follower, 90.0, AngleUnit.DEGREES),
 
-                // FollowPathCommand
-                new FollowPathCommand(follower, pathChain),
-                new FollowPathCommand(follower, pathChain, true),
-                new FollowPathCommand(follower, pathChain, true, 1.0),
-                new FollowPathCommand(follower, pathChain, true, 1.0).setGlobalMaxPower(1.0)
-        );
-    }
+				// FollowPathCommand
+				new FollowPathCommand(follower, pathChain),
+				new FollowPathCommand(follower, pathChain, true),
+				new FollowPathCommand(follower, pathChain, true, 1.0),
+				new FollowPathCommand(follower, pathChain, true, 1.0).setGlobalMaxPower(1.0)
+		);
+	}
 
-    @Override
-    public void run() {
-        super.run();
-    }
+	@Override
+	public void run() {
+		super.run();
+	}
 }

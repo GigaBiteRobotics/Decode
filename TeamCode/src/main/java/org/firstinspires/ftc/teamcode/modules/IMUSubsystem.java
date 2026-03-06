@@ -17,14 +17,14 @@ public class IMUSubsystem {
 	/**
 	 * Initialize the external IMU with the given orientation parameters.
 	 *
-	 * @param hardwareMap    The robot's hardware map
-	 * @param imuName        The hardware config name for the IMU (e.g., "imuEX")
-	 * @param logoDirection  Which direction the REV hub logo faces
-	 * @param usbDirection   Which direction the REV hub USB port faces
+	 * @param hardwareMap   The robot's hardware map
+	 * @param imuName       The hardware config name for the IMU (e.g., "imuEX")
+	 * @param logoDirection Which direction the REV hub logo faces
+	 * @param usbDirection  Which direction the REV hub USB port faces
 	 */
 	public IMUSubsystem(HardwareMap hardwareMap, String imuName,
-						RevHubOrientationOnRobot.LogoFacingDirection logoDirection,
-						RevHubOrientationOnRobot.UsbFacingDirection usbDirection) {
+	                    RevHubOrientationOnRobot.LogoFacingDirection logoDirection,
+	                    RevHubOrientationOnRobot.UsbFacingDirection usbDirection) {
 		imu = hardwareMap.get(IMU.class, imuName);
 		IMU.Parameters parameters = new IMU.Parameters(
 				new RevHubOrientationOnRobot(logoDirection, usbDirection)
@@ -34,6 +34,7 @@ public class IMUSubsystem {
 
 	/**
 	 * Get the current yaw (heading) in degrees.
+	 *
 	 * @return Yaw angle in degrees
 	 */
 	public double getHeadingDegrees() {
@@ -43,6 +44,7 @@ public class IMUSubsystem {
 
 	/**
 	 * Get the current yaw (heading) in radians.
+	 *
 	 * @return Yaw angle in radians
 	 */
 	public double getHeadingRadians() {
@@ -59,6 +61,7 @@ public class IMUSubsystem {
 
 	/**
 	 * Get the underlying IMU object for advanced use.
+	 *
 	 * @return The IMU hardware device
 	 */
 	public IMU getIMU() {

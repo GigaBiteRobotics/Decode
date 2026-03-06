@@ -6,7 +6,7 @@ import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
 /**
  * Thread-safe telemetry wrapper that buffers addData calls from any thread
  * and flushes them in insertion order when update() is called.
- *
+ * <p>
  * Usage: call addData() from any thread at any time. Call update() from the
  * main loop thread to push all buffered entries to the driver station / dashboard.
  */
@@ -26,6 +26,7 @@ public class CustomTelemetry {
 	public void addData(String caption, Object value) {
 		buffer.add(new String[]{caption, String.valueOf(value)});
 	}
+
 	public void clear() {
 		buffer.clear();
 	}

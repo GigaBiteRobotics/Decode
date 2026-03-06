@@ -28,8 +28,8 @@ import static org.firstinspires.ftc.teamcode.Prism.GoBildaPrismDriver.Artboard;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-import org.firstinspires.ftc.teamcode.Prism.GoBildaPrismDriver;
 
+import org.firstinspires.ftc.teamcode.Prism.GoBildaPrismDriver;
 
 import java.util.concurrent.TimeUnit;
 
@@ -46,62 +46,66 @@ import java.util.concurrent.TimeUnit;
  *
  */
 
-@TeleOp(name="Prism Artboard Example", group="Linear OpMode")
+@TeleOp(name = "Prism Artboard Example", group = "Linear OpMode")
 @Disabled
 
 public class GoBildaPrismArtboardExample extends LinearOpMode {
 
-    GoBildaPrismDriver prism;
+	GoBildaPrismDriver prism;
 
-    @Override
-    public void runOpMode() {
+	@Override
+	public void runOpMode() {
 
-        /*
-         * Initialize the hardware variables. Note that the strings used here must correspond
-         * to the names assigned during the robot configuration step on the driver's station.
-         */
-        prism = hardwareMap.get(GoBildaPrismDriver.class, "prism");
+		/*
+		 * Initialize the hardware variables. Note that the strings used here must correspond
+		 * to the names assigned during the robot configuration step on the driver's station.
+		 */
+		prism = hardwareMap.get(GoBildaPrismDriver.class, "prism");
 
-        telemetry.addData("Device ID: ", prism.getDeviceID());
-        telemetry.addData("Firmware Version: ", prism.getFirmwareVersionString());
-        telemetry.addData("Hardware Version: ", prism.getHardwareVersionString());
-        telemetry.addData("Power Cycle Count: ", prism.getPowerCycleCount());
-        telemetry.addData("Run Time (Minutes): ", prism.getRunTime(TimeUnit.MINUTES));
-        telemetry.update();
+		telemetry.addData("Device ID: ", prism.getDeviceID());
+		telemetry.addData("Firmware Version: ", prism.getFirmwareVersionString());
+		telemetry.addData("Hardware Version: ", prism.getHardwareVersionString());
+		telemetry.addData("Power Cycle Count: ", prism.getPowerCycleCount());
+		telemetry.addData("Run Time (Minutes): ", prism.getRunTime(TimeUnit.MINUTES));
+		telemetry.update();
 
-        // Wait for the game to start (driver presses START)
-        waitForStart();
-        resetRuntime();
+		// Wait for the game to start (driver presses START)
+		waitForStart();
+		resetRuntime();
 
-        // run until the end of the match (driver presses STOP)
-        while (opModeIsActive()) {
+		// run until the end of the match (driver presses STOP)
+		while (opModeIsActive()) {
 
-            if(gamepad1.aWasPressed()){
-                prism.loadAnimationsFromArtboard(Artboard.ARTBOARD_0);
-            } else if(gamepad1.bWasPressed()){
-                prism.loadAnimationsFromArtboard(Artboard.ARTBOARD_1);
-            } else if(gamepad1.yWasPressed()){
-                prism.loadAnimationsFromArtboard(Artboard.ARTBOARD_2);
-            } else if(gamepad1.xWasPressed()){
-                prism.loadAnimationsFromArtboard(Artboard.ARTBOARD_3);
-            }
+			if (gamepad1.aWasPressed()) {
+				prism.loadAnimationsFromArtboard(Artboard.ARTBOARD_0);
+			} else if (gamepad1.bWasPressed()) {
+				prism.loadAnimationsFromArtboard(Artboard.ARTBOARD_1);
+			} else if (gamepad1.yWasPressed()) {
+				prism.loadAnimationsFromArtboard(Artboard.ARTBOARD_2);
+			} else if (gamepad1.xWasPressed()) {
+				prism.loadAnimationsFromArtboard(Artboard.ARTBOARD_3);
+			}
 
-            if(gamepad1.dpadLeftWasPressed()){prism.enableDefaultBootArtboard(false);}
-            if(gamepad1.dpadRightWasPressed()){prism.enableDefaultBootArtboard(true);}
+			if (gamepad1.dpadLeftWasPressed()) {
+				prism.enableDefaultBootArtboard(false);
+			}
+			if (gamepad1.dpadRightWasPressed()) {
+				prism.enableDefaultBootArtboard(true);
+			}
 
-            telemetry.addLine("Press A to recall Artboard #0");
-            telemetry.addLine("Press B to recall Artboard #1");
-            telemetry.addLine("Press Y to recall Artboard #2");
-            telemetry.addLine("Press X to recall Artboard #3");
-            telemetry.addLine("");
-            telemetry.addLine("By default the Prism will wait for an I²C signal to " +
-                    " start showing an animation.The prism can enable a Default Boot animation" +
-                    " which will play the animation stored at Artboard #0 automatically on power up.");
-            telemetry.addLine("Press D-Pad Right to enable the default boot animation." +
-                    " Press D-Pad Left to disable it.");
-            telemetry.update();
-            sleep(20);
+			telemetry.addLine("Press A to recall Artboard #0");
+			telemetry.addLine("Press B to recall Artboard #1");
+			telemetry.addLine("Press Y to recall Artboard #2");
+			telemetry.addLine("Press X to recall Artboard #3");
+			telemetry.addLine("");
+			telemetry.addLine("By default the Prism will wait for an I²C signal to " +
+					" start showing an animation.The prism can enable a Default Boot animation" +
+					" which will play the animation stored at Artboard #0 automatically on power up.");
+			telemetry.addLine("Press D-Pad Right to enable the default boot animation." +
+					" Press D-Pad Left to disable it.");
+			telemetry.update();
+			sleep(20);
 
-        }
-    }
+		}
+	}
 }

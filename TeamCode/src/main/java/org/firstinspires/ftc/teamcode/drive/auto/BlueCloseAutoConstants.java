@@ -5,7 +5,7 @@ import com.pedropathing.geometry.Pose;
 
 @Config
 public class BlueCloseAutoConstants {
- 	public static Pose startPose = new Pose(22.85, 124.85, -0.71);
+	public static Pose startPose = new Pose(22.85, 124.85, -0.71);
 	public static Pose launchPose = new Pose(55, 90, 1.5708);
 	public static Pose cameraLookPose = new Pose(55, 90, 1.5708); // Different heading for camera view
 	public static Pose ballCollection0LineupPose = new Pose(48, 84, Math.PI);
