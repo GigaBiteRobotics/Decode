@@ -11,10 +11,10 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
 import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
-import org.firstinspires.ftc.teamcode.drive.CustomPIDFController;
-import org.firstinspires.ftc.teamcode.drive.HubInitializer;
-import org.firstinspires.ftc.teamcode.drive.CustomMotor;
-import org.firstinspires.ftc.teamcode.drive.CustomTelemetry;
+import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
+import org.firstinspires.ftc.teamcode.modules.HubInitializer;
+import org.firstinspires.ftc.teamcode.modules.CustomMotor;
+import org.firstinspires.ftc.teamcode.modules.CustomTelemetry;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
 @Autonomous(name = "BaseAuto(DO NOT USE)", group = "z")

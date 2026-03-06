@@ -4,8 +4,8 @@ import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 
-import org.firstinspires.ftc.teamcode.drive.GamepadEventHandler;
-import org.firstinspires.ftc.teamcode.drive.GamepadEventHandler.GamepadBinding;
+import org.firstinspires.ftc.teamcode.modules.GamepadEventHandler;
+import org.firstinspires.ftc.teamcode.modules.GamepadEventHandler.GamepadBinding;
 
 /**
  * GamepadEventDemo — A simple demo showing how the lambda-driven GamepadEventHandler works.

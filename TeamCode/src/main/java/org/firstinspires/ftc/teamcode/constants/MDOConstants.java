@@ -1,7 +1,9 @@
-package org.firstinspires.ftc.teamcode.drive;
+package org.firstinspires.ftc.teamcode.constants;
 
 import com.acmerobotics.dashboard.config.Config;
 import com.pedropathing.geometry.Pose;
+
+import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
 
 @Config
 public class MDOConstants {

@@ -1,4 +1,4 @@
-package org.firstinspires.ftc.teamcode.drive;
+package org.firstinspires.ftc.teamcode.modules;
 
 import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
@@ -25,6 +25,9 @@ public class CustomTelemetry {
 	 */
 	public void addData(String caption, Object value) {
 		buffer.add(new String[]{caption, String.valueOf(value)});
+	}
+	public void clear() {
+		buffer.clear();
 	}
 
 	/**

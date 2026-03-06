@@ -1,6 +1,8 @@
-package org.firstinspires.ftc.teamcode.drive;
+package org.firstinspires.ftc.teamcode.modules;
 
 import com.pedropathing.follower.Follower;
+
+import org.firstinspires.ftc.teamcode.constants.MDOConstants;
 
 /**
  * Static utility class for launcher aiming and RPM calculations.

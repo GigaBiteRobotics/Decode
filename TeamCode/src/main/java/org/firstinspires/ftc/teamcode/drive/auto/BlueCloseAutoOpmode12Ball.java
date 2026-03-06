@@ -11,14 +11,14 @@ import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
-import org.firstinspires.ftc.teamcode.drive.CustomPIDFController;
-import org.firstinspires.ftc.teamcode.drive.CustomThreads;
-import org.firstinspires.ftc.teamcode.drive.MDOConstants;
-import org.firstinspires.ftc.teamcode.drive.HubInitializer;
-import org.firstinspires.ftc.teamcode.drive.CustomServoController;
-import org.firstinspires.ftc.teamcode.drive.CustomMotorController;
-import org.firstinspires.ftc.teamcode.drive.CustomTelemetry;
-import org.firstinspires.ftc.teamcode.drive.CustomSorterController;
+import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
+import org.firstinspires.ftc.teamcode.modules.CustomThreads;
+import org.firstinspires.ftc.teamcode.constants.MDOConstants;
+import org.firstinspires.ftc.teamcode.modules.HubInitializer;
+import org.firstinspires.ftc.teamcode.modules.CustomServoController;
+import org.firstinspires.ftc.teamcode.modules.CustomMotorController;
+import org.firstinspires.ftc.teamcode.modules.CustomTelemetry;
+import org.firstinspires.ftc.teamcode.modules.CustomSorterController;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
 @Autonomous(name = "Blue Close Auto 12 Ball", group = "Auto")
