@@ -112,7 +112,7 @@ public class TurretSubsystem {
 					double servoPosition = -computedAzimuth / 180.0;
 
 					// Update PID coefficients if changed via dashboard
-					azimuthServo.setPIDCoefficients(MDOConstants.AzimuthPIDFConstants);
+					azimuthServo.setPDCoefficients(MDOConstants.AzimuthPDConstants);
 
 					if (MDOConstants.EnableTurret) {
 						azimuthServo.setPosition(servoPosition);

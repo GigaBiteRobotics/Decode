@@ -137,7 +137,7 @@ public class RedFarAutoOpmode extends OpMode {
 				new String[]{"azimuthServo0", "azimuthServo1"},
 				new boolean[]{true, true}, // both reversed (same as MainDriveOpmode)
 				true, // use analog position sensor for PID
-				MDOConstants.AzimuthPIDFConstants, // PID constants from MDOConstants
+				MDOConstants.AzimuthPDConstants, // PID constants from MDOConstants
 				"azimuthPosition" // analog position sensor name
 		);
 
@@ -147,7 +147,7 @@ public class RedFarAutoOpmode extends OpMode {
 				new String[]{"elevationServo"},
 				new boolean[]{false},
 				false, // no analog position sensor
-				new double[]{0, 0, 0},
+				new double[]{0, 0},
 				null
 		);
 

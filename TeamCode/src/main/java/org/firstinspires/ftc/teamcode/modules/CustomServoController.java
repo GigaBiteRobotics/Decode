@@ -3,8 +3,10 @@ package org.firstinspires.ftc.teamcode.modules;
 import com.qualcomm.robotcore.hardware.AnalogInput;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.Servo;
+import com.seattlesolvers.solverslib.controller.PDController;
 
 import org.firstinspires.ftc.teamcode.constants.MDOConstants;
+
 
 import java.util.HashMap;
 
@@ -22,8 +24,7 @@ public class CustomServoController {
 	boolean useAnalog;
 	boolean[] reverseMap;
 	boolean invertServoDirection;
-	double[] pidCoefficients;
-	CustomPIDFController pidController;
+	PDController pdController;
 
 	private volatile double targetPosition;
 	private volatile double currentPosition = 0.0;
@@ -31,7 +32,6 @@ public class CustomServoController {
 	private volatile double lastAppliedPower = 0.0;
 	private volatile double lastSimplePosition = Double.NaN;
 	private double lastEffectiveTarget = 0.0; // For tracking-aware slew rate
-	private boolean allowWrapAround = true;
 	private final Object lock = new Object();
 
 	// === Internal voltage sag compensation ===
@@ -54,19 +54,13 @@ public class CustomServoController {
 	private volatile double lastSagFraction = 0.0;      // Last estimated sag (0.0 = none, 0.05 = 5% drop)
 	private volatile double lastCompensationDeg = 0.0;   // Last correction applied (degrees)
 
-	public CustomServoController(HardwareMap hardwareMap, String[] servoGroup, boolean[] reverseMap, boolean useAnalogPositionSensors, double[] pidCoefficients, String analogPositionName) {
-		this(hardwareMap, servoGroup, reverseMap, useAnalogPositionSensors, pidCoefficients, analogPositionName, false);
-	}
-
-	public CustomServoController(HardwareMap hardwareMap, String[] servoGroup, boolean[] reverseMap, boolean useAnalogPositionSensors, double[] pidCoefficients, String analogPositionName, boolean invertServoDirection) {
-		this.pidCoefficients = pidCoefficients;
+	public CustomServoController(HardwareMap hardwareMap, String[] servoGroup, boolean[] reverseMap, boolean useAnalogPositionSensors, double[] pdCoefficients, String analogPositionName) {
 		this.useAnalog = useAnalogPositionSensors;
 		this.servo = new HashMap<>();
 		this.servoGroup = servoGroup;
 		this.reverseMap = reverseMap;
-		this.invertServoDirection = invertServoDirection;
 
-		this.pidController = new CustomPIDFController(pidCoefficients[0], pidCoefficients[1], pidCoefficients[2], 0.0);
+		this.pdController = new PDController(pdCoefficients[0], pdCoefficients[1]);
 
 		if (useAnalogPositionSensors) {
 			try {
@@ -115,27 +109,6 @@ public class CustomServoController {
 			}
 		} else {
 			double rawTargetDeg = (position + 1.0) / 2.0 * WRAP_THRESHOLD;
-
-			if (allowWrapAround) {
-				rawTargetDeg = normalizeDeg(rawTargetDeg);
-
-				double forbiddenCenter = MDOConstants.AzimuthForbiddenZoneCenter;
-				double forbiddenHalfWidth = MDOConstants.AzimuthForbiddenZoneWidth / 2.0;
-
-				if (forbiddenHalfWidth > 0) {
-					double distToCenter = shortestAngularDiff(rawTargetDeg, forbiddenCenter);
-					if (Math.abs(distToCenter) <= forbiddenHalfWidth) {
-						double forbiddenMin = normalizeDeg(forbiddenCenter - forbiddenHalfWidth - 1.0);
-						double forbiddenMax = normalizeDeg(forbiddenCenter + forbiddenHalfWidth + 1.0);
-						if (distToCenter <= 0) {
-							rawTargetDeg = forbiddenMin;
-						} else {
-							rawTargetDeg = forbiddenMax;
-						}
-					}
-				}
-			}
-
 			targetPosition = rawTargetDeg;
 		}
 	}
@@ -154,67 +127,16 @@ public class CustomServoController {
 	public void servoPidLoop() {
 		if (useAnalog && aPosition != null) {
 			try {
+				// Update PD coefficients if changed via dashboard
+				setPDCoefficients(MDOConstants.AzimuthPDConstants);
+
 				currentPosition = voltageToDegrees(aPosition.getVoltage());
 
-				// === Forbidden zone escape (overrides normal PID) ===
-				if (allowWrapAround) {
-					double forbiddenCenter = MDOConstants.AzimuthForbiddenZoneCenter;
-					double forbiddenHalfWidth = MDOConstants.AzimuthForbiddenZoneWidth / 2.0;
-
-					if (forbiddenHalfWidth > 0 && isInForbiddenZone(currentPosition, forbiddenCenter, forbiddenHalfWidth)) {
-						double forbiddenMin = normalizeDeg(forbiddenCenter - forbiddenHalfWidth);
-						double forbiddenMax = normalizeDeg(forbiddenCenter + forbiddenHalfWidth);
-						double distToMin = angularDistance(currentPosition, forbiddenMin);
-						double distToMax = angularDistance(currentPosition, forbiddenMax);
-
-						double escapePower = MDOConstants.AzimuthForbiddenZoneEscapePower;
-						double power = (distToMin <= distToMax) ? escapePower : -escapePower;
-
-						if (invertServoDirection) {
-							power = -power;
-						}
-
-						lastAppliedPower = power;
-						applyPowerToServos(power);
-						return;
-					}
-				}
-
-				// === Compute effective target (adjusted for forbidden zone path avoidance) ===
-				// The PID needs the actual target and measurement, not a pre-computed error,
-				// so that derivative-on-measurement and target-tracking detection work correctly.
 				double effectiveTarget = targetPosition;
 
-				if (allowWrapAround) {
-					// Check if the shortest path to the target crosses the forbidden zone.
-					// If so, force the long way around by adjusting the effective target.
-					double shortestError = targetPosition - currentPosition;
-					while (shortestError > 180.0) shortestError -= 360.0;
-					while (shortestError < -180.0) shortestError += 360.0;
-
-					double forbiddenCenter = MDOConstants.AzimuthForbiddenZoneCenter;
-					double forbiddenHalfWidth = MDOConstants.AzimuthForbiddenZoneWidth / 2.0;
-					if (forbiddenHalfWidth > 0) {
-						boolean shortestCrosses = pathCrossesForbiddenZone(
-								currentPosition, currentPosition + shortestError, forbiddenCenter, forbiddenHalfWidth);
-						if (shortestCrosses) {
-							// Force the long way: offset the effective target so the PID
-							// naturally takes the non-forbidden path.
-							if (shortestError > 0) {
-								effectiveTarget = currentPosition + (shortestError - 360.0);
-							} else {
-								effectiveTarget = currentPosition + (shortestError + 360.0);
-							}
-						}
-					}
-				}
-
 				// === PID calculation with real target & measurement ===
-				// The PID sees actual positions, enabling:
-				// - Derivative-on-measurement (no kick when target moves)
-				// - Target-moving detection (smooth tracking vs. static hold)
-				double power = pidController.calculate(
-						effectiveTarget, currentPosition, 0, 2, 361.0);
+				// The PD controller output is a velocity command for continuous rotation servos.
+				double power = pdController.calculate(currentPosition, effectiveTarget);
 
 				power = Math.max(-1.0, Math.min(1.0, power));
 
@@ -278,73 +200,6 @@ public class CustomServoController {
 				s.setPosition(mapped);
 			}
 		}
-	}
-
-	private double normalizeDeg(double deg) {
-		deg = deg % 360.0;
-		if (deg < 0) deg += 360.0;
-		return deg;
-	}
-
-	private double shortestAngularDiff(double angle1, double angle2) {
-		double diff = normalizeDeg(angle1) - normalizeDeg(angle2);
-		while (diff > 180.0) diff -= 360.0;
-		while (diff < -180.0) diff += 360.0;
-		return diff;
-	}
-
-	private boolean pathCrossesPoint(double start, double end, double point) {
-		while (start < 0) start += 360.0;
-		while (start >= 360.0) start -= 360.0;
-		while (point < 0) point += 360.0;
-		while (point >= 360.0) point -= 360.0;
-
-		double distance = end - start;
-		if (Math.abs(distance) < 0.001) return false;
-
-		boolean movingCW = distance > 0;
-
-		if (movingCW) {
-			double endNorm = start + Math.abs(distance);
-			double pointCheck = point;
-			if (point < start) pointCheck += 360.0;
-			return pointCheck > start && pointCheck < endNorm;
-		} else {
-			double endNorm = start - Math.abs(distance);
-			double pointCheck = point;
-			if (point > start) pointCheck -= 360.0;
-			return pointCheck < start && pointCheck > endNorm;
-		}
-	}
-
-	private boolean isInForbiddenZone(double position, double center, double halfWidth) {
-		while (position < 0) position += 360.0;
-		while (position >= 360.0) position -= 360.0;
-		double dist = angularDistance(position, center);
-		return dist <= halfWidth;
-	}
-
-	private double angularDistance(double angle1, double angle2) {
-		while (angle1 < 0) angle1 += 360.0;
-		while (angle1 >= 360.0) angle1 -= 360.0;
-		while (angle2 < 0) angle2 += 360.0;
-		while (angle2 >= 360.0) angle2 -= 360.0;
-		double diff = Math.abs(angle1 - angle2);
-		return Math.min(diff, 360.0 - diff);
-	}
-
-	private boolean pathCrossesForbiddenZone(double start, double end, double forbiddenCenter, double halfWidth) {
-		double forbiddenMin = forbiddenCenter - halfWidth;
-		double forbiddenMax = forbiddenCenter + halfWidth;
-
-		while (forbiddenMin < 0) forbiddenMin += 360.0;
-		while (forbiddenMin >= 360.0) forbiddenMin -= 360.0;
-		while (forbiddenMax < 0) forbiddenMax += 360.0;
-		while (forbiddenMax >= 360.0) forbiddenMax -= 360.0;
-
-		if (pathCrossesPoint(start, end, forbiddenCenter)) return true;
-		if (pathCrossesPoint(start, end, forbiddenMin)) return true;
-		return pathCrossesPoint(start, end, forbiddenMax);
 	}
 
 	public double getPosition() {
@@ -452,7 +307,7 @@ public class CustomServoController {
 
 	public double getPIDError() {
 		synchronized (lock) {
-			return pidController.error;
+			return pdController.getPositionError();
 		}
 	}
 
@@ -474,27 +329,20 @@ public class CustomServoController {
 		return 0.0;
 	}
 
-	public void setPIDCoefficients(double[] pidCoefficients) {
+	public void setPDCoefficients(double[] pdCoefficients) {
 		synchronized (lock) {
-			if (pidCoefficients.length < 3) {
-				throw new IllegalArgumentException("PID coefficients array must have at least 3 elements: p, i, d.");
+			if (pdCoefficients.length < 2) {
+				throw new IllegalArgumentException("PD coefficients array must have at least 2 elements: p, d.");
 			}
 
-			if (this.pidCoefficients != null &&
-					Math.abs(this.pidCoefficients[0] - pidCoefficients[0]) < 0.0001 &&
-					Math.abs(this.pidCoefficients[1] - pidCoefficients[1]) < 0.0001 &&
-					Math.abs(this.pidCoefficients[2] - pidCoefficients[2]) < 0.0001) {
+			// Compare against the PDController's actual current gains, not a stored array
+			// reference — the dashboard may update the source array in-place.
+			if (Math.abs(pdController.getP() - pdCoefficients[0]) < 0.0001 &&
+					Math.abs(pdController.getD() - pdCoefficients[1]) < 0.0001) {
 				return;
 			}
 
-			this.pidCoefficients = pidCoefficients;
-			this.pidController = new CustomPIDFController(pidCoefficients[0], pidCoefficients[1], pidCoefficients[2], 0.0);
-		}
-	}
-
-	public void setAllowWrapAround(boolean allow) {
-		synchronized (lock) {
-			this.allowWrapAround = allow;
+			this.pdController = new PDController(pdCoefficients[0], pdCoefficients[1]);
 		}
 	}
 }

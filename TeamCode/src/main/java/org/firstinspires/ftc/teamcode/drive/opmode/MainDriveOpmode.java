@@ -141,10 +141,9 @@ public class MainDriveOpmode extends OpMode {
 				new String[]{"elevationServo"},
 				new boolean[]{false},
 				false,
-				new double[]{0, 0, 0},
+				new double[]{0, 0},
 				null
 		);
-		elevationServo.setAllowWrapAround(false);
 		elevation = new ElevationSubsystem(elevationServo);
 
 		// Turret (azimuth) subsystem
@@ -153,7 +152,7 @@ public class MainDriveOpmode extends OpMode {
 				new String[]{"azimuthServo0", "azimuthServo1"},
 				new boolean[]{true, true},
 				true,
-				MDOConstants.AzimuthPIDFConstants,
+				MDOConstants.AzimuthPDConstants,
 				"azimuthPosition"
 		);
 		turret = new TurretSubsystem(azimuthServo);
