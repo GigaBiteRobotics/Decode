@@ -17,18 +17,14 @@ import org.firstinspires.ftc.teamcode.constants.MDOConstants;
 import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
 import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
 import org.firstinspires.ftc.teamcode.modules.CustomMotorController;
-import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
+import com.seattlesolvers.solverslib.controller.PIDFController;
 import org.firstinspires.ftc.teamcode.modules.CustomServoController;
 import org.firstinspires.ftc.teamcode.modules.CustomSorterController;
 import org.firstinspires.ftc.teamcode.modules.CustomTelemetry;
 import org.firstinspires.ftc.teamcode.modules.CustomThreads;
-import org.firstinspires.ftc.teamcode.modules.ElevationSubsystem;
 import org.firstinspires.ftc.teamcode.modules.GamepadEventHandler;
 import org.firstinspires.ftc.teamcode.modules.HubInitializer;
 import org.firstinspires.ftc.teamcode.modules.IntakeSubsystem;
-import org.firstinspires.ftc.teamcode.modules.LauncherCalculations;
-import org.firstinspires.ftc.teamcode.modules.LauncherSubsystem;
-import org.firstinspires.ftc.teamcode.modules.TurretSubsystem;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
 
@@ -141,7 +137,7 @@ public class MainDriveOpmode extends OpMode {
 				new String[]{"elevationServo"},
 				new boolean[]{false},
 				false,
-				new double[]{0, 0},
+				new double[]{0, 0, 0, 0},
 				null
 		);
 		elevation = new ElevationSubsystem(elevationServo);
@@ -152,7 +148,7 @@ public class MainDriveOpmode extends OpMode {
 				new String[]{"azimuthServo0", "azimuthServo1"},
 				new boolean[]{true, true},
 				true,
-				MDOConstants.AzimuthPDConstants,
+				MDOConstants.AzimuthPIDFConstants,
 				"azimuthPosition"
 		);
 		turret = new TurretSubsystem(azimuthServo);
@@ -169,7 +165,7 @@ public class MainDriveOpmode extends OpMode {
 				new boolean[]{true, false},
 				new boolean[]{true, false},
 				32,
-				new CustomPIDFController(0, 0, 0, 0)
+				new PIDFController(0, 0, 0, 0)
 		);
 		launcher = new LauncherSubsystem(launcherMotors);
 
@@ -180,7 +176,7 @@ public class MainDriveOpmode extends OpMode {
 				new boolean[]{true},
 				false,
 				28.0,
-				new CustomPIDFController(0, 0, 0, 0)
+				new PIDFController(0, 0, 0, 0)
 		);
 		intake = new IntakeSubsystem(intakeMotor);
 
@@ -561,6 +557,7 @@ public class MainDriveOpmode extends OpMode {
 		sectionTimer.reset();
 
 		turret.update(currentPose, launchVectors, isRedSide);
+		turret.handleInput(gamepad2.dpad_left, gamepad2.dpad_right, gamepad2.y);
 		elevation.update(currentPose, launchVectors, isRedSide);
 
 		timeServo = sectionTimer.milliseconds();

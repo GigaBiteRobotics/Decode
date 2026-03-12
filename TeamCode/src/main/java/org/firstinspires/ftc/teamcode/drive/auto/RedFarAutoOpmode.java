@@ -11,7 +11,7 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.teamcode.constants.MDOConstants;
 import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
 import org.firstinspires.ftc.teamcode.modules.CustomMotorController;
-import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
+import com.seattlesolvers.solverslib.controller.PIDFController;
 import org.firstinspires.ftc.teamcode.modules.CustomServoController;
 import org.firstinspires.ftc.teamcode.modules.CustomSorterController;
 import org.firstinspires.ftc.teamcode.modules.CustomTelemetry;
@@ -118,7 +118,7 @@ public class RedFarAutoOpmode extends OpMode {
 				new boolean[]{true, false}, // encoder reverse map: launcher0 encoder is reversed to match motor direction
 				new boolean[]{true, false}, // encoder enable map: only launcher0 has encoder
 				32, // ticks per rev - calibrated for actual motor encoder (28 * 6700/6000)
-				new CustomPIDFController(0, 0, 0, 0)
+				new PIDFController(0, 0, 0, 0)
 		);
 
 		// Initialize intake motor (same as MainDriveOpmode)
@@ -128,7 +128,7 @@ public class RedFarAutoOpmode extends OpMode {
 				new boolean[]{true},
 				false,
 				28.0,
-				new CustomPIDFController(0, 0, 0, 0)
+				new PIDFController(0, 0, 0, 0)
 		);
 
 		// Initialize azimuth servo (with PID for continuous rotation, but fixed position - no auto-aim)
@@ -137,7 +137,7 @@ public class RedFarAutoOpmode extends OpMode {
 				new String[]{"azimuthServo0", "azimuthServo1"},
 				new boolean[]{true, true}, // both reversed (same as MainDriveOpmode)
 				true, // use analog position sensor for PID
-				MDOConstants.AzimuthPDConstants, // PID constants from MDOConstants
+				MDOConstants.AzimuthPIDFConstants, // PIDF constants from MDOConstants
 				"azimuthPosition" // analog position sensor name
 		);
 
@@ -147,7 +147,7 @@ public class RedFarAutoOpmode extends OpMode {
 				new String[]{"elevationServo"},
 				new boolean[]{false},
 				false, // no analog position sensor
-				new double[]{0, 0},
+				new double[]{0, 0, 0, 0},
 				null
 		);
 

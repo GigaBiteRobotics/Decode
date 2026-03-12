@@ -11,7 +11,7 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.teamcode.drive.AprilTagLocalizer;
 import org.firstinspires.ftc.teamcode.drive.AutoToTeleDataTransferer;
 import org.firstinspires.ftc.teamcode.modules.CustomMotor;
-import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
+import com.seattlesolvers.solverslib.controller.PIDFController;
 import org.firstinspires.ftc.teamcode.modules.CustomTelemetry;
 import org.firstinspires.ftc.teamcode.modules.HubInitializer;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
@@ -116,7 +116,7 @@ public class BaseAutoOpmode extends OpMode {
 					"launcher",
 					true,
 					1425.1,
-					new CustomPIDFController(0.1, 0.01, 0.005, 0.0)
+					new PIDFController(0.1, 0.01, 0.005, 0.0)
 			);
 		} catch (Exception e) {
 			telemetryC.addData("Launcher Init Error", e.getMessage());

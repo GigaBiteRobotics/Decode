@@ -6,6 +6,7 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.teamcode.constants.MDOConstants;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * TurretSubsystem - Real-time threaded turret controller with sub-millisecond reaction time.
@@ -32,7 +33,7 @@ public class TurretSubsystem {
 	private volatile double inputHeadingRad = 0.0;
 	private volatile Double inputLaunchAzimuthRad = null; // null = no valid launch vector
 	private volatile boolean inputIsRedSide = false;
-	private volatile double manualAzimuthOffset = 0.0;
+	private final AtomicLong manualAzimuthOffsetBits = new AtomicLong(Double.doubleToLongBits(0.0));
 
 	// === Thread-safe outputs (written by aiming thread, read by main loop for telemetry) ===
 	private volatile double launchAzimuthDeg = 0.0;
@@ -73,7 +74,7 @@ public class TurretSubsystem {
 					double headingRad = inputHeadingRad;
 					Double launchAzRad = inputLaunchAzimuthRad;
 					boolean redSide = inputIsRedSide;
-					double manualOffset = manualAzimuthOffset;
+					double manualOffset = getManualAzimuthOffset();
 
 					// === Compute aiming ===
 					double headingDeg = Math.toDegrees(headingRad);
@@ -111,8 +112,6 @@ public class TurretSubsystem {
 					// === Apply to servo ===
 					double servoPosition = -computedAzimuth / 180.0;
 
-					// Update PID coefficients if changed via dashboard
-					azimuthServo.setPDCoefficients(MDOConstants.AzimuthPDConstants);
 
 					if (MDOConstants.EnableTurret) {
 						azimuthServo.setPosition(servoPosition);
@@ -217,14 +216,19 @@ public class TurretSubsystem {
 	 * @param deltaDeg Amount to add to the offset (positive = right, negative = left)
 	 */
 	public void adjustAzimuth(double deltaDeg) {
-		manualAzimuthOffset += deltaDeg;
+		long oldBits, newBits;
+		do {
+			oldBits = manualAzimuthOffsetBits.get();
+			double oldVal = Double.longBitsToDouble(oldBits);
+			newBits = Double.doubleToLongBits(oldVal + deltaDeg);
+		} while (!manualAzimuthOffsetBits.compareAndSet(oldBits, newBits));
 	}
 
 	/**
 	 * Reset the manual azimuth offset to zero.
 	 */
 	public void resetAzimuthOffset() {
-		manualAzimuthOffset = 0.0;
+		manualAzimuthOffsetBits.set(Double.doubleToLongBits(0.0));
 	}
 
 	/**
@@ -234,14 +238,14 @@ public class TurretSubsystem {
 	public void handleInput(boolean dpadLeft, boolean dpadRight, boolean yButton) {
 		if (azimuthAdjustTimer.milliseconds() > 150) {
 			if (dpadRight) {
-				manualAzimuthOffset += 1.0;
+				adjustAzimuth(1.0);
 				azimuthAdjustTimer.reset();
 			} else if (dpadLeft) {
-				manualAzimuthOffset -= 1.0;
+				adjustAzimuth(-1.0);
 				azimuthAdjustTimer.reset();
 			}
 			if (yButton) {
-				manualAzimuthOffset = 0.0;
+				resetAzimuthOffset();
 				azimuthAdjustTimer.reset();
 			}
 		}
@@ -252,7 +256,7 @@ public class TurretSubsystem {
 	// =========================================================================
 
 	public double getManualAzimuthOffset() {
-		return manualAzimuthOffset;
+		return Double.longBitsToDouble(manualAzimuthOffsetBits.get());
 	}
 
 	public double getLaunchAzimuthDeg() {

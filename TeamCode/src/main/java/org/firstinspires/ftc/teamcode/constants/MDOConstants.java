@@ -3,7 +3,7 @@ package org.firstinspires.ftc.teamcode.constants;
 import com.acmerobotics.dashboard.config.Config;
 import com.pedropathing.geometry.Pose;
 
-import org.firstinspires.ftc.teamcode.modules.CustomPIDFController;
+import com.seattlesolvers.solverslib.controller.PIDFController;
 
 @Config
 public class MDOConstants {
@@ -12,8 +12,7 @@ public class MDOConstants {
 	public static Double AzimuthFineAdjustment = 0.0;
 	public static Double AzimuthIMUOffset = 120.0;
 	public static Double AzimuthMultiplier = 1.0;
-	public static double[] AzimuthPDConstants = new double[]{1.5, 0.3};
-	public static double AzimuthPIDDeadzonePercent = 0.08;
+	public static double[] AzimuthPIDFConstants = new double[]{0.004, 0.0, 0.0, 0.0};
 	public static double AzimuthServoCenterOffset = 0.0;
 	public static double AzimuthServoDeadBandPositive = 0.05; // Minimum power to overcome dead band when moving in positive direction
 	public static double AzimuthServoDeadBandNegative = 0.05; // Minimum power to overcome dead band when moving in negative direction
@@ -62,7 +61,7 @@ public class MDOConstants {
 	public static boolean EnableTurretIMUCorrection = true;
 	public static double GreenHueMax = 190.0;
 	public static double GreenHueMin = 80.0;
-	public static CustomPIDFController LauncherPIDF = new CustomPIDFController(20, 2, 0, 3);
+	public static PIDFController LauncherPIDF = new PIDFController(20, 2, 0, 3);
 	public static boolean EnableLauncherPID = true;
 	public static int LauncherReverseRPM = 800;
 	public static double LauncherManualPower = 1.0;

@@ -3,7 +3,7 @@ package org.firstinspires.ftc.teamcode.modules;
 import com.qualcomm.robotcore.hardware.AnalogInput;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.Servo;
-import com.seattlesolvers.solverslib.controller.PDController;
+import com.seattlesolvers.solverslib.controller.PIDFController;
 
 import org.firstinspires.ftc.teamcode.constants.MDOConstants;
 
@@ -24,7 +24,7 @@ public class CustomServoController {
 	boolean useAnalog;
 	boolean[] reverseMap;
 	boolean invertServoDirection;
-	PDController pdController;
+	PIDFController pidfController;
 
 	private volatile double targetPosition;
 	private volatile double currentPosition = 0.0;
@@ -54,13 +54,13 @@ public class CustomServoController {
 	private volatile double lastSagFraction = 0.0;      // Last estimated sag (0.0 = none, 0.05 = 5% drop)
 	private volatile double lastCompensationDeg = 0.0;   // Last correction applied (degrees)
 
-	public CustomServoController(HardwareMap hardwareMap, String[] servoGroup, boolean[] reverseMap, boolean useAnalogPositionSensors, double[] pdCoefficients, String analogPositionName) {
+	public CustomServoController(HardwareMap hardwareMap, String[] servoGroup, boolean[] reverseMap, boolean useAnalogPositionSensors, double[] pidfCoefficients, String analogPositionName) {
 		this.useAnalog = useAnalogPositionSensors;
 		this.servo = new HashMap<>();
 		this.servoGroup = servoGroup;
 		this.reverseMap = reverseMap;
 
-		this.pdController = new PDController(pdCoefficients[0], pdCoefficients[1]);
+		this.pidfController = new PIDFController(pidfCoefficients[0], pidfCoefficients[1], pidfCoefficients[2], pidfCoefficients[3]);
 
 		if (useAnalogPositionSensors) {
 			try {
@@ -127,16 +127,16 @@ public class CustomServoController {
 	public void servoPidLoop() {
 		if (useAnalog && aPosition != null) {
 			try {
-				// Update PD coefficients if changed via dashboard
-				setPDCoefficients(MDOConstants.AzimuthPDConstants);
+				// Update PIDF coefficients if changed via dashboard
+				setPIDFCoefficients(MDOConstants.AzimuthPIDFConstants);
 
 				currentPosition = voltageToDegrees(aPosition.getVoltage());
 
 				double effectiveTarget = targetPosition;
 
-				// === PID calculation with real target & measurement ===
-				// The PD controller output is a velocity command for continuous rotation servos.
-				double power = pdController.calculate(currentPosition, effectiveTarget);
+				// === PIDF calculation with real target & measurement ===
+				// The PIDF controller output is a velocity command for continuous rotation servos.
+				double power = pidfController.calculate(currentPosition, effectiveTarget);
 
 				power = Math.max(-1.0, Math.min(1.0, power));
 
@@ -307,7 +307,7 @@ public class CustomServoController {
 
 	public double getPIDError() {
 		synchronized (lock) {
-			return pdController.getPositionError();
+			return pidfController.getPositionError();
 		}
 	}
 
@@ -329,20 +329,22 @@ public class CustomServoController {
 		return 0.0;
 	}
 
-	public void setPDCoefficients(double[] pdCoefficients) {
+	public void setPIDFCoefficients(double[] pidfCoefficients) {
 		synchronized (lock) {
-			if (pdCoefficients.length < 2) {
-				throw new IllegalArgumentException("PD coefficients array must have at least 2 elements: p, d.");
+			if (pidfCoefficients.length < 4) {
+				throw new IllegalArgumentException("PIDF coefficients array must have at least 4 elements: p, i, d, f.");
 			}
 
-			// Compare against the PDController's actual current gains, not a stored array
+			// Compare against the controller's actual current gains, not a stored array
 			// reference — the dashboard may update the source array in-place.
-			if (Math.abs(pdController.getP() - pdCoefficients[0]) < 0.0001 &&
-					Math.abs(pdController.getD() - pdCoefficients[1]) < 0.0001) {
+			if (Math.abs(pidfController.getP() - pidfCoefficients[0]) < 0.0001 &&
+					Math.abs(pidfController.getI() - pidfCoefficients[1]) < 0.0001 &&
+					Math.abs(pidfController.getD() - pidfCoefficients[2]) < 0.0001 &&
+					Math.abs(pidfController.getF() - pidfCoefficients[3]) < 0.0001) {
 				return;
 			}
 
-			this.pdController = new PDController(pdCoefficients[0], pdCoefficients[1]);
+			pidfController.setPIDF(pidfCoefficients[0], pidfCoefficients[1], pidfCoefficients[2], pidfCoefficients[3]);
 		}
 	}
 }

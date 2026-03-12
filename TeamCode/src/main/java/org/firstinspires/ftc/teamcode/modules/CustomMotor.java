@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode.modules;
 
+import com.seattlesolvers.solverslib.controller.PIDFController;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 
@@ -19,13 +20,13 @@ public class CustomMotor {
 	private final Object rpmCacheLock = new Object(); // Lock for thread-safe cache access
 
 	// PID coefficients
-	private CustomPIDFController pidfController = new CustomPIDFController(0.1, 0.01, 0.005, 0.0);
+	private PIDFController pidfController = new PIDFController(0.1, 0.01, 0.005, 0.0);
 
-	public CustomMotor(HardwareMap hardwareMap, String motorName, Boolean hasEncoder, double ticksPerRev, CustomPIDFController pidfController) {
+	public CustomMotor(HardwareMap hardwareMap, String motorName, Boolean hasEncoder, double ticksPerRev, PIDFController pidfController) {
 		this(hardwareMap, motorName, hasEncoder, ticksPerRev, pidfController, false);
 	}
 
-	public CustomMotor(HardwareMap hardwareMap, String motorName, Boolean hasEncoder, double ticksPerRev, CustomPIDFController pidfController, boolean reverseEncoder) {
+	public CustomMotor(HardwareMap hardwareMap, String motorName, Boolean hasEncoder, double ticksPerRev, PIDFController pidfController, boolean reverseEncoder) {
 		this.TICKS_PER_REV = ticksPerRev;
 		this.pidfController = pidfController;
 		this.reverseEncoder = reverseEncoder;
@@ -115,10 +116,10 @@ public class CustomMotor {
 	}
 
 	public void updateRPMPID() {
-		if (isRPMMode) {
+		if (isRPMMode && pidfController != null) {
 			double currentRPM = updateAndGetRPM();
-			double power = pidfController.calculate(targetRPM, currentRPM, 0, 50);
-			power = Math.max(-1.0, Math.min(1.0, power));
+			// SolversLib API: calculate(processVariable, setpoint)
+			double power = pidfController.calculate(currentRPM, targetRPM);
 
 			if (Math.abs(power - lastAppliedPower) > 0.005 || (power == 0 && lastAppliedPower != 0) || (power != 0 && lastAppliedPower == 0)) {
 				motor.setPower(power);
@@ -146,7 +147,7 @@ public class CustomMotor {
 		lastAppliedPower = power;
 	}
 
-	public void setPIDFController(CustomPIDFController pidfController) {
+	public void setPIDFController(PIDFController pidfController) {
 		this.pidfController = pidfController;
 	}
 

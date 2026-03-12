@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode.modules;
 
+import com.seattlesolvers.solverslib.controller.PIDFController;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 
 import java.util.HashMap;
@@ -15,8 +16,9 @@ public class CustomMotorController {
 	private boolean isRPMMode = false;
 
 	// Single shared PIDF controller for group-level RPM control
-	private CustomPIDFController groupPidfController;
-	private double lastAppliedGroupPower = 123456.0;
+	private PIDFController groupPidfController;
+	private double lastAppliedGroupPower = 0.0;
+	private boolean pidInitialized = false;
 
 	// Lock object for thread safety
 	private final Object lock = new Object();
@@ -24,7 +26,7 @@ public class CustomMotorController {
 	/**
 	 * Constructor for motor group controller (all motors same encoder setting)
 	 */
-	public CustomMotorController(HardwareMap hardwareMap, String[] motorGroup, boolean[] reverseMap, boolean hasEncoder, double ticksPerRev, CustomPIDFController pidfController) {
+	public CustomMotorController(HardwareMap hardwareMap, String[] motorGroup, boolean[] reverseMap, boolean hasEncoder, double ticksPerRev, PIDFController pidfController) {
 		this(hardwareMap, motorGroup, reverseMap, null, null, ticksPerRev, pidfController);
 		this.encoderEnableMap = new boolean[motorGroup.length];
 		for (int i = 0; i < motorGroup.length; i++) {
@@ -45,7 +47,7 @@ public class CustomMotorController {
 	/**
 	 * Constructor for motor group controller with encoder reverse map
 	 */
-	public CustomMotorController(HardwareMap hardwareMap, String[] motorGroup, boolean[] reverseMap, boolean[] encoderReverseMap, boolean hasEncoder, double ticksPerRev, CustomPIDFController pidfController) {
+	public CustomMotorController(HardwareMap hardwareMap, String[] motorGroup, boolean[] reverseMap, boolean[] encoderReverseMap, boolean hasEncoder, double ticksPerRev, PIDFController pidfController) {
 		this(hardwareMap, motorGroup, reverseMap, encoderReverseMap, null, ticksPerRev, pidfController);
 		this.encoderEnableMap = new boolean[motorGroup.length];
 		for (int i = 0; i < motorGroup.length; i++) {
@@ -66,13 +68,19 @@ public class CustomMotorController {
 	/**
 	 * Constructor for motor group controller with per-motor encoder enable map
 	 */
-	public CustomMotorController(HardwareMap hardwareMap, String[] motorGroup, boolean[] reverseMap, boolean[] encoderReverseMap, boolean[] encoderEnableMap, double ticksPerRev, CustomPIDFController pidfController) {
+	public CustomMotorController(HardwareMap hardwareMap, String[] motorGroup, boolean[] reverseMap, boolean[] encoderReverseMap, boolean[] encoderEnableMap, double ticksPerRev, PIDFController pidfController) {
 		this.motorGroup = motorGroup;
 		this.reverseMap = reverseMap;
 		this.encoderReverseMap = encoderReverseMap;
 		this.encoderEnableMap = encoderEnableMap != null ? encoderEnableMap : new boolean[motorGroup.length];
 		this.motors = new HashMap<>();
 		this.groupPidfController = pidfController;
+
+		// Configure the PIDF controller for motor power output range [-1, 1]
+		if (this.groupPidfController != null) {
+			this.groupPidfController.setMaxOutput(1.0);
+			this.groupPidfController.setTolerance(10); // 10 RPM tolerance
+		}
 
 		if (motorGroup.length != reverseMap.length) {
 			throw new IllegalArgumentException("Motor group and reverse map must have the same length.");
@@ -102,8 +110,15 @@ public class CustomMotorController {
 	 */
 	public void setRPM(int rpm) {
 		synchronized (lock) {
-			this.targetRPM = rpm;
-			this.isRPMMode = true;
+			if (!isRPMMode || this.targetRPM != rpm) {
+				this.targetRPM = rpm;
+				if (!isRPMMode && groupPidfController != null) {
+					// Reset PID state when switching into RPM mode
+					groupPidfController.reset();
+					pidInitialized = false;
+				}
+				this.isRPMMode = true;
+			}
 		}
 	}
 
@@ -114,6 +129,7 @@ public class CustomMotorController {
 		synchronized (lock) {
 			this.targetPower = power;
 			this.isRPMMode = false;
+			this.pidInitialized = false;
 			for (int i = 0; i < motorGroup.length; i++) {
 				String motorName = motorGroup[i];
 				CustomMotor motor = motors.get(motorName);
@@ -127,16 +143,21 @@ public class CustomMotorController {
 
 	/**
 	 * Update RPM PID for all motors in the group - call this in a loop.
+	 * Uses SolversLib PIDFController: calculate(measuredValue, setpoint)
 	 */
 	public void updateRPMPID() {
 		synchronized (lock) {
 			if (isRPMMode && groupPidfController != null) {
 				double currentRPM = getAverageRPMInternal();
 
-				double power = groupPidfController.calculate(targetRPM, currentRPM, 0, 50);
-				power = Math.max(-1.0, Math.min(1.0, power));
+				// SolversLib API: calculate(processVariable, setpoint)
+				// The controller computes error = setpoint - pv internally
+				// and handles integration/differentiation with its own timestamps.
+				double power = groupPidfController.calculate(currentRPM, targetRPM);
 
-				if (Math.abs(power - lastAppliedGroupPower) > 0.005 || (power == 0 && lastAppliedGroupPower != 0) || (power != 0 && lastAppliedGroupPower == 0)) {
+				if (Math.abs(power - lastAppliedGroupPower) > 0.005
+						|| (power == 0 && lastAppliedGroupPower != 0)
+						|| (power != 0 && lastAppliedGroupPower == 0)) {
 					for (int i = 0; i < motorGroup.length; i++) {
 						String motorName = motorGroup[i];
 						CustomMotor motor = motors.get(motorName);
@@ -147,6 +168,8 @@ public class CustomMotorController {
 					}
 					lastAppliedGroupPower = power;
 				}
+
+				pidInitialized = true;
 			}
 		}
 	}
@@ -201,9 +224,14 @@ public class CustomMotorController {
 	/**
 	 * Set PIDF controller for group-level RPM control
 	 */
-	public void setPIDFController(CustomPIDFController pidfController) {
+	public void setPIDFController(PIDFController pidfController) {
 		synchronized (lock) {
 			this.groupPidfController = pidfController;
+			if (this.groupPidfController != null) {
+				this.groupPidfController.setMaxOutput(1.0);
+				this.groupPidfController.setTolerance(10);
+			}
+			this.pidInitialized = false;
 		}
 	}
 
@@ -220,7 +248,16 @@ public class CustomMotorController {
 	 */
 	public double getPIDOutput() {
 		synchronized (lock) {
-			return lastAppliedGroupPower == 123456.0 ? 0.0 : lastAppliedGroupPower;
+			return pidInitialized ? lastAppliedGroupPower : 0.0;
+		}
+	}
+
+	/**
+	 * @return whether the controller is at the target RPM setpoint (within tolerance)
+	 */
+	public boolean atTargetRPM() {
+		synchronized (lock) {
+			return groupPidfController != null && groupPidfController.atSetPoint();
 		}
 	}
 
