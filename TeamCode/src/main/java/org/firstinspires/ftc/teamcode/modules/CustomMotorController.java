@@ -116,6 +116,7 @@ public class CustomMotorController {
 					// Reset PID state when switching into RPM mode
 					groupPidfController.reset();
 					pidInitialized = false;
+					lastAppliedGroupPower = 0.0; // force first PID tick to always push power
 				}
 				this.isRPMMode = true;
 			}
@@ -130,6 +131,7 @@ public class CustomMotorController {
 			this.targetPower = power;
 			this.isRPMMode = false;
 			this.pidInitialized = false;
+			this.lastAppliedGroupPower = 0.0; // reset so next RPM-mode spin-up always triggers an update
 			for (int i = 0; i < motorGroup.length; i++) {
 				String motorName = motorGroup[i];
 				CustomMotor motor = motors.get(motorName);

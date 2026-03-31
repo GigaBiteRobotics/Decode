@@ -195,7 +195,10 @@ public class CustomServoController {
 			Servo s = this.servo.get(servoName);
 			if (s != null) {
 				double finalPower = reverseMap[i] ? -power : power;
-				double mapped = (finalPower + 1.0) / 2.0 + MDOConstants.AzimuthServoCenterOffset;
+				// Remove center offset when ForwardAimMode is enabled so the servo has
+				// zero bias and aims straight forward with no adjustments applied.
+				double centerOffset = MDOConstants.EnableForwardAimMode ? 0.0 : MDOConstants.AzimuthServoCenterOffset;
+				double mapped = (finalPower + 1.0) / 2.0 + centerOffset;
 				mapped = Math.max(0.0, Math.min(1.0, mapped));
 				s.setPosition(mapped);
 			}

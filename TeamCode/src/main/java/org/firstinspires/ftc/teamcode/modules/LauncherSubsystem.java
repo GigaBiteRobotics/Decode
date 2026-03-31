@@ -18,8 +18,10 @@ public class LauncherSubsystem {
 	private boolean launcherReverseActive = false;
 	private boolean prevLeftTriggerPressed = false;
 	private double targetPower = 0.0;
+	/** Manual RPM target used in Forward Aim Mode. */
+	private int manualRPM = MDOConstants.ForwardAimInitialRPM;
 
-	// Rapid fire state
+
 	private boolean rapidFireActive = false;
 	private int rapidFireIndex = 0;
 	private final ElapsedTime rapidFireTimer = new ElapsedTime();
@@ -167,19 +169,30 @@ public class LauncherSubsystem {
 	 * @param dynamicRPM The dynamically calculated RPM from LauncherCalculations
 	 */
 	public void update(int dynamicRPM) {
+		// In Forward Aim Mode, use the dedicated ForwardAimRPM constant instead of the
+		// distance-based dynamicRPM so the two modes have completely independent RPM tuning.
+		int effectiveRPM = MDOConstants.EnableForwardAimMode ? MDOConstants.ForwardAimRPM : dynamicRPM;
+
 		// Clamp target power
 		targetPower = Math.max(-1.0, Math.min(1.0, targetPower));
 
 		if (MDOConstants.EnableLauncherPID) {
-			// PID mode: use setRPM for closed-loop RPM control
+			// PID mode: use setRPM for closed-loop RPM control.
+			// When the target is effectively 0 (not spinning/reversing/pooping), bypass PID
+			// entirely and coast to zero with direct power to avoid integrator windup.
 			if (launcherReverseActive) {
 				launcherMotors.setRPM(-MDOConstants.LauncherReverseRPM);
+				launcherMotors.setPIDFController(MDOConstants.LauncherPIDF);
 			} else if (launcherPooping) {
 				launcherMotors.setRPM(1200);
+				launcherMotors.setPIDFController(MDOConstants.LauncherPIDF);
+			} else if (launcherSpinning && effectiveRPM > 0) {
+				launcherMotors.setRPM(effectiveRPM);
+				launcherMotors.setPIDFController(MDOConstants.LauncherPIDF);
 			} else {
-				launcherMotors.setRPM(launcherSpinning ? dynamicRPM : 0);
+				// Target RPM is 0 — skip PID and cut power directly
+				launcherMotors.setPower(0);
 			}
-			launcherMotors.setPIDFController(MDOConstants.LauncherPIDF);
 		} else {
 			// Manual power mode: bypass PID and use direct power
 			if (launcherReverseActive) {
@@ -193,9 +206,21 @@ public class LauncherSubsystem {
 	}
 
 	// ===== Getters for telemetry =====
-
 	public boolean isSpinning() {
 		return launcherSpinning;
+	}
+
+	/**
+	 * Adjust the manual RPM target (Forward Aim Mode only).
+	 *
+	 * @param delta RPM increment (e.g. +100 or -100)
+	 */
+	public void adjustManualRPM(int delta) {
+		manualRPM = Math.max(0, manualRPM + delta);
+	}
+
+	public int getManualRPM() {
+		return manualRPM;
 	}
 
 	public boolean isReverse() {
@@ -226,4 +251,3 @@ public class LauncherSubsystem {
 		return launcherMotors;
 	}
 }
-

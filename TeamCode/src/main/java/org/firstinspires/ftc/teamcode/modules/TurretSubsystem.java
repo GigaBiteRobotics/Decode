@@ -34,6 +34,8 @@ public class TurretSubsystem {
 	private volatile Double inputLaunchAzimuthRad = null; // null = no valid launch vector
 	private volatile boolean inputIsRedSide = false;
 	private final AtomicLong manualAzimuthOffsetBits = new AtomicLong(Double.doubleToLongBits(0.0));
+	/** Target turret angle (degrees) set by the right stick in Forward Aim Mode. */
+	private volatile double forwardAimAngleDeg = 0.0;
 
 	// === Thread-safe outputs (written by aiming thread, read by main loop for telemetry) ===
 	private volatile double launchAzimuthDeg = 0.0;
@@ -75,6 +77,23 @@ public class TurretSubsystem {
 					Double launchAzRad = inputLaunchAzimuthRad;
 					boolean redSide = inputIsRedSide;
 					double manualOffset = getManualAzimuthOffset();
+
+					// === Forward Aim Mode: turret angle driven by right stick ===
+					if (MDOConstants.EnableForwardAimMode) {
+						double aimAngle = forwardAimAngleDeg;
+						finalAzimuthDeg = aimAngle;
+						if (MDOConstants.EnableTurret) {
+							azimuthServo.setPosition(-aimAngle / 180.0);
+						}
+						// Still track Hz and timestamp
+						long nowNanos2 = System.nanoTime();
+						long deltaNanos2 = nowNanos2 - prevNanos;
+						if (deltaNanos2 > 0) aimingLoopHz = 1_000_000_000.0 / deltaNanos2;
+						prevNanos = nowNanos2;
+						lastUpdateNanos = nowNanos2;
+						Thread.sleep(0, 500_000);
+						continue;
+					}
 
 					// === Compute aiming ===
 					double headingDeg = Math.toDegrees(headingRad);
@@ -166,6 +185,15 @@ public class TurretSubsystem {
 	// =========================================================================
 	// Data feed — call from main loop (lightweight volatile writes)
 	// =========================================================================
+
+	/**
+	 * Set the desired turret angle (degrees) for Forward Aim Mode.
+	 * Driven by the right stick X of gamepad2: stickX * ForwardAimAngleRange.
+	 * This is a single volatile write — safe to call every main loop iteration.
+	 */
+	public void setForwardAimAngleDeg(double deg) {
+		forwardAimAngleDeg = deg;
+	}
 
 	/**
 	 * Feed the latest robot pose to the aiming thread.

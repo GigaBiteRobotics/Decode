@@ -12,12 +12,19 @@ public class MDOConstants {
 	public static Double AzimuthFineAdjustment = 0.0;
 	public static Double AzimuthIMUOffset = 120.0;
 	public static Double AzimuthMultiplier = 1.0;
-	public static double[] AzimuthPIDFConstants = new double[]{0.004, 0.0, 0.0, 0.0};
+	public static double[] AzimuthPIDFConstants = new double[]{0.01, 0.003, 0.003, 0.0};
 	public static double AzimuthServoCenterOffset = 0.0;
 	public static double AzimuthServoDeadBandPositive = 0.05; // Minimum power to overcome dead band when moving in positive direction
 	public static double AzimuthServoDeadBandNegative = 0.05; // Minimum power to overcome dead band when moving in negative direction
 	public static double AzimuthSlewRate = 0.1; // Max power change per PID loop iteration (prevents shaking)
-	public static double VoltageSagCompensationGain = 0.0; // Fraction of full-scale sag at full servo power (e.g., 0.03 = 3% sag → ~11° correction at full power). Tune empirically: increase until position jitter under load disappears.
+	public static int BallIntakeTimerMs = 1200;
+	public static double BallDetectionDistanceCm = 25;
+	/** Motor power (0-1) applied when the intake is running IN or OUT. */
+	public static double IntakePower = 1.0;
+	/** Readings above this value are treated as out-of-range / sensor error (VL53L0X reports ~819 cm when no target). */
+	public static double BallSensorMaxValidDistanceCm = 300.0;
+	/** Consecutive out-of-range reads before the sensor is flagged as stuck and given a longer recovery delay. */
+	public static int BallSensorStuckThreshold = 25;
 	public static double BlueAprilTagHeadingOffset = 90.0;
 	public static Double BlueAzimuthFineAdjustment = 0.0;
 	public static double[] BlueCloseStartPose = new double[]{22.85, 124.85, -40.7};
@@ -57,11 +64,11 @@ public class MDOConstants {
 	public static boolean EnableLauncherRPMZones = true;
 	public static boolean EnableThreadedDrive = true;
 	public static boolean EnableThreadedFollowerUpdate = true;
-	public static boolean EnableTurret = true;
+	public static boolean EnableTurret = false;
 	public static boolean EnableTurretIMUCorrection = true;
 	public static double GreenHueMax = 190.0;
 	public static double GreenHueMin = 80.0;
-	public static PIDFController LauncherPIDF = new PIDFController(20, 2, 0, 3);
+	public static PIDFController LauncherPIDF = new PIDFController(15, 0, 0, 0);
 	public static boolean EnableLauncherPID = true;
 	public static int LauncherReverseRPM = 800;
 	public static double LauncherManualPower = 1.0;
@@ -69,7 +76,7 @@ public class MDOConstants {
 	public static Double LifterPositionHigh = 0.8;
 	public static Double LifterPositionLow = 0.0;
 	public static int[] LifterPitMapping = new int[]{0, 1, 2};
-	public static boolean[] LifterReverseMap = new boolean[]{true, false, false};
+	public static boolean[] LifterReverseMap = new boolean[]{true, true, false};
 	public static int LifterWaitToTopTimerMillis = 200;
 	public static double PurpleHueMax = 330.0;
 	public static double PurpleHueMin = 200.0;
@@ -94,4 +101,33 @@ public class MDOConstants {
 	public static Pose redHumanLocation = new Pose(144, 0, Math.PI);
 	public static Pose redGateLocation = new Pose(144 - 27, 65, 0);
 	public static boolean useAprilTags = true;
+	/**
+	 * Gain for servo position voltage-sag compensation.
+	 * k in: compensated_deg = raw_deg / (1 - k * |power|).
+	 * Set to 0 to disable.  Tune on FTC Dashboard.
+	 */
+	public static double VoltageSagCompensationGain = 0.0;
+
+	// ===== Forward Aim Mode =====
+	/**
+	 * When true: turret locks to forward (servo = 0), and gamepad2 dpad adjusts
+	 * elevation (up/down) and launcher speed (left/right) manually.
+	 * When false: normal auto-aiming/auto-elevation behaviour is unchanged.
+	 */
+	public static boolean EnableForwardAimMode = false;
+	/** Elevation servo position step per dpad press in forward aim mode. */
+	public static double ForwardAimElevationStep = 0.02;
+	/** Launcher RPM step per dpad press in forward aim mode. */
+	public static int ForwardAimRPMStep = 100;
+	/** Starting RPM when forward aim mode is first used. */
+	public static int ForwardAimInitialRPM = 6000;
+	/** Fixed RPM used for launching in forward aim mode (dashboard-tunable). */
+	public static int ForwardAimRPM = 6000;
+	/** Starting elevation servo position when forward aim mode is first used. */
+	public static double ForwardAimInitialElevation = 0.0;
+	/**
+	 * Maximum turret angle (degrees) reachable when the right stick is at full deflection.
+	 * Stick range [-1, 1] maps linearly to [-ForwardAimAngleRange, +ForwardAimAngleRange].
+	 */
+	public static double ForwardAimAngleRange = 90.0;
 }

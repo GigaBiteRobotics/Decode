@@ -17,6 +17,9 @@ public class ElevationSubsystem {
 	private double elevationServoTarget = 0.0;
 	private double elevationServoFinal = 0.0;
 
+	/** Manual elevation servo position used in Forward Aim Mode. */
+	private double manualElevationOffset = MDOConstants.ForwardAimInitialElevation;
+
 	public ElevationSubsystem(CustomServoController elevationServo) {
 		this.elevationServo = elevationServo;
 	}
@@ -30,6 +33,14 @@ public class ElevationSubsystem {
 	 */
 	public void update(Pose currentPose, Double[] launchVectors, boolean isRedSide) {
 		double elevationOffset = isRedSide ? MDOConstants.RedElevationOffset : MDOConstants.BlueElevationOffset;
+		// Forward Aim Mode: use the manually-adjusted servo position directly
+		if (MDOConstants.EnableForwardAimMode) {
+			elevationServoFinal = Math.max(MDOConstants.ElevationClampMin,
+					Math.min(MDOConstants.ElevationClampMax, manualElevationOffset));
+			elevationServo.setPosition(elevationServoFinal);
+			return;
+		}
+
 
 		// Calculate distance-based elevation offset from zones
 		Double[] currentTarget = isRedSide ? MDOConstants.redTargetLocation : MDOConstants.blueTargetLocation;
@@ -52,9 +63,23 @@ public class ElevationSubsystem {
 	}
 
 	// ===== Getters for telemetry =====
-
 	public Double getLaunchElevationDeg() {
 		return launchElevationDeg;
+	}
+
+	/**
+	 * Adjust the manual elevation servo position (Forward Aim Mode only).
+	 * Clamps the result to [ElevationClampMin, ElevationClampMax].
+	 *
+	 * @param delta Amount to add (servo position units, e.g. 0.02 per step)
+	 */
+	public void adjustManualElevation(double delta) {
+		manualElevationOffset = Math.max(MDOConstants.ElevationClampMin,
+				Math.min(MDOConstants.ElevationClampMax, manualElevationOffset + delta));
+	}
+
+	public double getManualElevationOffset() {
+		return manualElevationOffset;
 	}
 
 	public double getElevationServoFinal() {
@@ -65,4 +90,3 @@ public class ElevationSubsystem {
 		return elevationServo;
 	}
 }
-

@@ -9,6 +9,7 @@ import com.pedropathing.paths.Path;
 import com.pedropathing.paths.PathChain;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.DistanceSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
@@ -22,11 +23,15 @@ import org.firstinspires.ftc.teamcode.modules.CustomServoController;
 import org.firstinspires.ftc.teamcode.modules.CustomSorterController;
 import org.firstinspires.ftc.teamcode.modules.CustomTelemetry;
 import org.firstinspires.ftc.teamcode.modules.CustomThreads;
+import org.firstinspires.ftc.teamcode.modules.ElevationSubsystem;
 import org.firstinspires.ftc.teamcode.modules.GamepadEventHandler;
 import org.firstinspires.ftc.teamcode.modules.HubInitializer;
 import org.firstinspires.ftc.teamcode.modules.IntakeSubsystem;
+import org.firstinspires.ftc.teamcode.modules.LauncherSubsystem;
+import org.firstinspires.ftc.teamcode.modules.TurretSubsystem;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 import org.firstinspires.ftc.teamcode.util.DashboardTelemetryManager;
+import org.firstinspires.ftc.teamcode.modules.LauncherCalculations;
 
 import java.util.Objects;
 
@@ -42,6 +47,7 @@ public class MainDriveOpmode extends OpMode {
 	LauncherSubsystem launcher;
 	IntakeSubsystem intake;
 	CustomSorterController sorterController;
+	DistanceSensor ballDistSensor;
 
 	// Telemetry
 	CustomTelemetry telemetryC;
@@ -178,7 +184,8 @@ public class MainDriveOpmode extends OpMode {
 				28.0,
 				new PIDFController(0, 0, 0, 0)
 		);
-		intake = new IntakeSubsystem(intakeMotor);
+		ballDistSensor = hardwareMap.get(DistanceSensor.class, "frontRange");
+		intake = new IntakeSubsystem(intakeMotor, ballDistSensor);
 
 		// ===== FOLLOWER INITIALIZATION =====
 		follower = Constants.createFollower(hardwareMap);
@@ -204,6 +211,7 @@ public class MainDriveOpmode extends OpMode {
 		customThreads.setAzimuthServo(turret.getServoController());
 		customThreads.setLauncherMotors(launcher.getMotorController());
 		customThreads.setSorterController(sorterController);
+		customThreads.setDistanceSensor(ballDistSensor);
 		if (ENABLE_CAMERA) {
 			customThreads.setAprilTagLocalizer(localizer);
 		}
@@ -216,41 +224,55 @@ public class MainDriveOpmode extends OpMode {
 
 		// D-pad Down: Go to launch position
 		gp1Handler.onPress("goToLaunch", gp -> gp.dpad_down, () -> {
+			if (launchPositionPath == null) return;
 			PathChain pathToFollow = launchPositionPath.get();
 			synchronized (followerLock) {
 				follower.followPath(pathToFollow, true);
 			}
 			automatedDriveActive = true;
 			holdingPosition = false;
+			customThreads.setDriveAutomatedActive(true);
 		});
 
 		// D-pad Up: Go to human player station
 		gp1Handler.onPress("goToHuman", gp -> gp.dpad_up, () -> {
+			if (humanPlayerPath == null) return;
 			PathChain pathToFollow = humanPlayerPath.get();
 			synchronized (followerLock) {
 				follower.followPath(pathToFollow, true);
 			}
 			automatedDriveActive = true;
 			holdingPosition = false;
+			customThreads.setDriveAutomatedActive(true);
 		});
 
 		// D-pad Right: Go to gate position
 		gp1Handler.onPress("goToGate", gp -> gp.dpad_right, () -> {
+			if (gatePositionPath == null) return;
 			PathChain pathToFollow = gatePositionPath.get();
 			synchronized (followerLock) {
 				follower.followPath(pathToFollow, true);
 			}
 			automatedDriveActive = true;
 			holdingPosition = false;
+			customThreads.setDriveAutomatedActive(true);
 		});
+
+		// Left bumper (gp1): Toggle launcher spin — Forward Aim Mode only
+		gp1Handler.onPress("fwdAimSpeedToggle", gp -> gp.left_bumper,
+				() -> { if (MDOConstants.EnableForwardAimMode) launcher.toggleSpin(); });
+
+		// Right bumper (gp1): Toggle launcher poop mode — Forward Aim Mode only
+		gp1Handler.onPress("fwdAimPoopToggle", gp -> gp.right_bumper,
+				() -> { if (MDOConstants.EnableForwardAimMode) launcher.togglePoop(); });
 
 		// --- Gamepad 2 (Operator) ---
 
-		// D-pad Down: Toggle launcher spin
-		gp2Handler.onDebouncedPress("launcherToggle", gp -> gp.dpad_down, 300, () -> launcher.toggleSpin());
+		// D-pad Down: Toggle launcher spin (both modes)
+		gp2Handler.onPress("launcherToggle", gp -> gp.dpad_down, () -> launcher.toggleSpin());
 
-		// D-pad Up: Toggle launcher poop mode
-		gp2Handler.onDebouncedPress("launcherPoop", gp -> gp.dpad_up, 300, () -> launcher.togglePoop());
+		// D-pad Up: Toggle launcher poop mode (both modes)
+		gp2Handler.onPress("launcherPoop", gp -> gp.dpad_up, () -> launcher.togglePoop());
 
 		// Left trigger: Toggle launcher reverse
 		gp2Handler.onAnalogPress("launcherReverse", gp -> (double) gp.left_trigger, 0.5, () -> launcher.toggleReverse());
@@ -267,11 +289,22 @@ public class MainDriveOpmode extends OpMode {
 		gp2Handler.onAnalogPress("rapidFire", gp -> (double) gp.right_trigger, 0.5,
 				() -> launcher.startRapidFire(sorterController));
 
+		// Triangle (Y): Hood elevation up
+		gp2Handler.onDebouncedPress("hoodUp", gp -> gp.y, 100,
+				() -> elevation.adjustManualElevation(MDOConstants.ForwardAimElevationStep));
+
+		// Square (X): Hood elevation down
+		gp2Handler.onDebouncedPress("hoodDown", gp -> gp.x, 100,
+				() -> elevation.adjustManualElevation(-MDOConstants.ForwardAimElevationStep));
+
 		// A button: Toggle intake IN
-		gp2Handler.onDebouncedPress("intakeIn", gp -> gp.a, 300, () -> intake.toggleIn());
+		gp2Handler.onPress("intakeIn", gp -> gp.a, () -> intake.toggleIn());
 
 		// B button: Toggle intake OUT
-		gp2Handler.onDebouncedPress("intakeOut", gp -> gp.b, 300, () -> intake.toggleOut());
+		gp2Handler.onPress("intakeOut", gp -> gp.b, () -> intake.toggleOut());
+
+		// Start button: Reset turret azimuth offset
+		gp2Handler.onPress("resetAzimuth", gp -> gp.start, () -> turret.resetAzimuthOffset());
 
 	}
 
@@ -333,13 +366,26 @@ public class MainDriveOpmode extends OpMode {
 			follower.setStartingPose(new Pose(selectedPose[0], selectedPose[1], Math.toRadians(selectedPose[2])));
 		}
 
+		// Re-enter teleop drive mode now that the correct starting pose is set.
+		// startTeleopDrive() was already called in init(), but at that point the pose
+		// hadn't been applied yet, so the field-centric heading reference was wrong.
+		// Calling it again here resets the reference from the correct starting heading.
+		follower.startTeleopDrive();
+
 		customThreads.startDrawingThread();
 		customThreads.startCPUMonThread();
 		customThreads.startAzimuthPIDThread();
+		// Pass live gamepad so the drive thread reads inputs directly instead of
+		// waiting for loop() to relay them — this is the main latency fix.
+		if (MDOConstants.EnableThreadedDrive) {
+			customThreads.setLiveGamepad(gamepad1);
+		}
 		// Start the turret's own real-time aiming thread (~1000Hz)
 		turret.startThread();
 		// Start the thread that reads color sensors ~20 times/second
 		customThreads.startSorterThread();
+		// Start the distance sensor background thread so the main loop never blocks on I2C
+		customThreads.startDistanceSensorThread();
 		// Start the drive thread for more responsive driving
 		if (MDOConstants.EnableThreadedDrive) {
 			customThreads.startDriveThread();
@@ -368,6 +414,7 @@ public class MainDriveOpmode extends OpMode {
 		turret.stopThread();
 		// Stop the thread to prevent resource leaks
 		customThreads.stopSorterThread();
+		customThreads.stopDistanceSensorThread();
 		// Stop the drive thread
 		if (MDOConstants.EnableThreadedDrive) {
 			customThreads.stopDriveThread();
@@ -389,6 +436,12 @@ public class MainDriveOpmode extends OpMode {
 	@Override
 	public void loop() {
 		loopTimer.reset();
+
+		// Clear Lynx hub bulk-read cache once per loop so all hardware reads this
+		// iteration return fresh data from a single bulk transaction.
+		// Background threads that read non-bulk sensors (VL53L0X distance sensor)
+		// are isolated and cannot reset this cache between our reads.
+		HubInitializer.clearBulkCache();
 
 		// ===== CACHE ALL VALUES AT THE BEGINNING =====
 		sectionTimer.reset();
@@ -487,6 +540,7 @@ public class MainDriveOpmode extends OpMode {
 		if (automatedDriveActive && !follower.isBusy()) {
 			automatedDriveActive = false;
 			holdingPosition = true; // Now holding position at destination
+			customThreads.setDriveAutomatedActive(true); // still suppress manual drive
 		}
 
 		// ===== CANCEL AUTOMATED/HOLD MODE =====
@@ -497,27 +551,24 @@ public class MainDriveOpmode extends OpMode {
 			}
 			automatedDriveActive = false;
 			holdingPosition = false;
+			customThreads.setDriveAutomatedActive(false); // hand control back to drive thread
 		}
 
 		// ===== TELEOP DRIVE (only when not in automated or hold mode) =====
 		if (!automatedDriveActive && !holdingPosition) {
-			if (MDOConstants.EnableThreadedDrive) {
-				// Use threaded drive for maximum responsiveness
-				// The drive thread runs at ~200Hz independently of this loop
-				customThreads.setDriveInputs(
-						-gamepad1LeftStickY,
-						-gamepad1LeftStickX,
-						gamepad1RightStickX * -0.75,
-						MDOConstants.EnableFieldCentricDrive
-				);
-			} else {
-				// Direct drive control (old method)
+			if (!MDOConstants.EnableThreadedDrive) {
+				// Non-threaded fallback: drive is handled directly in main loop
 				follower.setTeleOpDrive(
 						-gamepad1LeftStickY,
 						-gamepad1LeftStickX,
 						gamepad1RightStickX * -0.75,
 						MDOConstants.EnableFieldCentricDrive
 				);
+			} else {
+				// Threaded drive: the drive thread reads gamepad1 directly via
+				// liveGamepad and calls setTeleOpDrive() at ~1000 Hz.
+				// We still update the fieldCentric flag here so the thread picks it up.
+				customThreads.setDriveInputs(0, 0, 0, MDOConstants.EnableFieldCentricDrive);
 			}
 		}
 
@@ -557,7 +608,15 @@ public class MainDriveOpmode extends OpMode {
 		sectionTimer.reset();
 
 		turret.update(currentPose, launchVectors, isRedSide);
-		turret.handleInput(gamepad2.dpad_left, gamepad2.dpad_right, gamepad2.y);
+		// Forward Aim Mode: right stick X of gamepad2 maps directly to turret angle
+		if (MDOConstants.EnableForwardAimMode) {
+			turret.setForwardAimAngleDeg(gamepad2.right_stick_x * MDOConstants.ForwardAimAngleRange);
+		}
+		// In forward aim mode the turret locks forward; dpad_left/right are used for speed instead
+		turret.handleInput(
+				!MDOConstants.EnableForwardAimMode && gamepad2.dpad_left,
+				!MDOConstants.EnableForwardAimMode && gamepad2.dpad_right,
+				false);
 		elevation.update(currentPose, launchVectors, isRedSide);
 
 		timeServo = sectionTimer.milliseconds();
@@ -579,7 +638,7 @@ public class MainDriveOpmode extends OpMode {
 		// ===== INTAKE CONTROL =====
 		sectionTimer.reset();
 
-		intake.update(currentBallCount);
+		intake.update(currentBallCount, customThreads.getCachedBallDistanceCm());
 
 		timeIntake = sectionTimer.milliseconds();
 
@@ -637,6 +696,7 @@ public class MainDriveOpmode extends OpMode {
 				telemetryC.addData("PID Power", String.format("%.3f", turret.getServoController().getPIDTargetPower()));
 			}
 
+			telemetryC.addData("Intake Dist Sensor", intake.GetDistanceBallSensorCM());
 			telemetryC.addData("Launcher RPM", launcher.getRPM());
 			telemetryC.addData("Launcher Debug", launcher.getDebugString());
 			telemetryC.addData("Launcher Pressure", launcher.getPIDOutput());
@@ -644,6 +704,7 @@ public class MainDriveOpmode extends OpMode {
 			telemetryC.addData("Launcher Reverse", launcher.isReverse() ? "ON (" + MDOConstants.LauncherReverseRPM + " RPM)" : "OFF");
 
 			telemetryC.addData("Intake State", intake.getState());
+			telemetryC.addData("Intake Auto-Run", intake.isAutoRunActive() ? "ACTIVE" : "idle");
 			telemetryC.addData("Ball Count", currentBallCount);
 
 			// Cached color sensor data (updated in background thread)

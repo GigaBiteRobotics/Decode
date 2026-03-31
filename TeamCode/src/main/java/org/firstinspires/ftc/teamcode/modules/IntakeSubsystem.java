@@ -1,14 +1,41 @@
 package org.firstinspires.ftc.teamcode.modules;
 
+import com.qualcomm.robotcore.hardware.DistanceSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
+import org.firstinspires.ftc.teamcode.constants.MDOConstants;
 
 /**
- * IntakeSubsystem - Manages the intake motor, IN/OUT/STOP state machine,
- * and auto-stop logic when 3 balls are collected.
+ * IntakeSubsystem — Controls the ball intake motor with a simple IN/OUT/STOP state machine.
+ *
+ * <p>The subsystem is designed to be updated once per loop by calling
+ * {@link #update(int, double)} with the current ball count (from {@link CustomSorterController})
+ * and the latest distance reading from the background sensor thread
+ * ({@link CustomThreads#getCachedBallDistanceCm()}).  Neither value is read directly
+ * from hardware here, keeping the main loop free of blocking I2C calls.</p>
+ *
+ * <h3>Auto-stop behaviour:</h3>
+ * <ul>
+ *   <li>When running IN, the intake stops automatically once 3 balls are loaded
+ *       ({@code ballCount >= 3}).</li>
+ * </ul>
+ *
+ * <h3>Usage example:</h3>
+ * <pre>{@code
+ * // In init():
+ * intake = new IntakeSubsystem(intakeMotor, ballDistSensor);
+ *
+ * // Bind gamepad buttons (GamepadEventHandler):
+ * gp2Handler.onPress("intakeIn",  gp -> gp.a, () -> intake.toggleIn());
+ * gp2Handler.onPress("intakeOut", gp -> gp.b, () -> intake.toggleOut());
+ *
+ * // In loop():
+ * intake.update(sorterController.getCachedBallCount(),
+ *               customThreads.getCachedBallDistanceCm());
+ * }</pre>
  */
 public class IntakeSubsystem {
 
-	private final CustomMotorController intakeMotor;
+	// ===== State =====
 
 	public enum IntakeState {
 		IN,
@@ -16,95 +43,159 @@ public class IntakeSubsystem {
 		STOP
 	}
 
-	private IntakeState intakeRunningState = IntakeState.STOP;
-	private int prevBallCount = 0;
-	private final ElapsedTime intakeInputTimer = new ElapsedTime();
+	// ===== Fields =====
 
-	public IntakeSubsystem(CustomMotorController intakeMotor) {
-		this.intakeMotor = intakeMotor;
-	}
+	private final CustomMotorController intakeMotor;
 
-	// ===== Simple actions for GamepadEventHandler callbacks =====
+	/** Kept for potential direct-read fallback; not called during normal operation. */
+	@SuppressWarnings("FieldCanBeLocal")
+	private final DistanceSensor distanceSensor;
+
+	private IntakeState state = IntakeState.STOP;
+
+	/** Most recent distance value passed to {@link #update}; returned by {@link #GetDistanceBallSensorCM()}. */
+	private double lastDistanceCm = 9999.0;
+
+	/** Timer used to run the intake automatically for {@link MDOConstants#BallIntakeTimerMs} ms. */
+	private final ElapsedTime autoRunTimer = new ElapsedTime();
+	/** True while the intake is being driven by the distance-sensor auto-run logic. */
+	private boolean autoRunActive = false;
+	/**
+	 * Re-arms the distance trigger once the ball clears the detection zone.
+	 * Prevents the auto-run from re-firing continuously while an object stays
+	 * inside the threshold after the timed run has already finished.
+	 */
+	private boolean distanceTriggerArmed = true;
+
+	// ===== Constructor =====
 
 	/**
-	 * Toggle intake IN mode. If already IN, stops. Otherwise starts IN.
+	 * @param intakeMotor    Motor controller for the intake wheel(s).
+	 * @param distanceSensor The "frontRange" REV 2 m sensor used to detect approaching balls.
+	 *                       Its readings must be supplied via
+	 *                       {@link CustomThreads#getCachedBallDistanceCm()} to avoid blocking the
+	 *                       main loop — do not call getDistance() from here during teleop.
+	 */
+	public IntakeSubsystem(CustomMotorController intakeMotor, DistanceSensor distanceSensor) {
+		this.intakeMotor = intakeMotor;
+		this.distanceSensor = distanceSensor;
+	}
+
+	// ===== Toggle helpers (for GamepadEventHandler callbacks) =====
+
+	/**
+	 * Toggle the intake between IN and STOP.
+	 * If currently OUT, also switches to IN.
+	 * Always cancels any active distance-sensor auto-run so manual input is
+	 * immediately honoured.
 	 */
 	public void toggleIn() {
-		if (intakeRunningState == IntakeState.IN) {
-			intakeRunningState = IntakeState.STOP;
+		autoRunActive = false; // driver override always wins
+		if (state == IntakeState.IN) {
+			state = IntakeState.STOP;
 		} else {
-			intakeRunningState = IntakeState.IN;
+			state = IntakeState.IN;
 		}
 	}
 
 	/**
-	 * Toggle intake OUT mode. If already OUT, stops. Otherwise starts OUT.
+	 * Toggle the intake between OUT and STOP.
+	 * If currently IN, also switches to OUT.
+	 * Always cancels any active distance-sensor auto-run.
 	 */
 	public void toggleOut() {
-		if (intakeRunningState == IntakeState.OUT) {
-			intakeRunningState = IntakeState.STOP;
+		autoRunActive = false; // driver override always wins
+		if (state == IntakeState.OUT) {
+			state = IntakeState.STOP;
 		} else {
-			intakeRunningState = IntakeState.OUT;
+			state = IntakeState.OUT;
 		}
 	}
 
+	/** Immediately stops the intake regardless of current state. */
+	public void stop() {
+		autoRunActive = false;
+		state = IntakeState.STOP;
+	}
+
+	// ===== Main update =====
+
 	/**
-	 * Handle gamepad input for intake toggle.
+	 * Update intake state and motor output.  Call once per main loop iteration.
 	 *
-	 * @param aButton gamepad2.a (toggle IN)
-	 * @param bButton gamepad2.b (toggle OUT)
+	 * @param ballCount  Current number of balls in the sorter (from
+	 *                   {@link CustomSorterController#getCachedBallCount()}).
+	 * @param distanceCm Latest distance reading in centimetres from the background
+	 *                   sensor thread ({@link CustomThreads#getCachedBallDistanceCm()}).
 	 */
-	public void handleInput(boolean aButton, boolean bButton) {
-		if (intakeInputTimer.milliseconds() > 300) {
-			if (aButton) {
-				intakeInputTimer.reset();
-				if (intakeRunningState == IntakeState.IN) {
-					intakeRunningState = IntakeState.STOP;
-				} else {
-					intakeRunningState = IntakeState.IN;
-				}
-			} else if (bButton) {
-				intakeInputTimer.reset();
-				if (intakeRunningState == IntakeState.OUT) {
-					intakeRunningState = IntakeState.STOP;
-				} else {
-					intakeRunningState = IntakeState.OUT;
-				}
+	public void update(int ballCount, double distanceCm) {
+		lastDistanceCm = distanceCm;
+
+		// Auto-stop when all sorter slots are full
+		if (state == IntakeState.IN && ballCount >= 3) {
+			state = IntakeState.STOP;
+		}
+
+		// Re-arm once the ball has cleared the detection zone
+		if (!distanceTriggerArmed && distanceCm >= MDOConstants.BallDetectionDistanceCm) {
+			distanceTriggerArmed = true;
+		}
+
+		// Auto-run: rising edge only — ball just entered range, intake idle, room available
+		if (distanceTriggerArmed
+				&& !autoRunActive
+				&& state == IntakeState.STOP
+				&& ballCount < 3
+				&& distanceCm < MDOConstants.BallDetectionDistanceCm) {
+			autoRunActive = true;
+			distanceTriggerArmed = false; // disarm until ball leaves range again
+			autoRunTimer.reset();
+		}
+
+		// Cancel auto-run once the timer expires, sorter is full, or driver takes over
+		if (autoRunActive && (autoRunTimer.milliseconds() >= MDOConstants.BallIntakeTimerMs
+				|| ballCount >= 3
+				|| state == IntakeState.OUT)) {
+			autoRunActive = false;
+		}
+
+		// Apply motor power — auto-run overrides STOP, but manual IN/OUT always wins
+		if (autoRunActive) {
+			intakeMotor.setPower(MDOConstants.IntakePower);
+		} else {
+			switch (state) {
+				case IN:
+					intakeMotor.setPower(MDOConstants.IntakePower);
+					break;
+				case OUT:
+					intakeMotor.setPower(-MDOConstants.IntakePower);
+					break;
+				case STOP:
+				default:
+					intakeMotor.setPower(0.0);
+					break;
 			}
 		}
 	}
 
-	/**
-	 * Update the intake motor. Handles auto-stop and applies motor power.
-	 *
-	 * @param currentBallCount Current number of balls detected by the sorter
-	 */
-	public void update(int currentBallCount) {
-		// Auto-Stop: Turn off intake when 3rd ball is collected
-		if (intakeRunningState == IntakeState.IN && currentBallCount >= 3 && prevBallCount < 3) {
-			intakeRunningState = IntakeState.STOP;
-		}
-		prevBallCount = currentBallCount;
+	// ===== Getters for telemetry =====
 
-		switch (intakeRunningState) {
-			case IN:
-				intakeMotor.setPower(1);
-				break;
-			case OUT:
-				intakeMotor.setPower(-1);
-				break;
-			case STOP:
-			default:
-				intakeMotor.setPower(0);
-				break;
-		}
-	}
-
+	/** Returns the current intake state. */
 	public IntakeState getState() {
-		return intakeRunningState;
+		return state;
 	}
 
-	public CustomMotorController getMotorController() {
-		return intakeMotor;
+	/**
+	 * Returns the most recent distance reading (cm) supplied to {@link #update}.
+	 * Non-blocking — wraps the value that came from the background sensor thread.
+	 */
+	public double GetDistanceBallSensorCM() {
+		return lastDistanceCm;
+	}
+
+	/** Returns {@code true} while the intake is being automatically driven by the distance sensor. */
+	public boolean isAutoRunActive() {
+		return autoRunActive;
 	}
 }
+
