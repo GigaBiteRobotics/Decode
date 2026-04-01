@@ -64,7 +64,7 @@ public class MDOConstants {
 	public static boolean EnableLauncherRPMZones = true;
 	public static boolean EnableThreadedDrive = true;
 	public static boolean EnableThreadedFollowerUpdate = true;
-	public static boolean EnableTurret = false;
+	public static boolean EnableTurret = true;
 	public static boolean EnableTurretIMUCorrection = true;
 	public static double GreenHueMax = 190.0;
 	public static double GreenHueMin = 80.0;
