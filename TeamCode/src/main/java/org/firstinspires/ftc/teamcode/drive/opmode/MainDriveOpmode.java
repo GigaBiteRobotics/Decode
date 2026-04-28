@@ -23,7 +23,7 @@ import org.firstinspires.ftc.teamcode.modules.CustomServoController;
 import org.firstinspires.ftc.teamcode.modules.CustomSorterController;
 import org.firstinspires.ftc.teamcode.modules.CustomTelemetry;
 import org.firstinspires.ftc.teamcode.modules.CustomThreads;
-import org.firstinspires.ftc.teamcode.modules.ElevationSubsystem;
+import org.firstinspires.ftc.teamcode.modules.ElevationSubsystemV2;
 import org.firstinspires.ftc.teamcode.modules.GamepadEventHandler;
 import org.firstinspires.ftc.teamcode.modules.HubInitializer;
 import org.firstinspires.ftc.teamcode.modules.IntakeSubsystem;
@@ -43,7 +43,7 @@ public class MainDriveOpmode extends OpMode {
 
 	// Subsystems
 	TurretSubsystem turret;
-	ElevationSubsystem elevation;
+	ElevationSubsystemV2 elevation;
 	LauncherSubsystem launcher;
 	IntakeSubsystem intake;
 	CustomSorterController sorterController;
@@ -146,7 +146,7 @@ public class MainDriveOpmode extends OpMode {
 				new double[]{0, 0, 0, 0},
 				null
 		);
-		elevation = new ElevationSubsystem(elevationServo);
+		elevation = new ElevationSubsystemV2(elevationServo);
 
 		// Turret (azimuth) subsystem
 		CustomServoController azimuthServo = new CustomServoController(
@@ -617,6 +617,8 @@ public class MainDriveOpmode extends OpMode {
 				!MDOConstants.EnableForwardAimMode && gamepad2.dpad_left,
 				!MDOConstants.EnableForwardAimMode && gamepad2.dpad_right,
 				false);
+		// Feed measured launcher RPM so V2 can compute the physics-correct elevation angle
+		elevation.setCurrentRPM(launcher.getRPM());
 		elevation.update(currentPose, launchVectors, isRedSide);
 
 		timeServo = sectionTimer.milliseconds();

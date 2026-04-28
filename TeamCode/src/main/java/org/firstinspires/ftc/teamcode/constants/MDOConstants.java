@@ -10,9 +10,9 @@ public class MDOConstants {
 	public static double AprilTagMaxDistance = 60.0;
 	public static int AprilTagUpdateIntervalMs = 100;
 	public static Double AzimuthFineAdjustment = 0.0;
-	public static Double AzimuthIMUOffset = 120.0;
+	public static Double AzimuthIMUOffset = 110.0;
 	public static Double AzimuthMultiplier = 1.0;
-	public static double[] AzimuthPIDFConstants = new double[]{0.01, 0.003, 0.003, 0.0};
+	public static double[] AzimuthPIDFConstants = new double[]{0.007, 0.006, 0.0, 0.0};
 	public static double AzimuthServoCenterOffset = 0.0;
 	public static double AzimuthServoDeadBandPositive = 0.05; // Minimum power to overcome dead band when moving in positive direction
 	public static double AzimuthServoDeadBandNegative = 0.05; // Minimum power to overcome dead band when moving in negative direction
@@ -56,6 +56,8 @@ public class MDOConstants {
 	public static Double ElevationMinIN = 2.0;
 	public static Double ElevationMultiplier = 1.0;
 	public static Double ElevationOffset = 0.0;
+	/** RPM correction factor for V2 elevation: degrees per RPM deviation from nominal. */
+	public static double ElevationRPMCorrectionFactor = 0.0;
 	public static Double RedElevationOffset = 0.0;
 	public static Double BlueElevationOffset = 0.0;
 	public static double EmergencyStopTemp = 88.0;
@@ -68,7 +70,7 @@ public class MDOConstants {
 	public static boolean EnableTurretIMUCorrection = true;
 	public static double GreenHueMax = 190.0;
 	public static double GreenHueMin = 80.0;
-	public static PIDFController LauncherPIDF = new PIDFController(15, 0, 0, 0);
+	public static PIDFController LauncherPIDF = new PIDFController(8, 0, 2, 0);
 	public static boolean EnableLauncherPID = true;
 	public static int LauncherReverseRPM = 800;
 	public static double LauncherManualPower = 1.0;
@@ -76,7 +78,7 @@ public class MDOConstants {
 	public static Double LifterPositionHigh = 0.8;
 	public static Double LifterPositionLow = 0.0;
 	public static int[] LifterPitMapping = new int[]{0, 1, 2};
-	public static boolean[] LifterReverseMap = new boolean[]{true, true, false};
+	public static boolean[] LifterReverseMap = new boolean[]{false, true, false};
 	public static int LifterWaitToTopTimerMillis = 200;
 	public static double PurpleHueMax = 330.0;
 	public static double PurpleHueMin = 200.0;
@@ -130,4 +132,43 @@ public class MDOConstants {
 	 * Stick range [-1, 1] maps linearly to [-ForwardAimAngleRange, +ForwardAimAngleRange].
 	 */
 	public static double ForwardAimAngleRange = 90.0;
+
+	// ===== ElevationSubsystemV2 — RPM-based elevation =====
+	/**
+	 * Launcher RPM below which the elevation is driven to maximum
+	 * (shoot as steeply upward as possible).
+	 * This handles the "not yet up to speed" / low-power case.
+	 */
+	public static double ElevationV2RPMThreshold = 1000.0;
+
+	/**
+	 * Reference launch velocity (inches/s) measured at ElevationV2BaseRPM.
+	 * Velocity scales linearly with RPM: v = ElevationV2BaseVelocity * (rpm / ElevationV2BaseRPM).
+	 * Initialised from the existing RedLauncherCalcConstants[0] value.
+	 */
+	public static double ElevationV2BaseVelocity = 280.0;
+
+	/**
+	 * Launcher RPM at which ElevationV2BaseVelocity was characterised.
+	 */
+	public static double ElevationV2BaseRPM = 3800.0;
+
+	/**
+	 * Effective gravity constant (inches/s²) for projectile calculations.
+	 * Standard 1 g ≈ 386.09 in/s².  Tune to compensate for drag.
+	 */
+	public static double ElevationV2Gravity = 386.09;
+
+	/**
+	 * Scales the computed physical launch angle (radians) to servo position units.
+	 * Derived from the V1 linear calibration: at baseRPM, 0.0593 rad → servo -0.4 and
+	 * 0.4857 rad → servo 0.3, giving scale ≈ 1.64.
+	 */
+	public static double ElevationV2ServoScale = 1.64;
+
+	/**
+	 * Additive servo-position offset applied after the angle→servo mapping.
+	 * Derived from the V1 calibration: offset ≈ -0.497.  Tune on dashboard.
+	 */
+	public static double ElevationV2ServoOffset = -0.497;
 }

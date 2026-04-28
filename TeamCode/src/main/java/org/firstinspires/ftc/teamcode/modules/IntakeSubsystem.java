@@ -161,14 +161,14 @@ public class IntakeSubsystem {
 
 		// Apply motor power — auto-run overrides STOP, but manual IN/OUT always wins
 		if (autoRunActive) {
-			intakeMotor.setPower(MDOConstants.IntakePower);
+			intakeMotor.setPower(-MDOConstants.IntakePower);
 		} else {
 			switch (state) {
 				case IN:
-					intakeMotor.setPower(MDOConstants.IntakePower);
+					intakeMotor.setPower(-MDOConstants.IntakePower);
 					break;
 				case OUT:
-					intakeMotor.setPower(-MDOConstants.IntakePower);
+					intakeMotor.setPower(MDOConstants.IntakePower);
 					break;
 				case STOP:
 				default:
