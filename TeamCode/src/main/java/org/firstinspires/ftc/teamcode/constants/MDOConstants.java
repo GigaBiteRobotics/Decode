@@ -171,4 +171,36 @@ public class MDOConstants {
 	 * Derived from the V1 calibration: offset ≈ -0.497.  Tune on dashboard.
 	 */
 	public static double ElevationV2ServoOffset = -0.497;
+
+	// ===== ShooterSubsystem — Limelight Ta-based auto shooter =====
+	/**
+	 * When true, {@code ShooterSubsystem#accelerate()} is called each loop and
+	 * replaces the normal {@code LauncherSubsystem} + {@code ElevationSubsystemV2}
+	 * motor/servo updates.  Set to false to use the legacy distance-calculated pipeline.
+	 */
+	public static boolean EnableShooterSubsystem = false;
+
+	// --- Velocity PIDF ---
+	/** Proportional gain for the flywheel velocity PIDF controller. */
+	public static double ShooterVelocityP = 0.002;
+	/** Integral gain for the flywheel velocity PIDF controller. */
+	public static double ShooterVelocityI = 0.00005;
+	/** Derivative gain for the flywheel velocity PIDF controller. */
+	public static double ShooterVelocityD = 0.000003;
+	/** Feed-forward gain for the flywheel velocity PIDF controller. */
+	public static double ShooterVelocityF = 0.00022;
+
+	// --- RPM regression: targetRPM = A * Ta^B (power-law) ---
+	/** Coefficient A in the RPM power-law regression: RPM = A * Ta^B. */
+	public static double ShooterRPMCoeffA = 3574.97926;
+	/** Exponent B in the RPM power-law regression: RPM = A * Ta^B. */
+	public static double ShooterRPMCoeffB = -0.156948;
+
+	// --- Pitch regression: targetPitch = C*Ta² + D*Ta + E (quadratic) ---
+	/** Quadratic coefficient C in the pitch regression: pitch = C*Ta² + D*Ta + E. */
+	public static double ShooterPitchCoeffC = -0.0475945;
+	/** Linear coefficient D in the pitch regression: pitch = C*Ta² + D*Ta + E. */
+	public static double ShooterPitchCoeffD = 0.11103;
+	/** Constant term E in the pitch regression: pitch = C*Ta² + D*Ta + E. */
+	public static double ShooterPitchCoeffE = 0.387717;
 }

@@ -148,16 +148,7 @@ public class MainDriveOpmode extends OpMode {
 		);
 		elevation = new ElevationSubsystemV2(elevationServo);
 
-		// Turret (azimuth) subsystem
-		CustomServoController azimuthServo = new CustomServoController(
-				hardwareMap,
-				new String[]{"azimuthServo0", "azimuthServo1"},
-				new boolean[]{true, true},
-				true,
-				MDOConstants.AzimuthPIDFConstants,
-				"azimuthPosition"
-		);
-		turret = new TurretSubsystem(azimuthServo);
+		// Turret initialized in start() once the alliance colour is finalised
 
 		if (ENABLE_CAMERA) {
 			localizer.initAprilTag(hardwareMap, "Webcam 1");
@@ -208,7 +199,6 @@ public class MainDriveOpmode extends OpMode {
 		// ===== THREAD SETUP =====
 		aprilSlowdownTimer.reset();
 		customThreads = new CustomThreads(follower);
-		customThreads.setAzimuthServo(turret.getServoController());
 		customThreads.setLauncherMotors(launcher.getMotorController());
 		customThreads.setSorterController(sorterController);
 		customThreads.setDistanceSensor(ballDistSensor);
@@ -303,8 +293,6 @@ public class MainDriveOpmode extends OpMode {
 		// B button: Toggle intake OUT
 		gp2Handler.onPress("intakeOut", gp -> gp.b, () -> intake.toggleOut());
 
-		// Start button: Reset turret azimuth offset
-		gp2Handler.onPress("resetAzimuth", gp -> gp.start, () -> turret.resetAzimuthOffset());
 
 	}
 
@@ -374,14 +362,13 @@ public class MainDriveOpmode extends OpMode {
 
 		customThreads.startDrawingThread();
 		customThreads.startCPUMonThread();
-		customThreads.startAzimuthPIDThread();
+		// Initialize the Limelight turret now that the alliance colour is known
+		turret = new TurretSubsystem(hardwareMap, team == Team.RED, telemetryC);
 		// Pass live gamepad so the drive thread reads inputs directly instead of
 		// waiting for loop() to relay them — this is the main latency fix.
 		if (MDOConstants.EnableThreadedDrive) {
 			customThreads.setLiveGamepad(gamepad1);
 		}
-		// Start the turret's own real-time aiming thread (~1000Hz)
-		turret.startThread();
 		// Start the thread that reads color sensors ~20 times/second
 		customThreads.startSorterThread();
 		// Start the distance sensor background thread so the main loop never blocks on I2C
@@ -409,9 +396,8 @@ public class MainDriveOpmode extends OpMode {
 	public void stop() {
 		customThreads.stopDrawingThread();
 		customThreads.stopCPUMonThread();
-		customThreads.stopAzimuthPIDThread();
-		// Stop the turret's real-time aiming thread
-		turret.stopThread();
+		// Idle the Limelight turret (stops servos, pauses camera)
+		if (turret != null) turret.idle();
 		// Stop the thread to prevent resource leaks
 		customThreads.stopSorterThread();
 		customThreads.stopDistanceSensorThread();
@@ -475,9 +461,6 @@ public class MainDriveOpmode extends OpMode {
 		double gamepad1RightStickX = gamepad1.right_stick_x;
 
 
-		// Cache turret servo data ONCE for telemetry
-		double servoPosition = turret.getServoPosition();
-		double servoTarget = turret.getServoTarget();
 
 		// CPU data
 		double cpuUsage = customThreads.getCpuUsage();
@@ -607,16 +590,8 @@ public class MainDriveOpmode extends OpMode {
 		// ===== SERVO CONTROL (Turret + Elevation) =====
 		sectionTimer.reset();
 
-		turret.update(currentPose, launchVectors, isRedSide);
-		// Forward Aim Mode: right stick X of gamepad2 maps directly to turret angle
-		if (MDOConstants.EnableForwardAimMode) {
-			turret.setForwardAimAngleDeg(gamepad2.right_stick_x * MDOConstants.ForwardAimAngleRange);
-		}
-		// In forward aim mode the turret locks forward; dpad_left/right are used for speed instead
-		turret.handleInput(
-				!MDOConstants.EnableForwardAimMode && gamepad2.dpad_left,
-				!MDOConstants.EnableForwardAimMode && gamepad2.dpad_right,
-				false);
+		// Limelight auto-aiming: runs every loop to track and center the target
+		turret.aim();
 		// Feed measured launcher RPM so V2 can compute the physics-correct elevation angle
 		elevation.setCurrentRPM(launcher.getRPM());
 		elevation.update(currentPose, launchVectors, isRedSide);
@@ -632,8 +607,10 @@ public class MainDriveOpmode extends OpMode {
 		// Rapid fire continuation (must run every loop to advance the sequence)
 		launcher.updateRapidFire(sorterController);
 
-		// Update launcher motor output
-		launcher.update(dynamicRPM);
+		// Update launcher motor output — skip when ShooterSubsystem owns the motors
+		if (!MDOConstants.EnableShooterSubsystem) {
+			launcher.update(dynamicRPM);
+		}
 
 		timeLauncher = sectionTimer.milliseconds();
 
@@ -669,34 +646,11 @@ public class MainDriveOpmode extends OpMode {
 			if (launchVectors != null) {
 				telemetryC.addData("Launch Elevation (deg)", elevation.getLaunchElevationDeg());
 				telemetryC.addData("Elevation Servo Pos", elevation.getElevationServoFinal());
-				telemetryC.addData("--- AZIMUTH DEBUG ---", "");
-				telemetryC.addData("Aiming Thread", turret.isThreadRunning()
-						? String.format("ALIVE @ %.0f Hz", turret.getAimingLoopHz()) : "DEAD");
-				telemetryC.addData("Robot Heading (deg)", String.format("%.2f", turret.getRobotFieldRelativeAzimuthDeg()));
-				telemetryC.addData("Launch Azimuth (deg)", String.format("%.2f", turret.getLaunchAzimuthDeg()));
-				telemetryC.addData("Final Azimuth (deg)", String.format("%.2f", turret.getFinalAzimuthDeg()));
-				telemetryC.addData("Manual Azimuth Offset", String.format("%.1f", turret.getManualAzimuthOffset()));
-				telemetryC.addData("Servo Position (actual)", String.format("%.2f°", servoPosition));
-				telemetryC.addData("Servo Target (deg)", String.format("%.2f°", servoTarget));
-				telemetryC.addData("PID Error (deg)", String.format("%.2f", turret.getServoController().getPIDError()));
-				telemetryC.addData("PID Power", String.format("%.3f", turret.getServoController().getPIDTargetPower()));
-				telemetryC.addData("Analog Voltage", String.format("%.3fV / %.3fV",
-						turret.getServoController().getAnalogVoltage(), turret.getServoController().getMaxVoltage()));
-				telemetryC.addData("Voltage Sag", String.format("%.1f%% (%.1f° comp)",
-						turret.getServoController().getLastVoltageSag() * 100.0,
-						turret.getServoController().getLastCompensationDeg()));
 			} else {
 				telemetryC.addData("Launch Vectors", "Target Unreachable");
-				telemetryC.addData("--- AZIMUTH DEBUG ---", "");
-				telemetryC.addData("Aiming Thread", turret.isThreadRunning()
-						? String.format("ALIVE @ %.0f Hz", turret.getAimingLoopHz()) : "DEAD");
-				telemetryC.addData("Robot Heading (deg)", String.format("%.2f", turret.getRobotFieldRelativeAzimuthDeg()));
-				telemetryC.addData("Final Azimuth (deg)", String.format("%.2f", turret.getFinalAzimuthDeg()));
-				telemetryC.addData("Servo Position (actual)", String.format("%.2f°", servoPosition));
-				telemetryC.addData("Servo Target (deg)", String.format("%.2f°", servoTarget));
-				telemetryC.addData("PID Error (deg)", String.format("%.2f", turret.getServoController().getPIDError()));
-				telemetryC.addData("PID Power", String.format("%.3f", turret.getServoController().getPIDTargetPower()));
 			}
+			telemetryC.addData("--- LIMELIGHT TURRET ---", "");
+			// Tx / Power values are logged inside turret.aim() each iteration
 
 			telemetryC.addData("Intake Dist Sensor", intake.GetDistanceBallSensorCM());
 			telemetryC.addData("Launcher RPM", launcher.getRPM());
