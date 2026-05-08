@@ -372,64 +372,9 @@ public class CustomThreads {
 		return cpuTemp;
 	}
 
-	/**
-	 * Starts the azimuth servo PID control thread with maximum reaction time.
-	 * <p>
-	 * Runs at ~300-500 Hz with a minimal 1 ms sleep to prevent I2C bus flooding.
-	 * The I2C analog read takes ~1-2 ms, so total loop time is ~2-3 ms.
-	 * <p>
-	 * Must call setAzimuthServo() before starting this thread.
-	 */
-	public void startAzimuthPIDThread() {
-		if (azimuthServo == null) {
-			throw new IllegalStateException("Azimuth servo controller must be set before starting PID thread. Call setAzimuthServo() first.");
-		}
-
-		if (azimuthPIDThreadRunning) {
-			return;
-		}
-
-		azimuthPIDThreadRunning = true;
-		azimuthPIDThread = new Thread(() -> {
-			while (azimuthPIDThreadRunning) {
-				try {
-					if (MDOConstants.EnableTurret) {
-						azimuthServo.servoPidLoop();
-					} else {
-						azimuthServo.stopServo();
-					}
-					// Minimal sleep to prevent I2C bus flooding.
-					// Without this, back-to-back analog reads overwhelm the REV hub USB pipeline,
-					// causing reads to queue up and reaction time to spike to >1 second.
-					// 1ms sleep + ~1-2ms I2C read = ~2-3ms total = ~300-500Hz.
-					Thread.sleep(1);
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-					break;
-				} catch (Exception e) {
-					System.err.println("Error in azimuth PID loop: " + e.getMessage());
-				}
-			}
-		});
-		azimuthPIDThread.setPriority(Thread.MAX_PRIORITY);
-		azimuthPIDThread.setName("AzimuthPID-RT");
-		azimuthPIDThread.setDaemon(true);
-		azimuthPIDThread.start();
-	}
-
-	/**
-	 * Stops the azimuth servo PID control thread.
-	 */
-	public void stopAzimuthPIDThread() {
-		azimuthPIDThreadRunning = false;
-		if (azimuthPIDThread != null) {
-			try {
-				azimuthPIDThread.join(100);
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-			}
-		}
-	}
+	// --- OLD AzimuthSubsystemV2 servo-PID thread (never started in active code) ---
+	// public void startAzimuthPIDThread() { ... }
+	// public void stopAzimuthPIDThread() { ... }
 
 	public void startSorterThread() {
 		if (sorterThreadRunning || sorterController == null) {

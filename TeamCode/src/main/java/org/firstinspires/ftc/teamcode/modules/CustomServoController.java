@@ -124,86 +124,12 @@ public class CustomServoController {
 		}
 	}
 
-	public void servoPidLoop() {
-		if (useAnalog && aPosition != null) {
-			try {
-				// Update PIDF coefficients if changed via dashboard
-				setPIDFCoefficients(MDOConstants.AzimuthPIDFConstants);
-
-				currentPosition = voltageToDegrees(aPosition.getVoltage());
-
-				double effectiveTarget = targetPosition;
-
-				// === PIDF calculation with real target & measurement ===
-				// The PIDF controller output is a velocity command for continuous rotation servos.
-				double power = pidfController.calculate(currentPosition, effectiveTarget);
-
-				power = Math.max(-1.0, Math.min(1.0, power));
-
-				// === Dead band compensation (hardware-specific) ===
-				double deadBandPos = MDOConstants.AzimuthServoDeadBandPositive;
-				double deadBandNeg = MDOConstants.AzimuthServoDeadBandNegative;
-				if (power > 0) {
-					if (power < deadBandPos) {
-						power = 0;
-					} else {
-						power = power + deadBandPos;
-					}
-				} else if (power < 0) {
-					if (power > -deadBandNeg) {
-						power = 0;
-					} else {
-						power = power - deadBandNeg;
-					}
-				}
-
-				if (invertServoDirection) {
-					power = -power;
-				}
-
-				// === Tracking-aware slew rate limiter ===
-				// When the target is moving (tracking), allow faster power changes so the
-				// servo can keep up. When holding static, use the configured slew rate to
-				// prevent oscillation/shaking.
-				double maxDelta = MDOConstants.AzimuthSlewRate;
-				double targetDelta = Math.abs(effectiveTarget - lastEffectiveTarget);
-				if (targetDelta > 0.5) {
-					// Target is moving — allow 3x faster power changes for responsive tracking
-					maxDelta = Math.min(1.0, maxDelta * 3.0);
-				}
-				lastEffectiveTarget = effectiveTarget;
-
-				double delta = power - lastAppliedPower;
-				if (delta > maxDelta) {
-					power = lastAppliedPower + maxDelta;
-				} else if (delta < -maxDelta) {
-					power = lastAppliedPower - maxDelta;
-				}
-
-				lastAppliedPower = power;
-
-				applyPowerToServos(power);
-			} catch (Exception e) {
-				System.err.println("Error in servo PID loop: " + e.getMessage());
-			}
-		}
-	}
-
-	private void applyPowerToServos(double power) {
-		for (int i = 0; i < servoGroup.length; i++) {
-			String servoName = servoGroup[i];
-			Servo s = this.servo.get(servoName);
-			if (s != null) {
-				double finalPower = reverseMap[i] ? -power : power;
-				// Remove center offset when ForwardAimMode is enabled so the servo has
-				// zero bias and aims straight forward with no adjustments applied.
-				double centerOffset = MDOConstants.EnableForwardAimMode ? 0.0 : MDOConstants.AzimuthServoCenterOffset;
-				double mapped = (finalPower + 1.0) / 2.0 + centerOffset;
-				mapped = Math.max(0.0, Math.min(1.0, mapped));
-				s.setPosition(mapped);
-			}
-		}
-	}
+	// --- OLD AzimuthSubsystemV2 servo-PID methods (never called in active code) ---
+	// servoPidLoop() and applyPowerToServos() used MDOConstants azimuth tuning constants
+	// that have been commented out. Kept here for reference only.
+	//
+	// public void servoPidLoop() { ... }
+	// private void applyPowerToServos(double power) { ... }
 
 	public double getPosition() {
 		synchronized (lock) {

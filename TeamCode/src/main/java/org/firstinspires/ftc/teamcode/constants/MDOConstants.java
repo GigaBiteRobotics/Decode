@@ -13,14 +13,15 @@ public class MDOConstants {
 	public static int LimelightPipelineIdle = 2; // Low-FPS/low-res idle pipeline — keeps limelight warm without heat buildup
 	public static double AprilTagMaxDistance = 60.0;
 	public static int AprilTagUpdateIntervalMs = 100;
-	public static Double AzimuthFineAdjustment = 0.0;
-	public static Double AzimuthIMUOffset = 110.0;
-	public static Double AzimuthMultiplier = 1.0;
-	public static double[] AzimuthPIDFConstants = new double[]{0.007, 0.006, 0.0, 0.0};
-	public static double AzimuthServoCenterOffset = 0.0;
-	public static double AzimuthServoDeadBandPositive = 0.05; // Minimum power to overcome dead band when moving in positive direction
-	public static double AzimuthServoDeadBandNegative = 0.05; // Minimum power to overcome dead band when moving in negative direction
-	public static double AzimuthSlewRate = 0.1; // Max power change per PID loop iteration (prevents shaking)
+	// --- OLD AzimuthSubsystemV2 constants (servo-PID azimuth — replaced by Limelight TurretSubsystem) ---
+	//public static Double AzimuthFineAdjustment = 0.0;
+	//public static Double AzimuthIMUOffset = 110.0;
+	//public static Double AzimuthMultiplier = 1.0;
+	//public static double[] AzimuthPIDFConstants = new double[]{0.007, 0.006, 0.0, 0.0};
+	//public static double AzimuthServoCenterOffset = 0.0;
+	//public static double AzimuthServoDeadBandPositive = 0.05;
+	//public static double AzimuthServoDeadBandNegative = 0.05;
+	//public static double AzimuthSlewRate = 0.1;
 	public static int BallIntakeTimerMs = 1200;
 	public static double BallDetectionDistanceCm = 25;
 	/** Motor power (0-1) applied when the intake is running IN or OUT. */
@@ -30,7 +31,7 @@ public class MDOConstants {
 	/** Consecutive out-of-range reads before the sensor is flagged as stuck and given a longer recovery delay. */
 	public static int BallSensorStuckThreshold = 25;
 	public static double BlueAprilTagHeadingOffset = 90.0;
-	public static Double BlueAzimuthFineAdjustment = 0.0;
+	//public static Double BlueAzimuthFineAdjustment = 0.0; // OLD: AzimuthSubsystemV2
 	public static double[] BlueCloseStartPose = new double[]{22.85, 124.85, -40.7};
 	public static double[] BlueFarStartPose = new double[]{72.0, 72.0, -90.0};
 	public static Double[] BlueLauncherCalcConstants = new Double[]{280.00, 386.09};
@@ -66,12 +67,12 @@ public class MDOConstants {
 	public static Double BlueElevationOffset = 0.0;
 	public static double EmergencyStopTemp = 88.0;
 	public static boolean EnableFieldCentricDrive = true;
-	public static boolean EnableLauncherCalcAzimuth = true;
+	//public static boolean EnableLauncherCalcAzimuth = true; // OLD: AzimuthSubsystemV2 flag
 	public static boolean EnableLauncherRPMZones = true;
 	public static boolean EnableThreadedDrive = true;
 	public static boolean EnableThreadedFollowerUpdate = true;
 	public static boolean EnableTurret = true;
-	public static boolean EnableTurretIMUCorrection = true;
+	//public static boolean EnableTurretIMUCorrection = true; // OLD: IMUSubsystem-based turret correction
 	public static double GreenHueMax = 190.0;
 	public static double GreenHueMin = 80.0;
 	public static PIDFController LauncherPIDF = new PIDFController(0.0003, 0, 0, 0.0002);
@@ -87,9 +88,9 @@ public class MDOConstants {
 	public static double PurpleHueMax = 330.0;
 	public static double PurpleHueMin = 200.0;
 	public static int RapidFireDelayMs = 500;
-	public static int[] RapidFireOrder = new int[]{0, 1, 2};
+	public static int[] RapidFireOrder = new int[]{1, 2, 0};
 	public static double RedAprilTagHeadingOffset = 90.0;
-	public static Double RedAzimuthFineAdjustment = 0.0;
+	//public static Double RedAzimuthFineAdjustment = 0.0; // OLD: AzimuthSubsystemV2
 	public static double[] RedCloseStartPose = new double[]{121.15, 124.85, -130.7};
 	public static double[] RedFarStartPose = new double[]{72.0, 72.0, -90.0};
 	public static Double[] RedLauncherCalcConstants = new Double[]{280.00, 386.09};
@@ -123,88 +124,34 @@ public class MDOConstants {
 	public static boolean EnableForwardAimMode = false;
 	/** Elevation servo position step per dpad press in forward aim mode. */
 	public static double ForwardAimElevationStep = 0.02;
-	/** Launcher RPM step per dpad press in forward aim mode. */
-	public static int ForwardAimRPMStep = 100;
+	// /** Launcher RPM step per dpad press in forward aim mode (no binding in MDO currently). */
+	//public static int ForwardAimRPMStep = 100;
 	/** Starting RPM when forward aim mode is first used. */
 	public static int ForwardAimInitialRPM = 6000;
 	/** Fixed RPM used for launching in forward aim mode (dashboard-tunable). */
 	public static int ForwardAimRPM = 6000;
 	/** Starting elevation servo position when forward aim mode is first used. */
 	public static double ForwardAimInitialElevation = 0.0;
-	/**
-	 * Maximum turret angle (degrees) reachable when the right stick is at full deflection.
-	 * Stick range [-1, 1] maps linearly to [-ForwardAimAngleRange, +ForwardAimAngleRange].
-	 */
-	public static double ForwardAimAngleRange = 90.0;
+	// ForwardAimAngleRange — stick-to-angle mapping (no right-stick turret control in MDO currently)
+	//public static double ForwardAimAngleRange = 90.0;
 
-	// ===== ElevationSubsystemV2 — RPM-based elevation =====
-	/**
-	 * Launcher RPM below which the elevation is driven to maximum
-	 * (shoot as steeply upward as possible).
-	 * This handles the "not yet up to speed" / low-power case.
-	 */
-	public static double ElevationV2RPMThreshold = 1000.0;
+	// ===== ElevationSubsystemV2 — unimplemented physics constants (never used by ElevationSubsystemV2.java) =====
+	//public static double ElevationV2RPMThreshold = 1000.0;
+	//public static double ElevationV2BaseVelocity = 280.0;
+	//public static double ElevationV2BaseRPM = 3800.0;
+	//public static double ElevationV2Gravity = 386.09;
+	//public static double ElevationV2ServoScale = 1.64;
+	//public static double ElevationV2ServoOffset = -0.497;
 
-	/**
-	 * Reference launch velocity (inches/s) measured at ElevationV2BaseRPM.
-	 * Velocity scales linearly with RPM: v = ElevationV2BaseVelocity * (rpm / ElevationV2BaseRPM).
-	 * Initialised from the existing RedLauncherCalcConstants[0] value.
-	 */
-	public static double ElevationV2BaseVelocity = 280.0;
-
-	/**
-	 * Launcher RPM at which ElevationV2BaseVelocity was characterised.
-	 */
-	public static double ElevationV2BaseRPM = 3800.0;
-
-	/**
-	 * Effective gravity constant (inches/s²) for projectile calculations.
-	 * Standard 1 g ≈ 386.09 in/s².  Tune to compensate for drag.
-	 */
-	public static double ElevationV2Gravity = 386.09;
-
-	/**
-	 * Scales the computed physical launch angle (radians) to servo position units.
-	 * Derived from the V1 linear calibration: at baseRPM, 0.0593 rad → servo -0.4 and
-	 * 0.4857 rad → servo 0.3, giving scale ≈ 1.64.
-	 */
-	public static double ElevationV2ServoScale = 1.64;
-
-	/**
-	 * Additive servo-position offset applied after the angle→servo mapping.
-	 * Derived from the V1 calibration: offset ≈ -0.497.  Tune on dashboard.
-	 */
-	public static double ElevationV2ServoOffset = -0.497;
-
-	// ===== ShooterSubsystem — Limelight Ta-based auto shooter =====
-	/**
-	 * When true, {@code ShooterSubsystem#accelerate()} is called each loop and
-	 * replaces the normal {@code LauncherSubsystem} + {@code ElevationSubsystemV2}
-	 * motor/servo updates.  Set to false to use the legacy distance-calculated pipeline.
-	 */
-	public static boolean EnableShooterSubsystem = false;
-
-	// --- Velocity PIDF ---
-	/** Proportional gain for the flywheel velocity PIDF controller. */
-	public static double ShooterVelocityP = 0.002;
-	/** Integral gain for the flywheel velocity PIDF controller. */
-	public static double ShooterVelocityI = 0.00005;
-	/** Derivative gain for the flywheel velocity PIDF controller. */
-	public static double ShooterVelocityD = 0.000003;
-	/** Feed-forward gain for the flywheel velocity PIDF controller. */
-	public static double ShooterVelocityF = 0.00022;
-
-	// --- RPM regression: targetRPM = A * Ta^B (power-law) ---
-	/** Coefficient A in the RPM power-law regression: RPM = A * Ta^B. */
-	public static double ShooterRPMCoeffA = 3574.97926;
-	/** Exponent B in the RPM power-law regression: RPM = A * Ta^B. */
-	public static double ShooterRPMCoeffB = -0.156948;
-
-	// --- Pitch regression: targetPitch = C*Ta² + D*Ta + E (quadratic) ---
-	/** Quadratic coefficient C in the pitch regression: pitch = C*Ta² + D*Ta + E. */
-	public static double ShooterPitchCoeffC = -0.0475945;
-	/** Linear coefficient D in the pitch regression: pitch = C*Ta² + D*Ta + E. */
-	public static double ShooterPitchCoeffD = 0.11103;
-	/** Constant term E in the pitch regression: pitch = C*Ta² + D*Ta + E. */
-	public static double ShooterPitchCoeffE = 0.387717;
+	// ===== ShooterSubsystem — disabled (ShooterSubsystem.java.disabled) =====
+	//public static boolean EnableShooterSubsystem = false;
+	//public static double ShooterVelocityP = 0.002;
+	//public static double ShooterVelocityI = 0.00005;
+	//public static double ShooterVelocityD = 0.000003;
+	//public static double ShooterVelocityF = 0.00022;
+	//public static double ShooterRPMCoeffA = 3574.97926;
+	//public static double ShooterRPMCoeffB = -0.156948;
+	//public static double ShooterPitchCoeffC = -0.0475945;
+	//public static double ShooterPitchCoeffD = 0.11103;
+	//public static double ShooterPitchCoeffE = 0.387717;
 }

@@ -627,10 +627,7 @@ public class MainDriveOpmode extends OpMode {
 		// Rapid fire continuation (must run every loop to advance the sequence)
 		launcher.updateRapidFire(sorterController);
 
-		// Update launcher motor output — skip when ShooterSubsystem owns the motors
-		if (!MDOConstants.EnableShooterSubsystem) {
-			launcher.update(dynamicRPM);
-		}
+		launcher.update(dynamicRPM);
 
 		timeLauncher = sectionTimer.milliseconds();
 
