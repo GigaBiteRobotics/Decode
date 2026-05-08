@@ -29,9 +29,22 @@ public class LauncherSubsystem {
 
 	public LauncherSubsystem(CustomMotorController launcherMotors) {
 		this.launcherMotors = launcherMotors;
+		// Set once here — resetting the PIDF controller every loop caused integrator
+		// windup resets on each update(), producing violent power oscillations.
+		launcherMotors.setPIDFController(MDOConstants.LauncherPIDF);
 	}
 
 	// ===== Simple actions for GamepadEventHandler callbacks =====
+
+	/**
+	 * Directly set the launcher spinning state. Used by limelight-lock control.
+	 *
+	 * @param spinning {@code true} to spin up, {@code false} to stop.
+	 */
+	public void setSpinning(boolean spinning) {
+		launcherSpinning = spinning;
+		targetPower = spinning ? MDOConstants.launchPower : 0.0;
+	}
 
 	/**
 	 * Toggle the launcher spinning on/off.
@@ -182,13 +195,10 @@ public class LauncherSubsystem {
 			// entirely and coast to zero with direct power to avoid integrator windup.
 			if (launcherReverseActive) {
 				launcherMotors.setRPM(-MDOConstants.LauncherReverseRPM);
-				launcherMotors.setPIDFController(MDOConstants.LauncherPIDF);
 			} else if (launcherPooping) {
 				launcherMotors.setRPM(1200);
-				launcherMotors.setPIDFController(MDOConstants.LauncherPIDF);
 			} else if (launcherSpinning && effectiveRPM > 0) {
 				launcherMotors.setRPM(effectiveRPM);
-				launcherMotors.setPIDFController(MDOConstants.LauncherPIDF);
 			} else {
 				// Target RPM is 0 — skip PID and cut power directly
 				launcherMotors.setPower(0);

@@ -82,6 +82,19 @@ public class ElevationSubsystemV2 {
     }
 
     /**
+     * Set the elevation servo directly from a Limelight Ta value using the same
+     * polynomial regression as the reference Shooter code.
+     * Bypasses all odometry-based calculations.
+     *
+     * @param ta Target Area from the limelight result
+     */
+    public void setFromLimelightTa(double ta) {
+        double targetPitch = (-0.0475945 * (ta * ta)) + (0.11103 * ta) + 0.387717;
+        elevationServoFinal = Math.min(targetPitch, 0.7);
+        elevationServo.setPosition(elevationServoFinal);
+    }
+
+    /**
      * Adjust the manual elevation servo position (Forward Aim Mode only).
      *
      * @param delta Amount to add (servo position units, e.g. 0.02 per step)

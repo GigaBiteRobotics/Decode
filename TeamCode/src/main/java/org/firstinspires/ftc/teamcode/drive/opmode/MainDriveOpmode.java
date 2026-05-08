@@ -99,12 +99,15 @@ public class MainDriveOpmode extends OpMode {
 
 	// Threads
 	CustomThreads customThreads;
-	private final Object followerLock = new Object();
 	boolean pathsBuilt = false;
 
 	// Gamepad event handlers
 	GamepadEventHandler gp1Handler;
 	GamepadEventHandler gp2Handler;
+
+	// Debounce timer to prevent launcher motors pulsing on brief limelight lock flickers
+	private final ElapsedTime lockLostTimer = new ElapsedTime();
+	private static final double LOCK_LOST_DEBOUNCE_MS = 150;
 
 	@Override
 	public void init() {
@@ -216,36 +219,31 @@ public class MainDriveOpmode extends OpMode {
 		gp1Handler.onPress("goToLaunch", gp -> gp.dpad_down, () -> {
 			if (launchPositionPath == null) return;
 			PathChain pathToFollow = launchPositionPath.get();
-			synchronized (followerLock) {
-				follower.followPath(pathToFollow, true);
-			}
+			// safeFollowPath acquires CustomThreads.followerLock (the same lock the
+			// follower update thread uses) and sets driveAutomatedActive=true atomically
+			// before calling followPath(), eliminating both the dual-lock race and the
+			// ordering race between followPath and setDriveAutomatedActive.
+			customThreads.safeFollowPath(pathToFollow, true);
 			automatedDriveActive = true;
 			holdingPosition = false;
-			customThreads.setDriveAutomatedActive(true);
 		});
 
 		// D-pad Up: Go to human player station
 		gp1Handler.onPress("goToHuman", gp -> gp.dpad_up, () -> {
 			if (humanPlayerPath == null) return;
 			PathChain pathToFollow = humanPlayerPath.get();
-			synchronized (followerLock) {
-				follower.followPath(pathToFollow, true);
-			}
+			customThreads.safeFollowPath(pathToFollow, true);
 			automatedDriveActive = true;
 			holdingPosition = false;
-			customThreads.setDriveAutomatedActive(true);
 		});
 
 		// D-pad Right: Go to gate position
 		gp1Handler.onPress("goToGate", gp -> gp.dpad_right, () -> {
 			if (gatePositionPath == null) return;
 			PathChain pathToFollow = gatePositionPath.get();
-			synchronized (followerLock) {
-				follower.followPath(pathToFollow, true);
-			}
+			customThreads.safeFollowPath(pathToFollow, true);
 			automatedDriveActive = true;
 			holdingPosition = false;
-			customThreads.setDriveAutomatedActive(true);
 		});
 
 		// Left bumper (gp1): Toggle launcher spin — Forward Aim Mode only
@@ -266,14 +264,6 @@ public class MainDriveOpmode extends OpMode {
 
 		// Left trigger: Toggle launcher reverse
 		gp2Handler.onAnalogPress("launcherReverse", gp -> (double) gp.left_trigger, 0.5, () -> launcher.toggleReverse());
-
-		// Right bumper: Launch purple ball (650ms cooldown)
-		gp2Handler.onDebouncedPress("launchPurple", gp -> gp.right_bumper, 200,
-				() -> sorterController.launchCached(CustomSorterController.CustomColor.PURPLE));
-
-		// Left bumper: Launch green ball (650ms cooldown)
-		gp2Handler.onDebouncedPress("launchGreen", gp -> gp.left_bumper, 200,
-				() -> sorterController.launchCached(CustomSorterController.CustomColor.GREEN));
 
 		// Right trigger: Start rapid fire sequence (edge detection)
 		gp2Handler.onAnalogPress("rapidFire", gp -> (double) gp.right_trigger, 0.5,
@@ -520,7 +510,7 @@ public class MainDriveOpmode extends OpMode {
 		// ===== PATH COMPLETION - ENTER HOLD POSITION MODE =====
 		// When path completes, it automatically holds position due to holdPoint=true
 		// We just track state to know when to allow manual override
-		if (automatedDriveActive && !follower.isBusy()) {
+		if (automatedDriveActive && !customThreads.safeIsBusy()) {
 			automatedDriveActive = false;
 			holdingPosition = true; // Now holding position at destination
 			customThreads.setDriveAutomatedActive(true); // still suppress manual drive
@@ -529,24 +519,34 @@ public class MainDriveOpmode extends OpMode {
 		// ===== CANCEL AUTOMATED/HOLD MODE =====
 		// Manual stick input or B button releases control back to teleop
 		if ((automatedDriveActive || holdingPosition) && (manualOverride || gamepad1.b)) {
-			synchronized (followerLock) {
-				follower.startTeleopDrive();
-			}
+			// safeStartTeleopDrive acquires CustomThreads.followerLock so startTeleopDrive
+			// never races with follower.update(), then restores driveAutomatedActive=false.
+			customThreads.safeStartTeleopDrive();
 			automatedDriveActive = false;
 			holdingPosition = false;
-			customThreads.setDriveAutomatedActive(false); // hand control back to drive thread
 		}
 
 		// ===== TELEOP DRIVE (only when not in automated or hold mode) =====
 		if (!automatedDriveActive && !holdingPosition) {
 			if (!MDOConstants.EnableThreadedDrive) {
-				// Non-threaded fallback: drive is handled directly in main loop
-				follower.setTeleOpDrive(
-						-gamepad1LeftStickY,
-						-gamepad1LeftStickX,
-						gamepad1RightStickX * -0.75,
-						MDOConstants.EnableFieldCentricDrive
-				);
+				// Non-threaded fallback: drive is handled directly in main loop.
+				// Route through customThreads so followerLock is held, preventing a
+				// concurrent race with the follower update thread's follower.update().
+				if (MDOConstants.EnableThreadedFollowerUpdate) {
+					customThreads.safeFollowerSetTeleOpDrive(
+							-gamepad1LeftStickY,
+							-gamepad1LeftStickX,
+							gamepad1RightStickX * -0.75,
+							MDOConstants.EnableFieldCentricDrive
+					);
+				} else {
+					follower.setTeleOpDrive(
+							-gamepad1LeftStickY,
+							-gamepad1LeftStickX,
+							gamepad1RightStickX * -0.75,
+							MDOConstants.EnableFieldCentricDrive
+					);
+				}
 			} else {
 				// Threaded drive: the drive thread reads gamepad1 directly via
 				// liveGamepad and calls setTeleOpDrive() at ~1000 Hz.
@@ -590,11 +590,31 @@ public class MainDriveOpmode extends OpMode {
 		// ===== SERVO CONTROL (Turret + Elevation) =====
 		sectionTimer.reset();
 
-		// Limelight auto-aiming: runs every loop to track and center the target
-		turret.aim();
-		// Feed measured launcher RPM so V2 can compute the physics-correct elevation angle
-		elevation.setCurrentRPM(launcher.getRPM());
-		elevation.update(currentPose, launchVectors, isRedSide);
+		// Limelight auto-aiming: mirrors reference DemoTeleOp exactly.
+		// aim()/idle() called every loop — no edge detection.
+		if (gamepad2.right_bumper) {
+			turret.aim();
+			if (turret.hasLock()) {
+				double ta = turret.getTa();
+				elevation.setFromLimelightTa(ta);
+				int taRPM = (int) (3574.97926 * Math.pow(ta, -0.156948));
+				dynamicRPM = taRPM;
+				launcher.setSpinning(true);
+				lockLostTimer.reset();
+			} else {
+				// Only stop motors after lock has been lost for more than the debounce window,
+				// preventing violent pulsing from brief single-loop lock flickers.
+				if (lockLostTimer.milliseconds() > LOCK_LOST_DEBOUNCE_MS) {
+					launcher.setSpinning(false);
+				}
+			}
+		} else {
+			turret.idle();
+			launcher.setSpinning(false);
+			lockLostTimer.reset();
+			elevation.setCurrentRPM(launcher.getRPM());
+			elevation.update(currentPose, launchVectors, isRedSide);
+		}
 
 		timeServo = sectionTimer.milliseconds();
 
@@ -728,34 +748,39 @@ public class MainDriveOpmode extends OpMode {
 		// These use Supplier<PathChain> so the path is built from current position when triggered
 		launchPositionPath = () -> {
 			Pose targetPose = (team == Team.RED) ? MDOConstants.redCloseLaunchLocation : MDOConstants.blueCloseLaunchLocation;
+			// Use getThreadSafePose() instead of follower.getPose() to avoid racing
+			// with the follower update thread which holds followerLock during getPose().
+			Pose currentPose = customThreads.getThreadSafePose();
 			return follower.pathBuilder()
 					.addPath(new Path(new BezierLine(
-							follower::getPose,
+							currentPose,
 							targetPose
 					)))
-					.setLinearHeadingInterpolation(follower.getPose().getHeading(), targetPose.getHeading())
+					.setLinearHeadingInterpolation(currentPose.getHeading(), targetPose.getHeading())
 					.build();
 		};
 
 		humanPlayerPath = () -> {
 			Pose targetPose = (team == Team.RED) ? MDOConstants.redHumanLocation : MDOConstants.blueHumanLocation;
+			Pose currentPose = customThreads.getThreadSafePose();
 			return follower.pathBuilder()
 					.addPath(new Path(new BezierLine(
-							follower::getPose,
+							currentPose,
 							targetPose
 					)))
-					.setLinearHeadingInterpolation(follower.getPose().getHeading(), targetPose.getHeading())
+					.setLinearHeadingInterpolation(currentPose.getHeading(), targetPose.getHeading())
 					.build();
 		};
 
 		gatePositionPath = () -> {
 			Pose targetPose = (team == Team.RED) ? MDOConstants.redGateLocation : MDOConstants.blueGateLocation;
+			Pose currentPose = customThreads.getThreadSafePose();
 			return follower.pathBuilder()
 					.addPath(new Path(new BezierLine(
-							follower::getPose,
+							currentPose,
 							targetPose
 					)))
-					.setLinearHeadingInterpolation(follower.getPose().getHeading(), targetPose.getHeading())
+					.setLinearHeadingInterpolation(currentPose.getHeading(), targetPose.getHeading())
 					.build();
 		};
 		pathsBuilt = true;

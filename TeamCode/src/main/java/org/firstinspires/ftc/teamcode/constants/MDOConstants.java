@@ -7,6 +7,10 @@ import com.seattlesolvers.solverslib.controller.PIDFController;
 
 @Config
 public class MDOConstants {
+	// ===== Limelight pipeline indices — must match the order shown in the Limelight web UI =====
+	public static int LimelightPipelineRed = 1;  // Pipeline named "Red"
+	public static int LimelightPipelineBlue = 0; // Pipeline named "Blue"
+	public static int LimelightPipelineIdle = 2; // Low-FPS/low-res idle pipeline — keeps limelight warm without heat buildup
 	public static double AprilTagMaxDistance = 60.0;
 	public static int AprilTagUpdateIntervalMs = 100;
 	public static Double AzimuthFineAdjustment = 0.0;
@@ -70,7 +74,7 @@ public class MDOConstants {
 	public static boolean EnableTurretIMUCorrection = true;
 	public static double GreenHueMax = 190.0;
 	public static double GreenHueMin = 80.0;
-	public static PIDFController LauncherPIDF = new PIDFController(8, 0, 2, 0);
+	public static PIDFController LauncherPIDF = new PIDFController(0.0003, 0, 0, 0.0002);
 	public static boolean EnableLauncherPID = true;
 	public static int LauncherReverseRPM = 800;
 	public static double LauncherManualPower = 1.0;

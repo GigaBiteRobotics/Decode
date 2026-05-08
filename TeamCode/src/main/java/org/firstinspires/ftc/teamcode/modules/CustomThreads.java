@@ -2,6 +2,7 @@ package org.firstinspires.ftc.teamcode.modules;
 
 import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.Pose;
+import com.pedropathing.paths.PathChain;
 import com.qualcomm.robotcore.hardware.Gamepad;
 
 import org.firstinspires.ftc.teamcode.CpuMonitor;
@@ -234,6 +235,62 @@ public class CustomThreads {
 		this.driveAutomatedActive = active;
 	}
 
+	// ===== THREAD-SAFE FOLLOWER CONTROL =====
+
+	/**
+	 * Thread-safe wrapper for follower.followPath().
+	 * <p>
+	 * Acquires the shared followerLock (the same lock used by the follower update thread)
+	 * so this call never races with an in-progress follower.update().
+	 * <p>
+	 * driveAutomatedActive is set to true INSIDE the lock, before followPath() is called,
+	 * so the drive thread is blocked from interfering before path following begins.
+	 *
+	 * @param chain   The PathChain to follow
+	 * @param holdEnd Whether to hold position at the end of the path
+	 */
+	public void safeFollowPath(PathChain chain, boolean holdEnd) {
+		synchronized (followerLock) {
+			driveAutomatedActive = true; // suppress drive thread BEFORE path starts
+			follower.followPath(chain, holdEnd);
+		}
+	}
+
+	/**
+	 * Thread-safe wrapper for follower.isBusy().
+	 * Acquires followerLock to avoid a data race with follower.update().
+	 */
+	public boolean safeIsBusy() {
+		synchronized (followerLock) {
+			return follower.isBusy();
+		}
+	}
+
+	/**
+	 * Thread-safe wrapper for follower.setTeleOpDrive() for use from the main loop
+	 * when the follower update thread is running. Acquires followerLock so it never
+	 * races with follower.update().
+	 */
+	public void safeFollowerSetTeleOpDrive(double y, double x, double rotation, boolean fieldCentric) {
+		synchronized (followerLock) {
+			follower.setTeleOpDrive(y, x, rotation, fieldCentric);
+		}
+	}
+
+	/**
+	 * Thread-safe wrapper for follower.startTeleopDrive().
+	 * <p>
+	 * Acquires the shared followerLock so this call never races with follower.update().
+	 * driveAutomatedActive is cleared to false AFTER the lock is released so the
+	 * drive thread regains control only once teleop drive mode is fully active.
+	 */
+	public void safeStartTeleopDrive() {
+		synchronized (followerLock) {
+			follower.startTeleopDrive();
+		}
+		driveAutomatedActive = false; // restore drive thread control after teleop mode is set
+	}
+
 	// ===== THREAD METHODS =====
 
 	public void startDrawingThread() {
@@ -256,6 +313,7 @@ public class CustomThreads {
 				}
 			}
 		});
+		drawingThread.setDaemon(true);
 		drawingThread.start();
 	}
 
@@ -291,6 +349,7 @@ public class CustomThreads {
 				}
 			}
 		});
+		CPUThread.setDaemon(true);
 		CPUThread.start();
 	}
 
@@ -395,6 +454,7 @@ public class CustomThreads {
 				}
 			}
 		});
+		sorterThread.setDaemon(true);
 		sorterThread.start();
 	}
 
@@ -436,6 +496,7 @@ public class CustomThreads {
 				}
 			}
 		});
+		launcherPIDThread.setDaemon(true);
 		launcherPIDThread.start();
 	}
 
@@ -593,11 +654,14 @@ public class CustomThreads {
 							fieldCentric = driveFieldCentric;
 						}
 
-						// No lock here — setTeleOpDrive() just writes drive-vector scalars
-						// inside the follower; follower.update() reads them on the next cycle.
-						// A brief race is acceptable (worst case: one update uses values that
-						// are ~1 ms stale). This avoids blocking for the full update() duration.
+					// Synchronize setTeleOpDrive with followerLock so it never runs
+					// concurrently with follower.update() in the follower update thread.
+					// Pedro Pathing's Follower is not thread-safe; setTeleOpDrive()
+					// writes drive-vector fields that update() reads, so an unsynchronized
+					// call is a data race that can corrupt internal Follower state and crash.
+					synchronized (followerLock) {
 						follower.setTeleOpDrive(y, x, rot, fieldCentric);
+					}
 					}
 
 					// 1 ms sleep → effective ceiling ~1000 Hz

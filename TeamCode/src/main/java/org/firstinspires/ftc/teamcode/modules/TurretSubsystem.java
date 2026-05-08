@@ -6,6 +6,8 @@ import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.seattlesolvers.solverslib.controller.PIDFController;
 
+import org.firstinspires.ftc.teamcode.constants.MDOConstants;
+
 /**
  * Turret subsystem powered by dual Continuous Rotation (CR) servos.
  * <p>
@@ -18,9 +20,19 @@ public class TurretSubsystem {
 	private final CRServo rightTurretServo;
 	private final Limelight3A limelight;
 	private final CustomTelemetry telemetryC;
+	private final boolean isRed;
 
 	/** PIDF tuned to center Limelight Tx to 0. */
 	private final PIDFController limelightPIDF = new PIDFController(0.009, 0.014, 0.0003, 0.0);
+
+	/** Set by aim() each loop — avoids a second getLatestResult() call in hasLock(). */
+	private boolean locked = false;
+
+	/** Target Area from the last valid limelight result. Used by elevation + RPM calc. */
+	private double lastTa = 0.0;
+
+	/** Tracks the active pipeline index to avoid redundant pipelineSwitch() calls. */
+	private int currentPipeline = -1;
 
 	/**
 	 * Constructs a new TurretSubsystem.
@@ -31,57 +43,84 @@ public class TurretSubsystem {
 	 * @param telemetryC  Instance of {@link CustomTelemetry} for real-time data logging.
 	 */
 	public TurretSubsystem(HardwareMap hardwareMap, boolean isRed, CustomTelemetry telemetryC) {
+		this.isRed = isRed;
 		leftTurretServo = hardwareMap.get(CRServo.class, "azimuthServo0");
 		rightTurretServo = hardwareMap.get(CRServo.class, "azimuthServo1");
 
 		leftTurretServo.setDirection(CRServo.Direction.REVERSE);
 		rightTurretServo.setDirection(CRServo.Direction.REVERSE);
 
-		// Select pipeline based on alliance color
 		limelight = hardwareMap.get(Limelight3A.class, "limelight");
-		limelight.pipelineSwitch(isRed ? 1 : 0);
+		// Start on the idle pipeline (low-FPS, low-res) to keep the limelight warm
+		// without running the heavy alliance detection pipeline.
+		switchPipeline(MDOConstants.LimelightPipelineIdle);
 		limelight.start();
 
 		this.telemetryC = telemetryC;
 	}
 
 	/**
-	 * Activates Limelight-based aiming.
-	 * <p>
-	 * If a valid target is detected, the turret drives the CR servos with power
-	 * calculated by the PIDF loop to bring Tx to 0. Power is clamped to ±0.6.
-	 * If no target is found, servos are stopped.
-	 * </p>
-	 * <p>
-	 * Call this every loop iteration while auto-aiming is desired.
-	 * </p>
+	 * Activates Limelight-based aiming. Call every loop while the aim button is held.
+	 * Also updates the internal lock state read by {@link #hasLock()}.
 	 */
 	public void aim() {
+		// Switch to the alliance detection pipeline only when needed.
+		int alliancePipeline = isRed ? MDOConstants.LimelightPipelineRed : MDOConstants.LimelightPipelineBlue;
+		switchPipeline(alliancePipeline);
 		limelight.start();
 		LLResult result = limelight.getLatestResult();
 
 		if (result != null && result.isValid()) {
+			lastTa = result.getTa();
 			double power = limelightPIDF.calculate(result.getTx(), 0);
 			power = Math.max(-0.6, Math.min(0.6, power));
 
+			telemetryC.addData("Turret", "LOCKED");
 			telemetryC.addData("Limelight Tx", result.getTx());
 			telemetryC.addData("Turret Power", power);
 
-			leftTurretServo.setPower(power);
 			rightTurretServo.setPower(power);
+			leftTurretServo.setPower(power);
+			locked = true;
 		} else {
-			leftTurretServo.setPower(0);
+			telemetryC.addData("Turret", result == null ? "NULL result" : "No target (isValid=false)");
 			rightTurretServo.setPower(0);
+			leftTurretServo.setPower(0);
+			locked = false;
 		}
 	}
 
 	/**
+	 * Returns {@code true} if the last {@link #aim()} call had a valid target.
+	 */
+	public boolean hasLock() {
+		return locked;
+	}
+
+	/**
+	 * Returns the Target Area (Ta) from the last valid limelight result.
+	 * Used to calculate distance-based RPM and elevation pitch.
+	 */
+	public double getTa() {
+		return lastTa;
+	}
+
+	/**
 	 * Puts the turret into an idle state.
-	 * Stops servo movement and pauses the Limelight to reduce processing overhead.
+	 * Stops servo movement and switches the Limelight back to the low-FPS idle pipeline.
 	 */
 	public void idle() {
-		leftTurretServo.setPower(0);
 		rightTurretServo.setPower(0);
-		limelight.pause();
+		leftTurretServo.setPower(0);
+		switchPipeline(MDOConstants.LimelightPipelineIdle);
+		locked = false;
+	}
+
+	/** Only calls pipelineSwitch() when the pipeline actually needs to change. */
+	private void switchPipeline(int index) {
+		if (currentPipeline != index) {
+			limelight.pipelineSwitch(index);
+			currentPipeline = index;
+		}
 	}
 }
