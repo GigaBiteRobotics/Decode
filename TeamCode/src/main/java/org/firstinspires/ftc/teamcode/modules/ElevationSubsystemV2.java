@@ -89,8 +89,10 @@ public class ElevationSubsystemV2 {
      * @param ta Target Area from the limelight result
      */
     public void setFromLimelightTa(double ta) {
-        double targetPitch = (-0.0475945 * (ta * ta)) + (0.11103 * ta) + 0.387717;
-        elevationServoFinal = Math.min(targetPitch, 0.7);
+        double targetPitch = (MDOConstants.LimelightTaElevCoeffC * (ta * ta))
+                + (MDOConstants.LimelightTaElevCoeffD * ta)
+                + MDOConstants.LimelightTaElevCoeffE;
+        elevationServoFinal = Math.min(targetPitch, MDOConstants.LimelightTaElevClampMax);
         elevationServo.setPosition(elevationServoFinal);
     }
 

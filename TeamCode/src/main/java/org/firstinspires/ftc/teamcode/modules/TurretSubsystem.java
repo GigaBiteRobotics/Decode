@@ -23,7 +23,11 @@ public class TurretSubsystem {
 	private final boolean isRed;
 
 	/** PIDF tuned to center Limelight Tx to 0. */
-	private final PIDFController limelightPIDF = new PIDFController(0.009, 0.014, 0.0003, 0.0);
+	private final PIDFController limelightPIDF = new PIDFController(
+			MDOConstants.TurretPIDF.getP(),
+			MDOConstants.TurretPIDF.getI(),
+			MDOConstants.TurretPIDF.getD(),
+			MDOConstants.TurretPIDF.getF());
 
 	/** Set by aim() each loop — avoids a second getLatestResult() call in hasLock(). */
 	private boolean locked = false;
@@ -73,7 +77,7 @@ public class TurretSubsystem {
 		if (result != null && result.isValid()) {
 			lastTa = result.getTa();
 			double power = limelightPIDF.calculate(result.getTx(), 0);
-			power = Math.max(-0.6, Math.min(0.6, power));
+			power = Math.max(-MDOConstants.TurretMaxPower, Math.min(MDOConstants.TurretMaxPower, power));
 
 			telemetryC.addData("Turret", "LOCKED");
 			telemetryC.addData("Limelight Tx", result.getTx());

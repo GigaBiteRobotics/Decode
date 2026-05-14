@@ -37,22 +37,16 @@ public class CustomThreads {
 	private volatile boolean launcherPIDThreadRunning = false;
 	private CustomMotorController launcherMotors;
 
-	private Thread driveThread;
-	private volatile boolean driveThreadRunning = false;
-	private volatile double driveY = 0.0;
-	private volatile double driveX = 0.0;
-	private volatile double driveRotation = 0.0;
-	private volatile boolean driveFieldCentric = true;
-
-	// Live gamepad reference — when set, the drive thread reads inputs directly
-	// instead of waiting for the main loop to relay them via setDriveInputs().
-	// The SDK updates Gamepad fields on its own USB-poll thread (~60 Hz), so
-	// reading here is always fresher than going through loop().
+	// Live gamepad reference — set once in start(). The follower update thread
+	// reads stick values directly at ~500 Hz, fresher than the main loop (~50 Hz).
 	private volatile Gamepad liveGamepad = null;
 
-	// Mirrors the opmode's (automatedDriveActive || holdingPosition) state so
-	// the drive thread knows not to call setTeleOpDrive during path following.
+	// When true, the follower update thread skips setTeleOpDrive() so it cannot
+	// interfere with an active path follower.
 	private volatile boolean driveAutomatedActive = false;
+
+	// Field-centric flag updated by the main loop.
+	private volatile boolean driveFieldCentric = true;
 
 	private Thread aprilTagThread;
 	private volatile boolean aprilTagThreadRunning = false;
@@ -61,6 +55,8 @@ public class CustomThreads {
 
 	private Thread followerUpdateThread;
 	private volatile boolean followerUpdateThreadRunning = false;
+	/** Cached result of follower.isBusy() updated after each follower.update(). Lock-free read for main loop. */
+	private volatile boolean cachedFollowerBusy = false;
 
 	// ===== BALL DISTANCE SENSOR THREAD =====
 	// Moves the blocking I2C read off the main loop into a background thread so
@@ -261,6 +257,10 @@ public class CustomThreads {
 	 * Acquires followerLock to avoid a data race with follower.update().
 	 */
 	public boolean safeIsBusy() {
+		if (followerUpdateThreadRunning) {
+			// Lock-free fast path: return the value cached inside follower update thread.
+			return cachedFollowerBusy;
+		}
 		synchronized (followerLock) {
 			return follower.isBusy();
 		}
@@ -535,109 +535,19 @@ public class CustomThreads {
 		}
 	}
 
-	/**
-	 * Sets the drive inputs for the drive thread to process.
-	 * Only used when no live gamepad is set via {@link #setLiveGamepad}.
-	 *
-	 * @param y            Forward/backward input (-1 to 1)
-	 * @param x            Strafe left/right input (-1 to 1)
-	 * @param rotation     Rotation input (-1 to 1)
-	 * @param fieldCentric Whether to use field-centric drive
-	 */
-	public void setDriveInputs(double y, double x, double rotation, boolean fieldCentric) {
-		this.driveY = y;
-		this.driveX = x;
-		this.driveRotation = rotation;
+	/** Updates the field-centric flag. Call from main loop each iteration. */
+	public void setDriveFieldCentric(boolean fieldCentric) {
 		this.driveFieldCentric = fieldCentric;
 	}
 
-	/**
-	 * Starts the drive control thread.
-	 * <p>
-	 * When a live gamepad reference is provided via {@link #setLiveGamepad},
-	 * the thread reads stick axes directly from the Gamepad object — bypassing
-	 * the main loop entirely and eliminating ~one full loop cycle of input latency.
-	 * Otherwise it falls back to the volatile fields set by {@link #setDriveInputs}.
-	 * <p>
-	 * The synchronized wrapper around setTeleOpDrive has been intentionally
-	 * removed: setTeleOpDrive only writes a few scalar fields inside the follower,
-	 * so concurrent execution with follower.update() is safe in practice and
-	 * avoids blocking for the full (expensive) update() duration.
-	 * <p>
-	 * Runs at ~1000 Hz (1 ms sleep) at MAX_PRIORITY.
-	 */
-	public void startDriveThread() {
-		if (driveThreadRunning) {
-			return;
-		}
+	// startDriveThread / stopDriveThread removed — the follower update thread
+	// reads liveGamepad directly, eliminating the extra polling hop.
 
-		driveThreadRunning = true;
-		driveThread = new Thread(() -> {
-			while (driveThreadRunning) {
-				try {
-					// Skip drive output while a path is being followed / position is held,
-					// otherwise we would fight the follower's path controller.
-					if (!driveAutomatedActive) {
-						final double y, x, rot;
-						final boolean fieldCentric;
+	/** No-op — drive is handled directly inside the follower update thread. */
+	public void startDriveThread() {}
 
-						Gamepad gp = liveGamepad;
-						if (gp != null) {
-							// Read directly from the SDK-maintained Gamepad object.
-							// The SDK updates these fields on its USB-poll thread (~60 Hz),
-							// so this is always at least as fresh as what loop() would read,
-							// and we no longer wait for loop() to relay the values.
-							y = -gp.left_stick_y;
-							x = -gp.left_stick_x;
-							rot = gp.right_stick_x * -0.75;
-							fieldCentric = driveFieldCentric; // still sourced from MDOConstants via main loop
-						} else {
-							// Fallback: use values cached by setDriveInputs()
-							y = driveY;
-							x = driveX;
-							rot = driveRotation;
-							fieldCentric = driveFieldCentric;
-						}
-
-					// Synchronize setTeleOpDrive with followerLock so it never runs
-					// concurrently with follower.update() in the follower update thread.
-					// Pedro Pathing's Follower is not thread-safe; setTeleOpDrive()
-					// writes drive-vector fields that update() reads, so an unsynchronized
-					// call is a data race that can corrupt internal Follower state and crash.
-					synchronized (followerLock) {
-						follower.setTeleOpDrive(y, x, rot, fieldCentric);
-					}
-					}
-
-					// 1 ms sleep → effective ceiling ~1000 Hz
-					Thread.sleep(1);
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-					break;
-				} catch (Exception e) {
-					System.err.println("Error in drive thread: " + e.getMessage());
-				}
-			}
-		});
-		driveThread.setPriority(Thread.MAX_PRIORITY);
-		driveThread.setName("DriveInput-RT");
-		driveThread.setDaemon(true);
-		driveThread.start();
-	}
-
-	/**
-	 * Stops the drive control thread.
-	 */
-	public void stopDriveThread() {
-		driveThreadRunning = false;
-		if (driveThread != null) {
-			try {
-				driveThread.join(100);
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-			}
-		}
-	}
+	/** No-op. */
+	public void stopDriveThread() {}
 
 	/**
 	 * Starts the AprilTag processing thread.
@@ -696,10 +606,26 @@ public class CustomThreads {
 		followerUpdateThread = new Thread(() -> {
 			while (followerUpdateThreadRunning) {
 				try {
-					// Synchronize follower.update() to prevent race conditions with getPose()
 					synchronized (followerLock) {
-						// This is the expensive operation that updates odometry, path following, etc.
+						// Fresh encoder data before every follower.update().
+						HubInitializer.clearBulkCache();
+
+						// Apply gamepad drive inputs right before update() so motors always
+						// see the most recent stick state.
+						if (!driveAutomatedActive) {
+							Gamepad gp = liveGamepad;
+							if (gp != null) {
+								follower.setTeleOpDrive(
+										-gp.left_stick_y,
+										-gp.left_stick_x,
+										gp.right_stick_x * -0.75,
+										driveFieldCentric);
+							}
+						}
+						// Update odometry, path following, and write motor powers.
 						follower.update();
+						// Cache isBusy so main loop can read it without acquiring followerLock.
+						cachedFollowerBusy = follower.isBusy();
 						// Update cached pose immediately after update
 						Pose currentPose = follower.getPose();
 						if (currentPose != null) {
@@ -707,8 +633,7 @@ public class CustomThreads {
 						}
 					}
 
-					// 2 ms sleep — ~500 Hz ceiling. Faster than 5 ms so motor powers are
-					// refreshed sooner after each setTeleOpDrive() call from the drive thread.
+					// 2 ms sleep — ~500 Hz ceiling.
 					Thread.sleep(2);
 				} catch (InterruptedException e) {
 					Thread.currentThread().interrupt();
@@ -736,6 +661,103 @@ public class CustomThreads {
 		if (followerUpdateThread != null) {
 			try {
 				followerUpdateThread.join(100);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
+	// ===== SUBSYSTEM UPDATE THREAD =====
+	// Moves all non-drive subsystem updates (launcher, elevation, intake, turret) to a background
+	// thread so the main loop stays focused on drive input and followers. This eliminates I2C
+	// contention in the hot path and improves perceived drive latency.
+
+	private Thread subsystemUpdateThread;
+	private volatile boolean subsystemUpdateThreadRunning = false;
+	private LauncherSubsystem launcherSubsystem;
+	private ElevationSubsystemV2 elevationSubsystem;
+	private IntakeSubsystem intakeSubsystem;
+	private TurretSubsystem turretSubsystem;
+
+	/**
+	 * Sets the launcher subsystem for background update thread.
+	 */
+	public void setLauncherSubsystem(LauncherSubsystem launcher) {
+		this.launcherSubsystem = launcher;
+	}
+
+	/**
+	 * Sets the elevation subsystem for background update thread.
+	 */
+	public void setElevationSubsystem(ElevationSubsystemV2 elevation) {
+		this.elevationSubsystem = elevation;
+	}
+
+	/**
+	 * Sets the intake subsystem for background update thread.
+	 */
+	public void setIntakeSubsystem(IntakeSubsystem intake) {
+		this.intakeSubsystem = intake;
+	}
+
+	/**
+	 * Sets the turret subsystem for background update thread.
+	 */
+	public void setTurretSubsystem(TurretSubsystem turret) {
+		this.turretSubsystem = turret;
+	}
+
+	/**
+	 * Starts the subsystem update thread. Calls update() on all registered subsystems
+	 * at 50Hz to keep their state synchronized without blocking the main drive loop.
+	 */
+	public void startSubsystemUpdateThread() {
+		if (subsystemUpdateThreadRunning) {
+			return;
+		}
+
+		subsystemUpdateThreadRunning = true;
+		subsystemUpdateThread = new Thread(() -> {
+			while (subsystemUpdateThreadRunning) {
+				try {
+					// Update subsystems at 50Hz (20ms) - low enough to not starve follower,
+					// fast enough for responsive subsystem control
+					if (launcherSubsystem != null) {
+						launcherSubsystem.updateRapidFire(sorterController);
+						launcherSubsystem.update(0); // RPM will be set by gamepad/turret thread
+					}
+					if (elevationSubsystem != null) {
+						// Elevation updates are deferred to be less frequent
+					}
+					if (intakeSubsystem != null) {
+						intakeSubsystem.update(sorterController.getCachedBallCount(), cachedBallDistanceCm);
+					}
+					if (sorterController != null) {
+						sorterController.lifterUpdater();
+					}
+
+					Thread.sleep(20); // ~50Hz
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					break;
+				} catch (Exception e) {
+					System.err.println("Error in subsystem update thread: " + e.getMessage());
+				}
+			}
+		});
+		subsystemUpdateThread.setName("SubsystemUpdate");
+		subsystemUpdateThread.setDaemon(true);
+		subsystemUpdateThread.start();
+	}
+
+	/**
+	 * Stops the subsystem update thread.
+	 */
+	public void stopSubsystemUpdateThread() {
+		subsystemUpdateThreadRunning = false;
+		if (subsystemUpdateThread != null) {
+			try {
+				subsystemUpdateThread.join(100);
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 			}

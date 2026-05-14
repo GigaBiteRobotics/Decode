@@ -18,7 +18,6 @@ public class CustomSorterController {
 	ElapsedTime[] lifterTimers = new ElapsedTime[3];
 	private final Servo[] lifter = new Servo[3];
 	private final ColorSensor[] colorSensor = new ColorSensor[6];
-	private final CustomRGBController RGBPrism;
 	// Cache for colors and ball count
 	private volatile CustomColor[] cachedColors = {CustomColor.NULL, CustomColor.NULL, CustomColor.NULL};
 	private volatile int cachedBallCount = 0;
@@ -39,7 +38,6 @@ public class CustomSorterController {
 		colorSensor[3] = hardwareMap.get(ColorSensor.class, "colorSensor1-1");
 		colorSensor[4] = hardwareMap.get(ColorSensor.class, "colorSensor2");
 		colorSensor[5] = hardwareMap.get(ColorSensor.class, "colorSensor2-1");
-		RGBPrism = new CustomRGBController(hardwareMap, 6);
 		lifterTimers[0] = new ElapsedTime();
 		lifterTimers[1] = new ElapsedTime();
 		lifterTimers[2] = new ElapsedTime();

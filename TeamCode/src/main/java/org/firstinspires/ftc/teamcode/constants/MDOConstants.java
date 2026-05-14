@@ -69,8 +69,11 @@ public class MDOConstants {
 	public static boolean EnableFieldCentricDrive = true;
 	//public static boolean EnableLauncherCalcAzimuth = true; // OLD: AzimuthSubsystemV2 flag
 	public static boolean EnableLauncherRPMZones = true;
-	public static boolean EnableThreadedDrive = true;
+	// EnableThreadedDrive removed \u2014 drive is always threaded via followerUpdateThread
 	public static boolean EnableThreadedFollowerUpdate = true;
+	/** When false, only essential operational telemetry is sent. Disabling reduces WiFi load
+	 *  and gamepad latency during competition. Toggle on FTC Dashboard when tuning. */
+	public static boolean DebugTelemetry = false;
 	public static boolean EnableTurret = true;
 	//public static boolean EnableTurretIMUCorrection = true; // OLD: IMUSubsystem-based turret correction
 	public static double GreenHueMax = 190.0;
@@ -143,15 +146,22 @@ public class MDOConstants {
 	//public static double ElevationV2ServoScale = 1.64;
 	//public static double ElevationV2ServoOffset = -0.497;
 
-	// ===== ShooterSubsystem — disabled (ShooterSubsystem.java.disabled) =====
-	//public static boolean EnableShooterSubsystem = false;
-	//public static double ShooterVelocityP = 0.002;
-	//public static double ShooterVelocityI = 0.00005;
-	//public static double ShooterVelocityD = 0.000003;
-	//public static double ShooterVelocityF = 0.00022;
-	//public static double ShooterRPMCoeffA = 3574.97926;
-	//public static double ShooterRPMCoeffB = -0.156948;
-	//public static double ShooterPitchCoeffC = -0.0475945;
-	//public static double ShooterPitchCoeffD = 0.11103;
-	//public static double ShooterPitchCoeffE = 0.387717;
+	// ===== TurretSubsystem / Limelight Auto-Aim =====
+	/** PIDF gains for the CR-servo turret centering Limelight Tx to 0. */
+	public static PIDFController TurretPIDF = new PIDFController(0.009, 0.014, 0.0003, 0.0);
+	/** Maximum CR-servo power applied during turret aiming (0–1). */
+	public static double TurretMaxPower = 0.6;
+	/** How long (ms) a lock must be continuously lost before the launcher spins down. Prevents pulsing on brief flickers. */
+	public static double LockLostDebounceMs = 150;
+
+	// Ta → RPM power-law regression:  RPM = A * Ta ^ B
+	public static double LimelightTaRPMCoeffA = 3574.97926;
+	public static double LimelightTaRPMCoeffB = -0.156948;
+
+	// Ta → elevation quadratic regression:  pitch = C*Ta² + D*Ta + E
+	public static double LimelightTaElevCoeffC = -0.0475945;
+	public static double LimelightTaElevCoeffD = 0.11103;
+	public static double LimelightTaElevCoeffE = 0.387717;
+	/** Maximum elevation servo position allowed when using Limelight Ta-based pitch. */
+	public static double LimelightTaElevClampMax = 0.7;
 }
